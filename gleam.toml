@@ -1,6 +1,6 @@
 name = "marmot"
 version = "0.1.0"
-description = "Type-safe SQL for SQLite in Gleam, inspired by Squirrel"
+description = "Type-safe SQL for SQLite in Gleam. Write .sql files, generate typed functions. Inspired by Squirrel."
 licences = ["MIT"]
 repository = { type = "github", user = "pairshaped", repo = "marmot" }
 target = "erlang"

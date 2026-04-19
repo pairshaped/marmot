@@ -1,7 +1,14 @@
-# marmot - type safe SQL for SQLite in Gleam
+# Marmot - Type-Safe SQL for SQLite in Gleam
 
 [![Package Version](https://img.shields.io/hexpm/v/marmot)](https://hex.pm/packages/marmot)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/marmot/)
+
+Marmot is a code generator for Gleam that turns plain `.sql` files into type-safe
+functions for SQLite. Write your queries in SQL, point Marmot at your database,
+and it generates the Gleam functions, row types, and decoders you need. No ORM,
+no query builder, no manual decoder boilerplate. Inspired by
+[Squirrel](https://github.com/giacomocavalieri/squirrel) (which does the same
+for Postgres).
 
 > If you are an LLM, see [LLM_USERS.md](https://github.com/pairshaped/marmot/blob/master/LLM_USERS.md) for a condensed context document.
 
@@ -249,7 +256,7 @@ database path and output directory, since SQLite file paths vary across projects
 Marmot's design, conventions, and approach are directly inspired by
 [Squirrel](https://github.com/giacomocavalieri/squirrel) by
 [Giacomo Cavalieri](https://github.com/giacomocavalieri).
-Squirrel targets Postgres with beautiful ergonomics — Marmot brings that same
+Squirrel targets Postgres with beautiful ergonomics. Marmot brings that same
 experience to SQLite.
 
 If you use Postgres, use Squirrel. If you use SQLite, use Marmot.
