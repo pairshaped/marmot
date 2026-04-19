@@ -33,31 +33,29 @@ fn run_generate(args: List(String)) -> Nil {
 
   let config = project.parse_config(toml_content, args, env_database)
 
-  let db_path = case config.database {
-    option.Some(path) -> path
+  case config.database {
     option.None -> {
       io.println_error(error.to_string(error.DatabaseNotConfigured))
       halt(1)
-      panic as "unreachable"
     }
-  }
-
-  case sqlight.open(db_path) {
-    Ok(db) -> {
-      generate_all(db, config)
-      // Connection cleanup — error is non-actionable
-      let _close_result = sqlight.close(db)
-      Nil
-    }
-    Error(err) -> {
-      io.println_error(
-        error.to_string(error.DatabaseOpenError(
-          path: db_path,
-          message: err.message,
-        )),
-      )
-      halt(1)
-    }
+    option.Some(db_path) ->
+      case sqlight.open(db_path) {
+        Ok(db) -> {
+          generate_all(db, config)
+          // Connection cleanup — error is non-actionable
+          let _close_result = sqlight.close(db)
+          Nil
+        }
+        Error(err) -> {
+          io.println_error(
+            error.to_string(error.DatabaseOpenError(
+              path: db_path,
+              message: err.message,
+            )),
+          )
+          halt(1)
+        }
+      }
   }
 }
 
@@ -258,42 +256,40 @@ fn run_check(args: List(String)) -> Nil {
     |> result.unwrap("")
   let config = project.parse_config(toml_content, args, env_database)
 
-  let db_path = case config.database {
-    option.Some(path) -> path
+  case config.database {
     option.None -> {
       io.println_error(error.to_string(error.DatabaseNotConfigured))
       halt(1)
-      panic as "unreachable"
     }
-  }
-
-  case sqlight.open(db_path) {
-    Ok(db) -> {
-      let stale = check_all(db, config)
-      // Connection cleanup — error is non-actionable
-      let _close_result = sqlight.close(db)
-      case stale {
-        [] -> {
-          io.println("All generated code is up to date.")
-          halt(0)
+    option.Some(db_path) ->
+      case sqlight.open(db_path) {
+        Ok(db) -> {
+          let stale = check_all(db, config)
+          // Connection cleanup — error is non-actionable
+          let _close_result = sqlight.close(db)
+          case stale {
+            [] -> {
+              io.println("All generated code is up to date.")
+              halt(0)
+            }
+            files -> {
+              io.println_error(
+                error.to_string(error.StaleGeneratedCode(files: files)),
+              )
+              halt(1)
+            }
+          }
         }
-        files -> {
+        Error(err) -> {
           io.println_error(
-            error.to_string(error.StaleGeneratedCode(files: files)),
+            error.to_string(error.DatabaseOpenError(
+              path: db_path,
+              message: err.message,
+            )),
           )
           halt(1)
         }
       }
-    }
-    Error(err) -> {
-      io.println_error(
-        error.to_string(error.DatabaseOpenError(
-          path: db_path,
-          message: err.message,
-        )),
-      )
-      halt(1)
-    }
   }
 }
 
