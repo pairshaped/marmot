@@ -4,6 +4,7 @@ import gleam/string
 import marmot/internal/query.{
   type Column, type ColumnType, type Parameter, type Query, BitArrayType,
   BoolType, DateType, FloatType, IntType, StringType, TimestampType,
+  safe_name,
 }
 
 /// Generate the complete Gleam source for a single query function,
@@ -23,9 +24,15 @@ pub fn generate_module(queries: List(Query)) -> String {
       list.any(q.columns, fn(c) { c.column_type == DateType })
       || list.any(q.parameters, fn(p) { p.column_type == DateType })
     })
-  let helpers = case needs_date {
-    True -> "\n\n" <> date_helpers()
-    False -> ""
+  let needs_timestamp =
+    list.any(queries, fn(q) {
+      list.any(q.parameters, fn(p) { p.column_type == TimestampType })
+    })
+  let helpers = case needs_date, needs_timestamp {
+    True, True -> "\n\n" <> timestamp_helpers() <> "\n\n" <> date_helpers()
+    True, False -> "\n\n" <> date_helpers()
+    False, True -> "\n\n" <> timestamp_helpers()
+    False, False -> ""
   }
   let functions =
     queries
@@ -79,7 +86,7 @@ fn generate_row_type(q: Query) -> String {
         True -> "Option(" <> query.gleam_type(col.column_type) <> ")"
         False -> query.gleam_type(col.column_type)
       }
-      "    " <> col.name <> ": " <> type_str <> ","
+      "    " <> safe_name(col.name) <> ": " <> type_str <> ","
     })
     |> string.join("\n")
   "pub type "
@@ -143,7 +150,7 @@ fn generate_param_list(params: List(Parameter)) -> String {
     _ ->
       params
       |> list.map(fn(p) {
-        ", " <> p.name <> ": " <> query.gleam_type(p.column_type)
+        ", " <> safe_name(p.name) <> ": " <> query.gleam_type(p.column_type)
       })
       |> string.join("")
   }
@@ -151,7 +158,7 @@ fn generate_param_list(params: List(Parameter)) -> String {
 
 fn generate_with_args(params: List(Parameter)) -> String {
   params
-  |> list.map(fn(p) { sqlight_encoder(p.name, p.column_type) })
+  |> list.map(fn(p) { sqlight_encoder(safe_name(p.name), p.column_type) })
   |> string.join(", ")
 }
 
@@ -163,12 +170,7 @@ fn sqlight_encoder(name: String, col_type: ColumnType) -> String {
     BitArrayType -> "sqlight.blob(" <> name <> ")"
     BoolType -> "sqlight.bool(" <> name <> ")"
     TimestampType -> {
-      // Convert Timestamp to Unix seconds int for storage
-      let expr =
-        "{ let #(s, _) = timestamp.to_unix_seconds_and_nanoseconds("
-        <> name
-        <> ") s }"
-      "sqlight.int(" <> expr <> ")"
+      "sqlight.int(timestamp_to_int(" <> name <> "))"
     }
     DateType -> {
       // Convert Date to ISO 8601 text for storage
@@ -199,7 +201,7 @@ fn generate_decoder(q: Query) -> String {
   let constructor_args =
     q.columns
     |> list.map(fn(col) {
-      let name = col.name
+      let name = safe_name(col.name)
       case col.column_type {
         TimestampType ->
           case col.nullable {
@@ -242,9 +244,10 @@ fn generate_decoder(q: Query) -> String {
 }
 
 fn decoder_var_name(col: Column) -> String {
+  let name = safe_name(col.name)
   case col.column_type {
-    TimestampType | DateType -> col.name <> "_raw"
-    _ -> col.name
+    TimestampType | DateType -> name <> "_raw"
+    _ -> name
   }
 }
 
@@ -278,6 +281,13 @@ fn collapse_whitespace(s: String) -> String {
   |> string.split(" ")
   |> list.filter(fn(part) { part != "" })
   |> string.join(" ")
+}
+
+fn timestamp_helpers() -> String {
+  "fn timestamp_to_int(ts: Timestamp) -> Int {
+  let #(s, _) = timestamp.to_unix_seconds_and_nanoseconds(ts)
+  s
+}"
 }
 
 fn date_helpers() -> String {

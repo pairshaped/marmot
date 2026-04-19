@@ -42,10 +42,15 @@ pub fn gleam_type(column_type: ColumnType) -> String {
 }
 
 pub fn parse_sqlite_type(raw: String) -> Result(ColumnType, Nil) {
-  case string.uppercase(raw) {
+  // Strip parenthesized parameters like VARCHAR(255) or DECIMAL(10,2)
+  let base_type = case string.split_once(raw, "(") {
+    Ok(#(base, _)) -> string.trim(base)
+    Error(_) -> raw
+  }
+  case string.uppercase(base_type) {
     "INTEGER" | "INT" -> Ok(IntType)
-    "REAL" | "FLOAT" | "DOUBLE" -> Ok(FloatType)
-    "TEXT" | "VARCHAR" | "CHAR" -> Ok(StringType)
+    "REAL" | "FLOAT" | "DOUBLE" | "DECIMAL" | "NUMERIC" -> Ok(FloatType)
+    "TEXT" | "VARCHAR" | "CHAR" | "NVARCHAR" | "NCHAR" | "CLOB" -> Ok(StringType)
     "BLOB" -> Ok(BitArrayType)
     "BOOLEAN" | "BOOL" -> Ok(BoolType)
     "TIMESTAMP" | "DATETIME" -> Ok(TimestampType)
@@ -55,7 +60,24 @@ pub fn parse_sqlite_type(raw: String) -> Result(ColumnType, Nil) {
 }
 
 pub fn function_name(filename: String) -> String {
-  string.replace(filename, ".sql", "")
+  case string.ends_with(filename, ".sql") {
+    True -> string.drop_end(filename, 4)
+    False -> filename
+  }
+}
+
+/// Gleam reserved words that cannot be used as identifiers
+const reserved_words = [
+  "as", "assert", "auto", "case", "const", "echo", "external", "fn", "if",
+  "import", "let", "macro", "opaque", "panic", "pub", "test", "todo", "type",
+  "use",
+]
+
+pub fn safe_name(name: String) -> String {
+  case list.contains(reserved_words, name) {
+    True -> name <> "_"
+    False -> name
+  }
 }
 
 pub fn row_type_name(filename: String) -> String {

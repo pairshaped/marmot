@@ -1,0 +1,26 @@
+---
+version: 1.5.5
+title: codegen reserved word column
+---
+pub type FindByTypeRow {
+  FindByTypeRow(
+    id: Int,
+    type_: String,
+  )
+}
+
+pub fn find_by_type(db: sqlight.Connection, type_: String) {
+  sqlight.query(
+    "SELECT id, type FROM items WHERE type = ?",
+    on: db,
+    with: [sqlight.text(type_)],
+    expecting: {
+      use id <- decode.field(0, decode.int)
+      use type_ <- decode.field(1, decode.string)
+      decode.success(FindByTypeRow(
+        id:,
+        type_:,
+      ))
+    },
+  )
+}

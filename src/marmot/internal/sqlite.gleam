@@ -233,18 +233,25 @@ fn extract_returning_columns(
   }
 }
 
-/// Parse RETURNING column names from SQL
+/// Parse RETURNING column names from SQL, handling aliases (e.g., "id AS user_id")
 fn parse_returning_columns(sql: String) -> List(String) {
   let upper = string.uppercase(sql)
   case string.split_once(upper, "RETURNING") {
-    Ok(#(_, rest)) -> {
-      // Get the original case portion after RETURNING
-      let offset = string.length(sql) - string.length(rest)
+    Ok(#(before, _)) -> {
+      let offset = string.length(before) + 9
+      // "RETURNING" is 9 chars
       let original_rest = string.drop_start(sql, offset)
       original_rest
       |> string.trim
       |> string.split(",")
-      |> list.map(string.trim)
+      |> list.map(fn(col) {
+        let trimmed = string.trim(col)
+        // Handle "expr AS alias" — use the alias as the column name
+        case string.split_once(string.uppercase(trimmed), " AS ") {
+          Ok(#(_, alias)) -> string.trim(alias)
+          Error(_) -> trimmed
+        }
+      })
     }
     Error(_) -> []
   }
@@ -364,18 +371,35 @@ fn extract_parameters(
     list.filter(opcodes, fn(op) { op.opcode == "Variable" })
     |> list.sort(fn(a, b) { int.compare(a.p1, b.p1) })
 
-  case list.length(variable_ops) {
+  let param_count = list.length(variable_ops)
+  case param_count {
     0 -> []
     _ -> {
       let stmt_type = classify_statement(sql)
+      let opcode_fallback = fn() {
+        list.map(variable_ops, fn(var_op) {
+          infer_parameter_type(var_op, opcodes, cursor_table, table_schemas)
+        })
+      }
 
       case stmt_type {
-        Insert -> extract_insert_parameters(table_schemas, sql)
-        Update -> extract_update_parameters(table_schemas, sql)
-        _ ->
-          list.map(variable_ops, fn(var_op) {
-            infer_parameter_type(var_op, opcodes, cursor_table, table_schemas)
-          })
+        Insert -> {
+          let parsed = extract_insert_parameters(table_schemas, sql)
+          // If the string parser's parameter count doesn't match actual
+          // placeholders (e.g. INSERT...SELECT), fall back to EXPLAIN opcodes
+          case list.length(parsed) == param_count {
+            True -> parsed
+            False -> opcode_fallback()
+          }
+        }
+        Update -> {
+          let parsed = extract_update_parameters(table_schemas, sql)
+          case list.length(parsed) == param_count {
+            True -> parsed
+            False -> opcode_fallback()
+          }
+        }
+        _ -> opcode_fallback()
       }
     }
   }
@@ -555,52 +579,36 @@ fn resolve_column_to_parameter(
   }
 }
 
-/// Parse the table name from an INSERT statement
-fn parse_insert_table_name(sql: String) -> String {
-  // "INSERT INTO tablename (...)"
+/// Extract the first word after a keyword in SQL (case-insensitive).
+/// Used for parsing table names from INSERT INTO / UPDATE statements.
+fn extract_word_after_keyword(sql: String, keyword: String) -> String {
   let upper = string.uppercase(string.trim(sql))
-  case string.split_once(upper, "INTO") {
-    Ok(#(_, rest)) -> {
-      let trimmed = string.trim(rest)
-      // Take the first word (table name)
-      case string.split_once(trimmed, " ") {
-        Ok(#(_table_upper, _)) -> {
-          // Get the original-case version
-          let offset = string.length(sql) - string.length(string.trim(rest))
-          let original_rest = string.drop_start(string.trim(sql), offset)
-          case string.split_once(original_rest, " ") {
-            Ok(#(table, _)) -> table
-            Error(_) -> original_rest
+  let upper_keyword = string.uppercase(keyword)
+  case string.split_once(upper, upper_keyword) {
+    Ok(#(before, _)) -> {
+      let offset = string.length(before) + string.length(upper_keyword)
+      let rest = string.drop_start(string.trim(sql), offset) |> string.trim
+      case string.split_once(rest, " ") {
+        Ok(#(word, _)) -> word
+        Error(_) ->
+          case string.split_once(rest, "(") {
+            Ok(#(word, _)) -> string.trim(word)
+            Error(_) -> rest
           }
-        }
-        Error(_) -> trimmed
       }
     }
     Error(_) -> ""
   }
 }
 
+/// Parse the table name from an INSERT statement
+fn parse_insert_table_name(sql: String) -> String {
+  extract_word_after_keyword(sql, "INTO")
+}
+
 /// Parse table name from UPDATE statement
 fn parse_update_table_name(sql: String) -> String {
-  // "UPDATE tablename SET ..."
-  let upper = string.uppercase(string.trim(sql))
-  case string.split_once(upper, "UPDATE") {
-    Ok(#(_, rest)) -> {
-      let trimmed = string.trim(rest)
-      case string.split_once(trimmed, " ") {
-        Ok(#(_, _)) -> {
-          let offset = string.length(sql) - string.length(string.trim(rest))
-          let original_rest = string.drop_start(string.trim(sql), offset)
-          case string.split_once(original_rest, " ") {
-            Ok(#(table, _)) -> table
-            Error(_) -> original_rest
-          }
-        }
-        Error(_) -> trimmed
-      }
-    }
-    Error(_) -> ""
-  }
+  extract_word_after_keyword(sql, "UPDATE")
 }
 
 /// Parse SET column names from UPDATE statement
@@ -637,8 +645,9 @@ fn parse_update_set_columns(sql: String) -> List(String) {
 fn parse_where_columns(sql: String) -> List(String) {
   let upper = string.uppercase(sql)
   case string.split_once(upper, "WHERE") {
-    Ok(#(_, rest_upper)) -> {
-      let offset = string.length(sql) - string.length(rest_upper)
+    Ok(#(before_where, _)) -> {
+      let offset = string.length(before_where) + 5
+      // "WHERE" is 5 chars
       let rest = string.drop_start(sql, offset)
       // Get part before RETURNING if present
       let where_part = case
@@ -647,13 +656,8 @@ fn parse_where_columns(sql: String) -> List(String) {
         Ok(#(before, _)) -> string.slice(rest, 0, string.length(before))
         Error(_) -> rest
       }
-      // Parse "col1 = ? AND col2 > ?" -> ["col1", "col2"]
-      where_part
-      |> string.replace("AND", ",")
-      |> string.replace("and", ",")
-      |> string.replace("OR", ",")
-      |> string.replace("or", ",")
-      |> string.split(",")
+      // Replace AND/OR with commas (case-insensitive) to split conditions
+      split_where_conditions(where_part)
       |> list.filter_map(fn(part) {
         let trimmed = string.trim(part)
         // Match patterns like "col = ?", "col > ?", "col < ?", etc.
@@ -668,6 +672,48 @@ fn parse_where_columns(sql: String) -> List(String) {
       })
     }
     Error(_) -> []
+  }
+}
+
+/// Split WHERE conditions on AND/OR keywords (case-insensitive)
+fn split_where_conditions(where_part: String) -> List(String) {
+  let delimiter = "\u{0000}"
+  let original_replaced =
+    replace_keyword_ci(where_part, " AND ", delimiter)
+    |> replace_keyword_ci(" OR ", delimiter)
+  string.split(original_replaced, delimiter)
+}
+
+/// Case-insensitive keyword replacement
+fn replace_keyword_ci(input: String, keyword: String, replacement: String) -> String {
+  let upper_input = string.uppercase(input)
+  let upper_keyword = string.uppercase(keyword)
+  replace_keyword_ci_loop(input, upper_input, upper_keyword, replacement, "")
+}
+
+fn replace_keyword_ci_loop(
+  original: String,
+  upper: String,
+  keyword: String,
+  replacement: String,
+  acc: String,
+) -> String {
+  case string.split_once(upper, keyword) {
+    Ok(#(before, after)) -> {
+      let before_len = string.length(before)
+      let keyword_len = string.length(keyword)
+      let original_before = string.slice(original, 0, before_len)
+      let original_after =
+        string.drop_start(original, before_len + keyword_len)
+      replace_keyword_ci_loop(
+        original_after,
+        after,
+        keyword,
+        replacement,
+        acc <> original_before <> replacement,
+      )
+    }
+    Error(_) -> acc <> original
   }
 }
 

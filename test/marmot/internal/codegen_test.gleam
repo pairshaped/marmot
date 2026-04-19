@@ -276,6 +276,39 @@ pub fn codegen_exec_only_module_test() {
   |> birdie.snap(title: "codegen exec only module")
 }
 
+pub fn codegen_reserved_word_column_test() {
+  let q =
+    Query(
+      name: "find_by_type",
+      sql: "SELECT id, type FROM items WHERE type = ?",
+      path: "src/app/sql/find_by_type.sql",
+      parameters: [Parameter(name: "type", column_type: StringType)],
+      columns: [
+        Column(name: "id", column_type: IntType, nullable: False),
+        Column(name: "type", column_type: StringType, nullable: False),
+      ],
+    )
+  codegen.generate_function(q)
+  |> birdie.snap(title: "codegen reserved word column")
+}
+
+pub fn codegen_timestamp_param_module_test() {
+  let queries = [
+    Query(
+      name: "update_last_seen",
+      sql: "UPDATE users SET last_seen = ? WHERE id = ?",
+      path: "src/app/sql/update_last_seen.sql",
+      parameters: [
+        Parameter(name: "last_seen", column_type: TimestampType),
+        Parameter(name: "id", column_type: IntType),
+      ],
+      columns: [],
+    ),
+  ]
+  codegen.generate_module(queries)
+  |> birdie.snap(title: "codegen timestamp param module with helper")
+}
+
 pub fn codegen_date_module_test() {
   let queries = [
     Query(

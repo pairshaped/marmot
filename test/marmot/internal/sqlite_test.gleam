@@ -199,6 +199,89 @@ pub fn introspect_query_update_no_return_test() {
   ] = result.parameters
 }
 
+// --- Demonstrates string-based SQL parsing limitation ---
+// This test shows what ACTUALLY happens with a subquery in WHERE.
+// The EXPLAIN-based approach infers the parameter correctly,
+// but parse_where_columns would fail on more complex DELETE/UPDATE patterns.
+pub fn introspect_subquery_in_where_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE bans (user_id INTEGER NOT NULL, reason TEXT NOT NULL)",
+      on: db,
+    )
+  // SELECT with subquery — uses EXPLAIN opcode path, should work
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id, name FROM users WHERE id IN (SELECT user_id FROM bans WHERE reason = ?)",
+    )
+  // EXPLAIN-based inference works: finds the comparison context
+  let assert [Column(name: "id", ..), Column(name: "name", ..)] =
+    result.columns
+  let assert [Parameter(name: "reason", column_type: StringType)] =
+    result.parameters
+}
+
+// This demonstrates the string-parsing limitation:
+// An INSERT with a subquery instead of VALUES is parsed incorrectly
+// because parse_insert_columns splits on the first "(" / ")"
+pub fn introspect_insert_with_subquery_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE logs (user_id INTEGER NOT NULL, action TEXT NOT NULL)",
+      on: db,
+    )
+  // INSERT ... SELECT with a parameter in the subquery WHERE
+  // parse_insert_columns("INSERT INTO logs (user_id, action) SELECT id, 'login' FROM users WHERE name = ?")
+  // will extract columns ["user_id", "action"] — correct!
+  // But it then maps the ? parameter to "user_id" (first column), which is wrong.
+  // The actual parameter is "name" from the WHERE clause.
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "INSERT INTO logs (user_id, action) SELECT id, 'login' FROM users WHERE name = ?",
+    )
+  // String parser would produce 2 params (one per INSERT column), but
+  // there's only 1 `?`. The mismatch triggers fallback to EXPLAIN opcodes,
+  // which correctly identifies 1 parameter.
+  let assert 1 = list.length(result.parameters)
+}
+
+pub fn introspect_query_mixed_case_where_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT NOT NULL,
+        age INTEGER NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id FROM users WHERE name = ? And age > ?",
+    )
+  let assert 2 = list.length(result.parameters)
+  let assert [
+    Parameter(name: "name", column_type: StringType),
+    Parameter(name: "age", column_type: IntType),
+  ] = result.parameters
+}
+
 pub fn introspect_query_update_returning_test() {
   use db <- sqlight.with_connection(":memory:")
   let assert Ok(_) =

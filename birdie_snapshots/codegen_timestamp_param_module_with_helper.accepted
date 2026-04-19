@@ -1,7 +1,16 @@
 ---
 version: 1.5.5
-title: codegen timestamp parameter
+title: codegen timestamp param module with helper
 ---
+import gleam/dynamic/decode
+import gleam/time/timestamp.{type Timestamp}
+import sqlight
+
+fn timestamp_to_int(ts: Timestamp) -> Int {
+  let #(s, _) = timestamp.to_unix_seconds_and_nanoseconds(ts)
+  s
+}
+
 pub fn update_last_seen(db: sqlight.Connection, last_seen: timestamp.Timestamp, id: Int) {
   sqlight.query(
     "UPDATE users SET last_seen = ? WHERE id = ?",
@@ -10,3 +19,4 @@ pub fn update_last_seen(db: sqlight.Connection, last_seen: timestamp.Timestamp, 
     expecting: decode.success(Nil),
   )
 }
+

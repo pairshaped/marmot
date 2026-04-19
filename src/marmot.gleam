@@ -183,7 +183,7 @@ fn validate_sql(trimmed: String, file_path: String) -> Result(String, Nil) {
           )
           Error(Nil)
         }
-        False -> Ok(sql)
+        False -> Ok(stripped)
       }
     }
   }

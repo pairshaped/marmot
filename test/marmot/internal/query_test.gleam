@@ -38,10 +38,37 @@ pub fn sqlite_type_unknown_test() {
   let assert Error(Nil) = query.parse_sqlite_type("CUSTOM_TYPE")
 }
 
+pub fn sqlite_type_parameterized_test() {
+  let assert Ok(StringType) = query.parse_sqlite_type("VARCHAR(255)")
+  let assert Ok(FloatType) = query.parse_sqlite_type("DECIMAL(10,2)")
+  let assert Ok(IntType) = query.parse_sqlite_type("INTEGER(8)")
+  let assert Ok(StringType) = query.parse_sqlite_type("NVARCHAR(100)")
+  let assert Ok(FloatType) = query.parse_sqlite_type("NUMERIC(5,2)")
+}
+
+pub fn safe_name_reserved_word_test() {
+  let assert "type_" = query.safe_name("type")
+  let assert "let_" = query.safe_name("let")
+  let assert "case_" = query.safe_name("case")
+  let assert "fn_" = query.safe_name("fn")
+  let assert "use_" = query.safe_name("use")
+}
+
+pub fn safe_name_non_reserved_test() {
+  let assert "name" = query.safe_name("name")
+  let assert "id" = query.safe_name("id")
+  let assert "email" = query.safe_name("email")
+}
+
 pub fn function_name_from_filename_test() {
   let assert "find_user" = query.function_name("find_user.sql")
   let assert "list_all_posts" = query.function_name("list_all_posts.sql")
   let assert "delete_user" = query.function_name("delete_user.sql")
+}
+
+pub fn function_name_preserves_sql_in_name_test() {
+  let assert "fix_sql_injection" = query.function_name("fix_sql_injection.sql")
+  let assert "sql_backup" = query.function_name("sql_backup.sql")
 }
 
 pub fn row_type_name_from_filename_test() {
