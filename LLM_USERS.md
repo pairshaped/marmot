@@ -1,0 +1,89 @@
+# Marmot Context
+
+Marmot is a Gleam build tool that reads `.sql` files, introspects a live SQLite database for type information, and generates type-safe Gleam functions targeting `sqlight`. Inspired by [Squirrel](https://github.com/giacomocavalieri/squirrel) (which does the same for Postgres).
+
+## Quick start
+
+```sh
+gleam add marmot --dev
+gleam add sqlight
+gleam run -m marmot
+```
+
+Write SQL in `src/**/sql/*.sql`, one query per file. Filename becomes the function name.
+
+## How it works
+
+1. Reads config: `DATABASE_URL` env > `--database` CLI flag > `gleam.toml [marmot]`
+2. Opens the SQLite file, scans `src/` for `sql/` directories
+3. For each `.sql` file: reads SQL, introspects via `PRAGMA table_info` + `EXPLAIN`
+4. Generates a `sql.gleam` module per `sql/` directory with typed functions + decoders
+5. `gleam run -m marmot check` compares generated output to existing files (CI mode)
+
+## Project structure
+
+```
+src/
+  marmot.gleam                    -- CLI entry point (main, run_generate, run_check)
+  marmot/
+    internal/
+      error.gleam                 -- MarmotError type + to_string (pretty-printed errors)
+      query.gleam                 -- ColumnType, Column, Parameter, Query types + helpers
+      project.gleam               -- Config parsing, sql/ directory scanning, output paths
+      sqlite.gleam                -- PRAGMA + EXPLAIN introspection (QueryInfo)
+      codegen.gleam               -- Gleam source generation (functions, row types, decoders)
+```
+
+## Type mappings
+
+| SQLite type | Gleam type | Decoder | Encoder |
+|---|---|---|---|
+| `INTEGER`/`INT` | `Int` | `decode.int` | `sqlight.int` |
+| `REAL`/`FLOAT`/`DOUBLE` | `Float` | `decode.float` | `sqlight.float` |
+| `TEXT`/`VARCHAR`/`CHAR` | `String` | `decode.string` | `sqlight.text` |
+| `BLOB` | `BitArray` | `decode.bit_array` | `sqlight.blob` |
+| `BOOLEAN`/`BOOL` | `Bool` | `sqlight.decode_bool()` | `sqlight.bool` |
+| `TIMESTAMP`/`DATETIME` | `timestamp.Timestamp` | `decode.int` -> `from_unix_seconds` | `to_unix_seconds` -> `sqlight.int` |
+| `DATE` | `calendar.Date` | `decode.string` -> `parse_date` | `date_to_string` -> `sqlight.text` |
+| nullable column | `Option(T)` | `decode.optional(...)` | -- |
+
+## Key design decisions
+
+- **Live SQLite introspection**: connects to real `.db` file, not static analysis
+- **EXPLAIN-based type inference**: traces opcodes to map result columns and `?` params back to source table columns
+- **No external tools**: no `sqlc`, no `sqlite3` CLI, just `sqlight` (Gleam NIF)
+- **Convention over configuration**: follows Squirrel's conventions (one query per file, `sql/` dirs, filename = function name)
+- **Generated code calls sqlight directly**: no tuples, no intermediate types
+
+## Generated code patterns
+
+**SELECT with decoder:**
+```gleam
+pub type FindUserRow { FindUserRow(id: Int, name: String) }
+pub fn find_user(db: sqlight.Connection, username: String) {
+  sqlight.query("...", on: db, with: [sqlight.text(username)], expecting: { ... })
+}
+```
+
+**INSERT/UPDATE/DELETE without RETURNING:**
+```gleam
+pub fn delete_user(db: sqlight.Connection, id: Int) {
+  sqlight.query("...", on: db, with: [sqlight.int(id)], expecting: decode.success(Nil))
+}
+```
+
+**Module:** imports are conditional (only include `decode`, `option`, `timestamp`, `calendar` when needed). Date modules get `parse_date`/`date_to_string` private helpers.
+
+## Known limitations
+
+- Table names containing SQL keywords (`RETURNING`, `INTO`) confuse the string-based SQL parser
+- `INSERT INTO t VALUES (?, ?)` without explicit column list degrades parameter inference
+- Complex expressions (subqueries, CTEs, `COALESCE`) may not infer types; use `CAST`
+
+## Dependencies
+
+**Runtime** (for projects using generated code): `sqlight`, `gleam_time` (if timestamps/dates)
+
+**Dev** (marmot itself): `sqlight`, `simplifile`, `tom`, `argv`, `gleam_time`
+
+**Test**: `gleeunit`, `birdie` (snapshots), `glinter` (linting)
