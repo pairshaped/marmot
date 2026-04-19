@@ -1,0 +1,18 @@
+name = "marmot"
+version = "0.1.0"
+description = "Type-safe SQL for SQLite in Gleam, inspired by Squirrel"
+licences = ["MIT"]
+repository = { type = "github", user = "pairshaped", repo = "marmot" }
+target = "erlang"
+
+[dependencies]
+gleam_stdlib = ">= 0.34.0 and < 2.0.0"
+sqlight = ">= 1.0.0 and < 2.0.0"
+simplifile = ">= 2.0.0 and < 3.0.0"
+tom = ">= 1.0.0 and < 2.0.0"
+argv = ">= 1.0.0 and < 2.0.0"
+gleam_time = ">= 1.0.0 and < 2.0.0"
+
+[dev-dependencies]
+gleeunit = ">= 1.0.0 and < 2.0.0"
+birdie = ">= 1.0.0 and < 2.0.0"
