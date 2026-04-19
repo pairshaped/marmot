@@ -9,10 +9,18 @@ target = "erlang"
 gleam_stdlib = ">= 0.34.0 and < 2.0.0"
 sqlight = ">= 1.0.0 and < 2.0.0"
 simplifile = ">= 2.0.0 and < 3.0.0"
-tom = ">= 1.0.0 and < 2.0.0"
+tom = ">= 1.0.0 and < 3.0.0"
 argv = ">= 1.0.0 and < 2.0.0"
 gleam_time = ">= 1.0.0 and < 2.0.0"
 
 [dev-dependencies]
 gleeunit = ">= 1.0.0 and < 2.0.0"
-birdie = ">= 1.0.0 and < 2.0.0"
+birdie = ">= 1.5.5 and < 2.0.0"
+glinter = ">= 2.15.0 and < 3.0.0"
+
+[tools.glinter.rules]
+label_possible = "off"
+unused_exports = "off"
+thrown_away_error = "off"
+deep_nesting = "off"
+error_context_lost = "off"
