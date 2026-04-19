@@ -18,11 +18,20 @@ pub fn generate_function(q: Query) -> String {
 /// Generate a complete module from a list of queries.
 pub fn generate_module(queries: List(Query)) -> String {
   let imports = generate_imports(queries)
+  let needs_date =
+    list.any(queries, fn(q) {
+      list.any(q.columns, fn(c) { c.column_type == DateType })
+      || list.any(q.parameters, fn(p) { p.column_type == DateType })
+    })
+  let helpers = case needs_date {
+    True -> "\n\n" <> date_helpers()
+    False -> ""
+  }
   let functions =
     queries
     |> list.map(generate_function)
     |> string.join("\n\n")
-  imports <> "\n\n" <> functions <> "\n"
+  imports <> helpers <> "\n\n" <> functions <> "\n"
 }
 
 fn generate_imports(queries: List(Query)) -> String {
@@ -44,9 +53,14 @@ fn generate_imports(queries: List(Query)) -> String {
   let imports = [
     #(True, "import sqlight"),
     #(needs_decode, "import gleam/dynamic/decode"),
+    #(needs_date, "import gleam/int"),
     #(needs_option, "import gleam/option.{type Option}"),
+    #(needs_date, "import gleam/string"),
     #(needs_timestamp, "import gleam/time/timestamp.{type Timestamp}"),
-    #(needs_date, "import gleam/time/calendar.{type Date}"),
+    #(
+      needs_date,
+      "import gleam/time/calendar.{type Date, type Month, month_from_int, month_to_int}",
+    ),
   ]
 
   imports
@@ -263,4 +277,21 @@ fn collapse_whitespace(s: String) -> String {
     True -> collapse_whitespace(string.replace(s, "  ", " "))
     False -> s
   }
+}
+
+fn date_helpers() -> String {
+  "fn parse_date(iso: String) -> Date {
+  let assert [year_str, month_str, day_str] = string.split(iso, \"-\")
+  let assert Ok(year) = int.parse(year_str)
+  let assert Ok(month_int) = int.parse(month_str)
+  let assert Ok(month) = month_from_int(month_int)
+  let assert Ok(day) = int.parse(day_str)
+  Date(year:, month:, day:)
+}
+
+fn date_to_string(date: Date) -> String {
+  let month_str = int.to_string(month_to_int(date.month)) |> string.pad_start(2, \"0\")
+  let day_str = int.to_string(date.day) |> string.pad_start(2, \"0\")
+  int.to_string(date.year) <> \"-\" <> month_str <> \"-\" <> day_str
+}"
 }

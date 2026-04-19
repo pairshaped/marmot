@@ -275,3 +275,20 @@ pub fn codegen_exec_only_module_test() {
   codegen.generate_module(queries)
   |> birdie.snap(title: "codegen exec only module")
 }
+
+pub fn codegen_date_module_test() {
+  let queries = [
+    Query(
+      name: "find_event",
+      sql: "SELECT id, event_date FROM events WHERE id = ?",
+      path: "src/app/sql/find_event.sql",
+      parameters: [Parameter(name: "id", column_type: IntType)],
+      columns: [
+        Column(name: "id", column_type: IntType, nullable: False),
+        Column(name: "event_date", column_type: DateType, nullable: False),
+      ],
+    ),
+  ]
+  codegen.generate_module(queries)
+  |> birdie.snap(title: "codegen date module with helpers")
+}
