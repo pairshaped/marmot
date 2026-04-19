@@ -1,0 +1,9 @@
+---
+version: 1.5.0
+title: database not configured error
+---
+error: Could not connect to SQLite database
+  No database configured. Set one of:
+    • DATABASE_URL environment variable
+    • database field in [marmot] section of gleam.toml
+    • --database flag

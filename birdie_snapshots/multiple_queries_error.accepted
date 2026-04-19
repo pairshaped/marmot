@@ -1,0 +1,10 @@
+---
+version: 1.5.0
+title: multiple queries error
+---
+error: Multiple queries in one file
+  ┌─ src/app/sql/multi.sql
+  │
+  │ Each .sql file must contain exactly one query
+  │
+  hint: Split this file into separate .sql files, one query per file

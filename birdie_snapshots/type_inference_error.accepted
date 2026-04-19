@@ -1,0 +1,10 @@
+---
+version: 1.5.0
+title: type inference error
+---
+error: Could not infer type
+  ┌─ src/app/sql/complex.sql
+  │
+  │ Could not determine the type of: coalesce(a.foo, b.bar)
+  │
+  hint: Consider using a CAST expression: CAST(... AS TEXT)

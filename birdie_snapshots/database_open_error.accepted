@@ -1,0 +1,7 @@
+---
+version: 1.5.0
+title: database open error
+---
+error: Could not open SQLite database
+  Path: /tmp/missing.sqlite
+  unable to open database file

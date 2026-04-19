@@ -1,0 +1,8 @@
+---
+version: 1.5.0
+title: empty sql file error
+---
+error: Empty SQL file
+  ┌─ src/app/sql/empty.sql
+  │
+  │ This file contains no SQL query

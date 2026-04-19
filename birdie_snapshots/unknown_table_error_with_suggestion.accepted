@@ -1,0 +1,9 @@
+---
+version: 1.5.0
+title: unknown table error with suggestion
+---
+error: Unknown table
+  ┌─ src/app/sql/find_user.sql
+  │
+  │ Table "usres" does not exist
+  hint: Did you mean "users"?

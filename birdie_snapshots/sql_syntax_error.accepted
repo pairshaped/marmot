@@ -1,0 +1,8 @@
+---
+version: 1.5.0
+title: sql syntax error
+---
+error: SQL error
+  ┌─ src/app/sql/find_user.sql
+  │
+  │ near "SELEC": syntax error

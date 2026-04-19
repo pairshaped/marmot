@@ -1,0 +1,9 @@
+---
+version: 1.5.0
+title: unknown column error with suggestion
+---
+error: Unknown column
+  ┌─ src/app/sql/find_user.sql
+  │
+  │ Column "naem" does not exist on table "users"
+  hint: Did you mean "name"?

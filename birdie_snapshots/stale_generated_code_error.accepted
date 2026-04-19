@@ -1,0 +1,11 @@
+---
+version: 1.5.0
+title: stale generated code error
+---
+error: Generated code is out of date
+
+  These files need regeneration:
+    • src/app/sql.gleam
+    • src/other/sql.gleam
+
+  Run `gleam run -m marmot` to update.
