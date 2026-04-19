@@ -1,5 +1,281 @@
+import argv
+import gleam/dynamic.{type Dynamic}
+import gleam/dynamic/decode
+import gleam/int
 import gleam/io
+import gleam/list
+import gleam/option.{type Option}
+import gleam/result
+import gleam/string
+import marmot/internal/codegen
+import marmot/internal/error
+import marmot/internal/project
+import marmot/internal/query
+import marmot/internal/sqlite
+import simplifile
+import sqlight
 
-pub fn main() -> Nil {
-  io.println("Hello from marmot!")
+pub fn main() {
+  let args = argv.load().arguments
+
+  case args {
+    ["check"] -> run_check()
+    _ -> run_generate()
+  }
+}
+
+fn run_generate() {
+  let args = argv.load().arguments
+  let env_database = get_env("DATABASE_URL")
+
+  // Read gleam.toml
+  let toml_content = case simplifile.read("gleam.toml") {
+    Ok(content) -> content
+    Error(_) -> ""
+  }
+
+  let config = project.parse_config(toml_content, args, env_database)
+
+  // Validate database path
+  let db_path = case config.database {
+    option.Some(path) -> path
+    option.None -> {
+      io.println_error(error.to_string(error.DatabaseNotConfigured))
+      halt(1)
+      panic as "unreachable"
+    }
+  }
+
+  // Open database
+  case sqlight.open(db_path) {
+    Ok(db) -> {
+      generate_all(db, config)
+      let _ = sqlight.close(db)
+      Nil
+    }
+    Error(err) -> {
+      io.println_error(
+        error.to_string(error.DatabaseOpenError(
+          path: db_path,
+          message: err.message,
+        )),
+      )
+      halt(1)
+    }
+  }
+}
+
+fn generate_all(db: sqlight.Connection, config: project.Config) {
+  let sql_dirs = project.find_sql_directories("src")
+  case sql_dirs {
+    [] -> {
+      io.println("No sql/ directories found under src/")
+    }
+    dirs -> {
+      list.each(dirs, fn(dir) { generate_for_directory(db, dir, config) })
+      io.println(
+        "Generated " <> int.to_string(list.length(dirs)) <> " module(s)",
+      )
+    }
+  }
+}
+
+fn generate_for_directory(
+  db: sqlight.Connection,
+  sql_dir: String,
+  config: project.Config,
+) {
+  let sql_files = project.list_sql_files(sql_dir)
+  let queries =
+    list.filter_map(sql_files, fn(file_path) { process_sql_file(db, file_path) })
+
+  case queries {
+    [] -> Nil
+    _ -> {
+      let output = project.output_path(sql_dir, config.output)
+      let module_content = codegen.generate_module(queries)
+
+      // Ensure output directory exists
+      case string.split(output, "/") |> list.reverse {
+        [_, ..parent_parts] -> {
+          let parent = parent_parts |> list.reverse |> string.join("/")
+          case parent {
+            "" -> Nil
+            dir -> {
+              let _ = simplifile.create_directory_all(dir)
+              Nil
+            }
+          }
+        }
+        _ -> Nil
+      }
+
+      case simplifile.write(output, module_content) {
+        Ok(_) -> io.println("  wrote " <> output)
+        Error(_) -> io.println_error("error: Could not write to " <> output)
+      }
+    }
+  }
+}
+
+fn process_sql_file(
+  db: sqlight.Connection,
+  file_path: String,
+) -> Result(query.Query, Nil) {
+  case simplifile.read(file_path) {
+    Ok(content) -> {
+      let trimmed = string.trim(content)
+      case trimmed {
+        "" -> {
+          io.println_error(error.to_string(error.EmptySqlFile(path: file_path)))
+          Error(Nil)
+        }
+        sql -> {
+          // Check for multiple queries (semicolons not at end)
+          // string.trim_end only trims whitespace in Gleam, so manually strip trailing semicolon
+          let stripped = case string.ends_with(string.trim(sql), ";") {
+            True ->
+              sql
+              |> string.trim
+              |> string.drop_end(1)
+              |> string.trim
+            False -> string.trim(sql)
+          }
+          case string.contains(stripped, ";") {
+            True -> {
+              io.println_error(
+                error.to_string(error.MultipleQueries(path: file_path)),
+              )
+              Error(Nil)
+            }
+            False -> {
+              case sqlite.introspect_query(db, sql) {
+                Ok(query_info) -> {
+                  let filename =
+                    file_path
+                    |> string.split("/")
+                    |> list.last
+                    |> result.unwrap("query.sql")
+                  let name = query.function_name(filename)
+                  Ok(query.Query(
+                    name: name,
+                    sql: sql,
+                    path: file_path,
+                    parameters: query_info.parameters,
+                    columns: query_info.columns,
+                  ))
+                }
+                Error(err) -> {
+                  io.println_error(
+                    error.to_string(error.SqlError(
+                      path: file_path,
+                      message: err.message,
+                    )),
+                  )
+                  Error(Nil)
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    Error(_) -> {
+      io.println_error(
+        error.to_string(error.FileReadError(
+          path: file_path,
+          message: "Could not read file",
+        )),
+      )
+      Error(Nil)
+    }
+  }
+}
+
+fn run_check() {
+  let args = argv.load().arguments
+  let env_database = get_env("DATABASE_URL")
+  let toml_content = case simplifile.read("gleam.toml") {
+    Ok(content) -> content
+    Error(_) -> ""
+  }
+  let config = project.parse_config(toml_content, args, env_database)
+
+  let db_path = case config.database {
+    option.Some(path) -> path
+    option.None -> {
+      io.println_error(error.to_string(error.DatabaseNotConfigured))
+      halt(1)
+      panic as "unreachable"
+    }
+  }
+
+  case sqlight.open(db_path) {
+    Ok(db) -> {
+      let stale = check_all(db, config)
+      let _ = sqlight.close(db)
+      case stale {
+        [] -> {
+          io.println("All generated code is up to date.")
+          halt(0)
+        }
+        files -> {
+          io.println_error(
+            error.to_string(error.StaleGeneratedCode(files: files)),
+          )
+          halt(1)
+        }
+      }
+    }
+    Error(err) -> {
+      io.println_error(
+        error.to_string(error.DatabaseOpenError(
+          path: db_path,
+          message: err.message,
+        )),
+      )
+      halt(1)
+    }
+  }
+}
+
+fn check_all(db: sqlight.Connection, config: project.Config) -> List(String) {
+  let sql_dirs = project.find_sql_directories("src")
+  list.filter_map(sql_dirs, fn(dir) {
+    let sql_files = project.list_sql_files(dir)
+    let queries =
+      list.filter_map(sql_files, fn(file_path) {
+        process_sql_file(db, file_path)
+      })
+
+    case queries {
+      [] -> Error(Nil)
+      _ -> {
+        let output = project.output_path(dir, config.output)
+        let expected = codegen.generate_module(queries)
+        let current = case simplifile.read(output) {
+          Ok(file_content) -> file_content
+          Error(_) -> ""
+        }
+        case expected == current {
+          True -> Error(Nil)
+          False -> Ok(output)
+        }
+      }
+    }
+  })
+}
+
+@external(erlang, "erlang", "halt")
+fn halt(code: Int) -> Nil
+
+@external(erlang, "os", "getenv")
+fn getenv_ffi(name: String) -> Dynamic
+
+fn get_env(name: String) -> Option(String) {
+  let raw = getenv_ffi(name)
+  case decode.run(raw, decode.string) {
+    Ok(value) -> option.Some(value)
+    Error(_) -> option.None
+  }
 }
