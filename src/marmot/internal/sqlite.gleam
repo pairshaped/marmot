@@ -9,9 +9,39 @@ import marmot/internal/query.{
 }
 import sqlight.{type Connection}
 
-/// Result of introspecting a query
+/// Result of introspecting a query's structure.
+/// `columns` contains the result columns (empty for INSERT/UPDATE/DELETE without RETURNING).
+/// `parameters` contains the `?` parameter types inferred from comparison context.
 pub type QueryInfo {
   QueryInfo(columns: List(Column), parameters: List(Parameter))
+}
+
+type StatementType {
+  Select
+  Insert
+  Update
+  Delete
+  Other
+}
+
+fn classify_statement(sql: String) -> StatementType {
+  let upper = string.uppercase(string.trim(sql))
+  case string.starts_with(upper, "SELECT") {
+    True -> Select
+    False ->
+      case string.starts_with(upper, "INSERT") {
+        True -> Insert
+        False ->
+          case string.starts_with(upper, "UPDATE") {
+            True -> Update
+            False ->
+              case string.starts_with(upper, "DELETE") {
+                True -> Delete
+                False -> Other
+              }
+          }
+      }
+  }
 }
 
 /// Introspect columns of a table using PRAGMA table_info
@@ -19,7 +49,7 @@ pub fn introspect_columns(
   db: Connection,
   table: String,
 ) -> Result(List(Column), sqlight.Error) {
-  let sql = "PRAGMA table_info(" <> table <> ")"
+  let sql = "PRAGMA table_info(\"" <> quote_identifier(table) <> "\")"
   let decoder = {
     use name <- decode.field(1, decode.string)
     use type_str <- decode.field(2, decode.string)
@@ -114,9 +144,9 @@ pub fn introspect_query(
     })
 
   // Check statement type
-  let upper_sql = string.uppercase(string.trim(sql))
-  let is_insert = string.starts_with(upper_sql, "INSERT")
-  let has_returning = string.contains(upper_sql, "RETURNING")
+  let stmt_type = classify_statement(sql)
+  let is_insert = stmt_type == Insert
+  let has_returning = string.contains(string.uppercase(sql), "RETURNING")
 
   // Determine result columns
   let columns = case has_returning {
@@ -306,9 +336,15 @@ fn make_range(start: Int, count: Int) -> List(Int) {
     True -> []
     False ->
       int.range(from: start, to: start + count, with: [], run: fn(acc, i) {
-        list.append(acc, [i])
+        [i, ..acc]
       })
+      |> list.reverse
   }
+}
+
+/// Escape double quotes in an identifier to prevent SQL injection.
+fn quote_identifier(name: String) -> String {
+  string.replace(name, "\"", "\"\"")
 }
 
 /// Get element at index from a list
@@ -331,25 +367,15 @@ fn extract_parameters(
   case list.length(variable_ops) {
     0 -> []
     _ -> {
-      let upper_sql = string.uppercase(string.trim(sql))
-      let is_insert = string.starts_with(upper_sql, "INSERT")
-      let is_update = string.starts_with(upper_sql, "UPDATE")
+      let stmt_type = classify_statement(sql)
 
-      case is_insert {
-        True -> extract_insert_parameters(table_schemas, sql)
-        False ->
-          case is_update {
-            True -> extract_update_parameters(table_schemas, sql)
-            False ->
-              list.map(variable_ops, fn(var_op) {
-                infer_parameter_type(
-                  var_op,
-                  opcodes,
-                  cursor_table,
-                  table_schemas,
-                )
-              })
-          }
+      case stmt_type {
+        Insert -> extract_insert_parameters(table_schemas, sql)
+        Update -> extract_update_parameters(table_schemas, sql)
+        _ ->
+          list.map(variable_ops, fn(var_op) {
+            infer_parameter_type(var_op, opcodes, cursor_table, table_schemas)
+          })
       }
     }
   }
@@ -706,7 +732,7 @@ fn get_pk_columns(db: Connection) -> Dict(String, String) {
   }
 
   list.fold(tables, dict.new(), fn(acc, table_name) {
-    let sql = "PRAGMA table_info(" <> table_name <> ")"
+    let sql = "PRAGMA table_info(\"" <> quote_identifier(table_name) <> "\")"
     case sqlight.query(sql, on: db, with: [], expecting: pk_decoder) {
       Ok(rows) ->
         case list.find(rows, fn(row) { row.1 > 0 }) {

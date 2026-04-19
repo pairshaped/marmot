@@ -269,14 +269,15 @@ fn escape_sql(sql: String) -> String {
   |> string.replace("\\", "\\\\")
   |> string.replace("\"", "\\\"")
   |> string.replace("\n", " ")
+  |> string.replace("\t", " ")
   |> collapse_whitespace
 }
 
 fn collapse_whitespace(s: String) -> String {
-  case string.contains(s, "  ") {
-    True -> collapse_whitespace(string.replace(s, "  ", " "))
-    False -> s
-  }
+  s
+  |> string.split(" ")
+  |> list.filter(fn(part) { part != "" })
+  |> string.join(" ")
 }
 
 fn date_helpers() -> String {
