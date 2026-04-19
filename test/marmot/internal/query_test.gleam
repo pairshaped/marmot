@@ -1,9 +1,6 @@
 import marmot/internal/query.{
-  BitArrayType, BoolType, DateType, FloatType, IntType,
+  BitArrayType, BoolType, Column, DateType, FloatType, IntType, Parameter, Query,
   StringType, TimestampType,
-  Column,
-  Parameter,
-  Query,
 }
 
 pub fn column_type_to_gleam_type_test() {
@@ -54,23 +51,25 @@ pub fn row_type_name_from_filename_test() {
 }
 
 pub fn query_has_return_columns_test() {
-  let q = Query(
-    name: "find_user",
-    sql: "SELECT id FROM users WHERE id = ?",
-    path: "src/app/sql/find_user.sql",
-    parameters: [Parameter(name: "id", column_type: IntType)],
-    columns: [Column(name: "id", column_type: IntType, nullable: False)],
-  )
+  let q =
+    Query(
+      name: "find_user",
+      sql: "SELECT id FROM users WHERE id = ?",
+      path: "src/app/sql/find_user.sql",
+      parameters: [Parameter(name: "id", column_type: IntType)],
+      columns: [Column(name: "id", column_type: IntType, nullable: False)],
+    )
   let assert True = query.has_return_columns(q)
 }
 
 pub fn query_has_no_return_columns_test() {
-  let q = Query(
-    name: "delete_user",
-    sql: "DELETE FROM users WHERE id = ?",
-    path: "src/app/sql/delete_user.sql",
-    parameters: [Parameter(name: "id", column_type: IntType)],
-    columns: [],
-  )
+  let q =
+    Query(
+      name: "delete_user",
+      sql: "DELETE FROM users WHERE id = ?",
+      path: "src/app/sql/delete_user.sql",
+      parameters: [Parameter(name: "id", column_type: IntType)],
+      columns: [],
+    )
   let assert False = query.has_return_columns(q)
 }

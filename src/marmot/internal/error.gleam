@@ -29,99 +29,58 @@ pub fn to_string(error: MarmotError) -> String {
     \u{2022} database field in [marmot] section of gleam.toml
     \u{2022} --database flag"
 
-    DatabaseOpenError(path:, message:) ->
-      "error: Could not open SQLite database
-  Path: "
-      <> path
-      <> "
-  "
-      <> message
+    DatabaseOpenError(path:, message:) -> "error: Could not open SQLite database
+  Path: " <> path <> "
+  " <> message
 
-    FileReadError(path:, message:) ->
-      "error: Could not read file
-  \u{250c}\u{2500} "
-      <> path
-      <> "
+    FileReadError(path:, message:) -> "error: Could not read file
+  \u{250c}\u{2500} " <> path <> "
   \u{2502}
-  \u{2502} "
-      <> message
+  \u{2502} " <> message
 
-    SqlError(path:, message:) ->
-      "error: SQL error
-  \u{250c}\u{2500} "
-      <> path
-      <> "
+    SqlError(path:, message:) -> "error: SQL error
+  \u{250c}\u{2500} " <> path <> "
   \u{2502}
-  \u{2502} "
-      <> message
+  \u{2502} " <> message
 
     UnknownColumn(path:, column:, table:, suggestion:) -> {
       let hint = case suggestion {
-        option.Some(s) ->
-          "
-  hint: Did you mean \""
-          <> s
-          <> "\"?"
+        option.Some(s) -> "
+  hint: Did you mean \"" <> s <> "\"?"
         option.None -> ""
       }
       "error: Unknown column
-  \u{250c}\u{2500} "
-      <> path
-      <> "
+  \u{250c}\u{2500} " <> path <> "
   \u{2502}
-  \u{2502} Column \""
-      <> column
-      <> "\" does not exist on table \""
-      <> table
-      <> "\""
-      <> hint
+  \u{2502} Column \"" <> column <> "\" does not exist on table \"" <> table <> "\"" <> hint
     }
 
     UnknownTable(path:, table:, suggestion:) -> {
       let hint = case suggestion {
-        option.Some(s) ->
-          "
-  hint: Did you mean \""
-          <> s
-          <> "\"?"
+        option.Some(s) -> "
+  hint: Did you mean \"" <> s <> "\"?"
         option.None -> ""
       }
       "error: Unknown table
-  \u{250c}\u{2500} "
-      <> path
-      <> "
+  \u{250c}\u{2500} " <> path <> "
   \u{2502}
-  \u{2502} Table \""
-      <> table
-      <> "\" does not exist"
-      <> hint
+  \u{2502} Table \"" <> table <> "\" does not exist" <> hint
     }
 
-    TypeInferenceError(path:, expression:) ->
-      "error: Could not infer type
-  \u{250c}\u{2500} "
-      <> path
-      <> "
+    TypeInferenceError(path:, expression:) -> "error: Could not infer type
+  \u{250c}\u{2500} " <> path <> "
   \u{2502}
-  \u{2502} Could not determine the type of: "
-      <> expression
-      <> "
+  \u{2502} Could not determine the type of: " <> expression <> "
   \u{2502}
   hint: Consider using a CAST expression: CAST(... AS TEXT)"
 
-    EmptySqlFile(path:) ->
-      "error: Empty SQL file
-  \u{250c}\u{2500} "
-      <> path
-      <> "
+    EmptySqlFile(path:) -> "error: Empty SQL file
+  \u{250c}\u{2500} " <> path <> "
   \u{2502}
   \u{2502} This file contains no SQL query"
 
-    MultipleQueries(path:) ->
-      "error: Multiple queries in one file
-  \u{250c}\u{2500} "
-      <> path
-      <> "
+    MultipleQueries(path:) -> "error: Multiple queries in one file
+  \u{250c}\u{2500} " <> path <> "
   \u{2502}
   \u{2502} Each .sql file must contain exactly one query
   \u{2502}
@@ -135,9 +94,7 @@ pub fn to_string(error: MarmotError) -> String {
       "error: Generated code is out of date
 
   These files need regeneration:
-"
-      <> file_list
-      <> "
+" <> file_list <> "
 
   Run `gleam run -m marmot` to update."
     }

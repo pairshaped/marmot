@@ -9,7 +9,10 @@ pub fn database_not_configured_error_test() {
 }
 
 pub fn file_read_error_test() {
-  error.FileReadError(path: "src/app/sql/find_user.sql", message: "No such file")
+  error.FileReadError(
+    path: "src/app/sql/find_user.sql",
+    message: "No such file",
+  )
   |> error.to_string
   |> birdie.snap(title: "file read error")
 }
