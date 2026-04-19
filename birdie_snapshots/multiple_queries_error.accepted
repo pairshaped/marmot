@@ -1,6 +1,8 @@
 ---
-version: 1.5.0
+version: 1.5.5
 title: multiple queries error
+file: ./test/marmot/internal/error_test.gleam
+test_name: multiple_queries_error_test
 ---
 error: Multiple queries in one file
   ┌─ src/app/sql/multi.sql

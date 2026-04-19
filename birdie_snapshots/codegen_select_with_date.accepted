@@ -1,6 +1,8 @@
 ---
-version: 1.5.0
+version: 1.5.5
 title: codegen select with date
+file: ./test/marmot/internal/codegen_test.gleam
+test_name: codegen_select_date_test
 ---
 pub type FindEventRow {
   FindEventRow(
@@ -16,10 +18,10 @@ pub fn find_event(db: sqlight.Connection, id: Int) {
     with: [sqlight.int(id)],
     expecting: {
       use id <- decode.field(0, decode.int)
-      use event_date_raw <- decode.field(1, decode.string)
+      use event_date <- decode.field(1, date_decoder())
       decode.success(FindEventRow(
         id:,
-        event_date: parse_date(event_date_raw),
+        event_date:,
       ))
     },
   )

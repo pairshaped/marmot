@@ -1,6 +1,8 @@
 ---
-version: 1.5.0
+version: 1.5.5
 title: database open error
+file: ./test/marmot/internal/error_test.gleam
+test_name: database_open_error_test
 ---
 error: Could not open SQLite database
   Path: /tmp/missing.sqlite

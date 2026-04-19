@@ -303,3 +303,95 @@ pub fn introspect_query_update_returning_test() {
     Column(name: "updated_at", column_type: TimestampType, nullable: False),
   ] = result.columns
 }
+
+// --- Tests for fixed issues ---
+
+pub fn introspect_returning_star_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "INSERT INTO users (name, email) VALUES (?, ?) RETURNING *",
+    )
+  // RETURNING * should expand to all table columns
+  let assert [
+    Column(name: "id", column_type: IntType, nullable: False),
+    Column(name: "name", column_type: StringType, nullable: False),
+    Column(name: "email", column_type: StringType, nullable: False),
+  ] = result.columns
+}
+
+pub fn introspect_duplicate_parameter_names_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        age INTEGER NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id FROM users WHERE age > ? AND age < ?",
+    )
+  // Should deduplicate: age, age_2 instead of age, age
+  let assert [Parameter(name: "age", ..), Parameter(name: "age_2", ..)] =
+    result.parameters
+}
+
+pub fn introspect_delete_returning_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "DELETE FROM users WHERE id = ? RETURNING id, name",
+    )
+  let assert [
+    Column(name: "id", column_type: IntType, nullable: False),
+    Column(name: "name", column_type: StringType, nullable: False),
+  ] = result.columns
+  let assert 1 = list.length(result.parameters)
+}
+
+pub fn introspect_join_query_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE posts (id INTEGER NOT NULL PRIMARY KEY, user_id INTEGER NOT NULL, title TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT users.name, posts.title FROM posts JOIN users ON users.id = posts.user_id WHERE posts.user_id = ?",
+    )
+  // Columns from joined tables should resolve correctly
+  let assert [
+    Column(name: "name", column_type: StringType, nullable: False),
+    Column(name: "title", column_type: StringType, nullable: False),
+  ] = result.columns
+}

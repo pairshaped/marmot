@@ -1,6 +1,8 @@
 ---
-version: 1.5.0
+version: 1.5.5
 title: stale generated code error
+file: ./test/marmot/internal/error_test.gleam
+test_name: stale_generated_code_error_test
 ---
 error: Generated code is out of date
 

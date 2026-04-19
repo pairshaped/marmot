@@ -1,6 +1,8 @@
 ---
 version: 1.5.5
 title: codegen reserved word column
+file: ./test/marmot/internal/codegen_test.gleam
+test_name: codegen_reserved_word_column_test
 ---
 pub type FindByTypeRow {
   FindByTypeRow(

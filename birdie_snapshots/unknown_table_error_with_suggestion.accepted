@@ -1,6 +1,8 @@
 ---
-version: 1.5.0
+version: 1.5.5
 title: unknown table error with suggestion
+file: ./test/marmot/internal/error_test.gleam
+test_name: unknown_table_error_test
 ---
 error: Unknown table
   ┌─ src/app/sql/find_user.sql

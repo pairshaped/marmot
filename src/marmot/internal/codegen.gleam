@@ -66,7 +66,7 @@ fn generate_imports(queries: List(Query)) -> String {
     #(needs_timestamp, "import gleam/time/timestamp.{type Timestamp}"),
     #(
       needs_date,
-      "import gleam/time/calendar.{type Date, type Month, month_from_int, month_to_int}",
+      "import gleam/time/calendar.{type Date, January, month_from_int, month_to_int}",
     ),
   ]
 
@@ -218,16 +218,6 @@ fn generate_decoder(q: Query) -> String {
               <> name
               <> "_raw),"
           }
-        DateType ->
-          case col.nullable {
-            True ->
-              "        "
-              <> name
-              <> ": option.map("
-              <> name
-              <> "_raw, parse_date),"
-            False -> "        " <> name <> ": parse_date(" <> name <> "_raw),"
-          }
         _ -> "        " <> name <> ":,"
       }
     })
@@ -246,7 +236,7 @@ fn generate_decoder(q: Query) -> String {
 fn decoder_var_name(col: Column) -> String {
   let name = safe_name(col.name)
   case col.column_type {
-    TimestampType | DateType -> name <> "_raw"
+    TimestampType -> name <> "_raw"
     _ -> name
   }
 }
@@ -259,7 +249,7 @@ fn column_decoder(col: Column) -> String {
     BitArrayType -> "decode.bit_array"
     BoolType -> "sqlight.decode_bool()"
     TimestampType -> "decode.int"
-    DateType -> "decode.string"
+    DateType -> "date_decoder()"
   }
   case col.nullable {
     True -> "decode.optional(" <> base <> ")"
@@ -284,20 +274,31 @@ fn collapse_whitespace(s: String) -> String {
 }
 
 fn timestamp_helpers() -> String {
-  "fn timestamp_to_int(ts: Timestamp) -> Int {
+  "/// Convert a Timestamp to a Unix seconds integer for SQLite storage.
+/// Note: sub-second precision is not preserved (nanoseconds are discarded).
+fn timestamp_to_int(ts: Timestamp) -> Int {
   let #(s, _) = timestamp.to_unix_seconds_and_nanoseconds(ts)
   s
 }"
 }
 
 fn date_helpers() -> String {
-  "fn parse_date(iso: String) -> Date {
-  let assert [year_str, month_str, day_str] = string.split(iso, \"-\")
-  let assert Ok(year) = int.parse(year_str)
-  let assert Ok(month_int) = int.parse(month_str)
-  let assert Ok(month) = month_from_int(month_int)
-  let assert Ok(day) = int.parse(day_str)
-  Date(year:, month:, day:)
+  "/// Decode an ISO 8601 date string (YYYY-MM-DD) from the database into a Date.
+/// Returns a decode error if the string is not a valid date format.
+fn date_decoder() -> decode.Decoder(Date) {
+  use iso <- decode.then(decode.string)
+  case string.split(iso, \"-\") {
+    [year_str, month_str, day_str] ->
+      case int.parse(year_str), int.parse(month_str), int.parse(day_str) {
+        Ok(year), Ok(month_int), Ok(day) ->
+          case month_from_int(month_int) {
+            Ok(month) -> decode.success(Date(year:, month:, day:))
+            Error(_) -> decode.failure(Date(0, January, 1), \"ISO 8601 date (YYYY-MM-DD)\")
+          }
+        _, _, _ -> decode.failure(Date(0, January, 1), \"ISO 8601 date (YYYY-MM-DD)\")
+      }
+    _ -> decode.failure(Date(0, January, 1), \"ISO 8601 date (YYYY-MM-DD)\")
+  }
 }
 
 fn date_to_string(date: Date) -> String {

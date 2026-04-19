@@ -1,6 +1,8 @@
 ---
-version: 1.5.0
+version: 1.5.5
 title: file read error
+file: ./test/marmot/internal/error_test.gleam
+test_name: file_read_error_test
 ---
 error: Could not read file
   ┌─ src/app/sql/find_user.sql

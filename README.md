@@ -250,6 +250,13 @@ database path and output directory, since SQLite file paths vary across projects
   `INSERT INTO t (col1, col2) VALUES (?, ?)`.
 - Complex expressions (subqueries, CTEs, `COALESCE`) may not have their types
   inferred. Use `CAST(... AS TYPE)` to help Marmot.
+- `TIMESTAMP` and `DATETIME` columns are stored as Unix seconds (integer).
+  Sub-second precision (nanoseconds) is not preserved.
+- `DATE` columns are stored as ISO 8601 text (`YYYY-MM-DD`). Malformed date
+  strings in the database will produce a decode error.
+- When using a configured output directory, multiple `sql/` directories will
+  collide on the same output file. Either use the default output (sibling of
+  each `sql/` directory) or restructure to a single `sql/` directory.
 
 ## Credits
 
@@ -257,7 +264,8 @@ Marmot's design, conventions, and approach are directly inspired by
 [Squirrel](https://github.com/giacomocavalieri/squirrel) by
 [Giacomo Cavalieri](https://github.com/giacomocavalieri).
 Squirrel targets Postgres with beautiful ergonomics. Marmot brings that same
-experience to SQLite.
+experience to SQLite. In fact, Marmot aims to be a 1:1 mirror of Squirrel's
+syntax and conventions, so switching between the two should feel seamless.
 
 If you use Postgres, use Squirrel. If you use SQLite, use Marmot.
 

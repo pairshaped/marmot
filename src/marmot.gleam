@@ -19,13 +19,12 @@ pub fn main() -> Nil {
   let args = argv.load().arguments
 
   case args {
-    ["check"] -> run_check()
-    _ -> run_generate()
+    ["check", ..] -> run_check(args)
+    _ -> run_generate(args)
   }
 }
 
-fn run_generate() -> Nil {
-  let args = argv.load().arguments
+fn run_generate(args: List(String)) -> Nil {
   let env_database = get_env("DATABASE_URL")
 
   let toml_content =
@@ -67,10 +66,39 @@ fn generate_all(db: sqlight.Connection, config: project.Config) -> Nil {
   case sql_dirs {
     [] -> io.println("No sql/ directories found under src/")
     dirs -> {
-      list.each(dirs, fn(dir) { generate_for_directory(db, dir, config) })
-      io.println(
-        "Generated " <> int.to_string(list.length(dirs)) <> " module(s)",
-      )
+      // Detect output path collisions when using configured output directory
+      let outputs =
+        list.map(dirs, fn(dir) { project.output_path(dir, config.output) })
+      case list.length(list.unique(outputs)) == list.length(outputs) {
+        False -> {
+          io.println_error(
+            "error: Multiple sql/ directories would write to the same output file."
+            <> "\n  Remove the output configuration or restructure your sql/ directories.",
+          )
+          halt(1)
+        }
+        True -> {
+          let success_count =
+            list.fold(dirs, 0, fn(count, dir) {
+              case generate_for_directory(db, dir, config) {
+                True -> count + 1
+                False -> count
+              }
+            })
+          case success_count == list.length(dirs) {
+            True ->
+              io.println(
+                "Generated "
+                <> int.to_string(list.length(dirs))
+                <> " module(s)",
+              )
+            False -> {
+              io.println_error("error: Some files could not be written")
+              halt(1)
+            }
+          }
+        }
+      }
     }
   }
 }
@@ -79,20 +107,26 @@ fn generate_for_directory(
   db: sqlight.Connection,
   sql_dir: String,
   config: project.Config,
-) -> Nil {
+) -> Bool {
   let sql_files = project.list_sql_files(sql_dir)
   let queries =
     list.filter_map(sql_files, fn(file_path) { process_sql_file(db, file_path) })
 
   case queries {
-    [] -> Nil
+    [] -> True
     _ -> {
       let output = project.output_path(sql_dir, config.output)
       let module_content = codegen.generate_module(queries)
       ensure_parent_dir(output)
       case simplifile.write(output, module_content) {
-        Ok(_) -> io.println("  wrote " <> output)
-        Error(_) -> io.println_error("error: Could not write to " <> output)
+        Ok(_) -> {
+          io.println("  wrote " <> output)
+          True
+        }
+        Error(_) -> {
+          io.println_error("error: Could not write to " <> output)
+          False
+        }
       }
     }
   }
@@ -176,7 +210,7 @@ fn validate_sql(trimmed: String, file_path: String) -> Result(String, Nil) {
           |> string.trim
         False -> string.trim(sql)
       }
-      case string.contains(stripped, ";") {
+      case contains_semicolon_outside_strings(stripped) {
         True -> {
           io.println_error(
             error.to_string(error.MultipleQueries(path: file_path)),
@@ -189,8 +223,35 @@ fn validate_sql(trimmed: String, file_path: String) -> Result(String, Nil) {
   }
 }
 
-fn run_check() -> Nil {
-  let args = argv.load().arguments
+/// Check for semicolons outside of single-quoted SQL string literals.
+/// Handles escaped quotes ('') inside strings.
+fn contains_semicolon_outside_strings(sql: String) -> Bool {
+  do_check_semicolon(sql, False)
+}
+
+fn do_check_semicolon(s: String, in_string: Bool) -> Bool {
+  case string.pop_grapheme(s) {
+    Error(_) -> False
+    Ok(#("'", rest)) ->
+      case in_string {
+        True ->
+          // Check for escaped quote ''
+          case string.pop_grapheme(rest) {
+            Ok(#("'", rest2)) -> do_check_semicolon(rest2, True)
+            _ -> do_check_semicolon(rest, False)
+          }
+        False -> do_check_semicolon(rest, True)
+      }
+    Ok(#(";", rest)) ->
+      case in_string {
+        True -> do_check_semicolon(rest, True)
+        False -> True
+      }
+    Ok(#(_, rest)) -> do_check_semicolon(rest, in_string)
+  }
+}
+
+fn run_check(args: List(String)) -> Nil {
   let env_database = get_env("DATABASE_URL")
   let toml_content =
     simplifile.read("gleam.toml")

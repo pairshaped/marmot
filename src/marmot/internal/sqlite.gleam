@@ -151,9 +151,11 @@ pub fn introspect_query(
   // Determine result columns
   let columns = case has_returning {
     True -> {
-      let table_name = case is_insert {
-        True -> parse_insert_table_name(sql)
-        _ -> parse_update_table_name(sql)
+      let table_name = case stmt_type {
+        Insert -> parse_insert_table_name(sql)
+        Update -> parse_update_table_name(sql)
+        Delete -> parse_delete_table_name(sql)
+        _ -> ""
       }
       extract_returning_columns(sql, table_name, table_schemas)
     }
@@ -173,6 +175,7 @@ pub fn introspect_query(
   // Determine parameters
   let parameters = extract_parameters(opcodes, cursor_table, table_schemas, sql)
 
+  let parameters = deduplicate_parameter_names(parameters)
   Ok(QueryInfo(columns: columns, parameters: parameters))
 }
 
@@ -215,6 +218,11 @@ fn extract_returning_columns(
   let returning_cols = parse_returning_columns(sql)
   case returning_cols {
     [] -> []
+    ["*"] ->
+      case dict.get(table_schemas, table_name) {
+        Ok(table_cols) -> table_cols
+        Error(_) -> []
+      }
     cols ->
       case dict.get(table_schemas, table_name) {
         Ok(table_cols) ->
@@ -346,6 +354,25 @@ fn make_range(start: Int, count: Int) -> List(Int) {
         [i, ..acc]
       })
       |> list.reverse
+  }
+}
+
+/// Strip table prefixes ("t.name" -> "name") and function wrappers
+/// ("LOWER(name)" -> "name") from a column reference.
+fn normalize_column_ref(raw: String) -> String {
+  // Strip table prefix
+  let name = case string.split_once(raw, ".") {
+    Ok(#(_, col)) -> col
+    Error(_) -> raw
+  }
+  // Strip function wrapper
+  case string.split_once(name, "(") {
+    Ok(#(_, rest)) ->
+      case string.split_once(rest, ")") {
+        Ok(#(inner, _)) -> string.trim(inner)
+        Error(_) -> name
+      }
+    Error(_) -> name
   }
 }
 
@@ -611,6 +638,11 @@ fn parse_update_table_name(sql: String) -> String {
   extract_word_after_keyword(sql, "UPDATE")
 }
 
+/// Parse table name from DELETE statement
+fn parse_delete_table_name(sql: String) -> String {
+  extract_word_after_keyword(sql, "FROM")
+}
+
 /// Parse SET column names from UPDATE statement
 fn parse_update_set_columns(sql: String) -> List(String) {
   let upper = string.uppercase(sql)
@@ -664,7 +696,8 @@ fn parse_where_columns(sql: String) -> List(String) {
         case string.contains(trimmed, "?") {
           True ->
             case string.split_once(trimmed, " ") {
-              Ok(#(col_name, _)) -> Ok(string.trim(col_name))
+              Ok(#(col_name, _)) ->
+                Ok(normalize_column_ref(string.trim(col_name)))
               Error(_) -> Error(Nil)
             }
           False -> Error(Nil)
@@ -717,18 +750,40 @@ fn replace_keyword_ci_loop(
   }
 }
 
-/// Parse INSERT column names from SQL
+/// Parse INSERT column names from SQL.
+/// Uses depth-aware parenthesis matching to handle nested expressions
+/// like VALUES (COALESCE(?, 'x'), ?).
 fn parse_insert_columns(sql: String) -> List(String) {
   case string.split_once(sql, "(") {
     Ok(#(_, rest)) ->
-      case string.split_once(rest, ")") {
-        Ok(#(cols_str, _)) ->
+      case find_matching_close_paren(rest, 1, "") {
+        Ok(cols_str) ->
           cols_str
           |> string.split(",")
           |> list.map(string.trim)
         Error(_) -> []
       }
     Error(_) -> []
+  }
+}
+
+/// Walk through a string tracking parenthesis depth to find the matching
+/// close paren for an already-opened opening paren (depth starts at 1).
+fn find_matching_close_paren(
+  s: String,
+  depth: Int,
+  acc: String,
+) -> Result(String, Nil) {
+  case string.pop_grapheme(s) {
+    Error(_) -> Error(Nil)
+    Ok(#("(", rest)) ->
+      find_matching_close_paren(rest, depth + 1, acc <> "(")
+    Ok(#(")", rest)) ->
+      case depth == 1 {
+        True -> Ok(acc)
+        False -> find_matching_close_paren(rest, depth - 1, acc <> ")")
+      }
+    Ok(#(char, rest)) -> find_matching_close_paren(rest, depth, acc <> char)
   }
 }
 
@@ -811,6 +866,39 @@ fn get_rootpage_mapping(db: Connection) -> Dict(Int, String) {
     let #(name, rootpage) = row
     dict.insert(acc, rootpage, name)
   })
+}
+
+/// Ensure parameter names are unique by appending _2, _3, etc. for duplicates.
+fn deduplicate_parameter_names(params: List(Parameter)) -> List(Parameter) {
+  deduplicate_params_loop(params, dict.new(), [])
+  |> list.reverse
+}
+
+fn deduplicate_params_loop(
+  params: List(Parameter),
+  seen: Dict(String, Int),
+  acc: List(Parameter),
+) -> List(Parameter) {
+  case params {
+    [] -> acc
+    [p, ..rest] ->
+      case dict.get(seen, p.name) {
+        Ok(count) -> {
+          let new_name = p.name <> "_" <> int.to_string(count + 1)
+          deduplicate_params_loop(
+            rest,
+            dict.insert(seen, p.name, count + 1),
+            [Parameter(..p, name: new_name), ..acc],
+          )
+        }
+        Error(_) ->
+          deduplicate_params_loop(
+            rest,
+            dict.insert(seen, p.name, 1),
+            [p, ..acc],
+          )
+      }
+  }
 }
 
 /// A decoder that handles both string and non-string p4 values

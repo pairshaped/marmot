@@ -1,11 +1,15 @@
 ---
 version: 1.5.5
 title: codegen timestamp param module with helper
+file: ./test/marmot/internal/codegen_test.gleam
+test_name: codegen_timestamp_param_module_test
 ---
 import gleam/dynamic/decode
 import gleam/time/timestamp.{type Timestamp}
 import sqlight
 
+/// Convert a Timestamp to a Unix seconds integer for SQLite storage.
+/// Note: sub-second precision is not preserved (nanoseconds are discarded).
 fn timestamp_to_int(ts: Timestamp) -> Int {
   let #(s, _) = timestamp.to_unix_seconds_and_nanoseconds(ts)
   s

@@ -1,6 +1,8 @@
 ---
-version: 1.5.0
+version: 1.5.5
 title: codegen insert returning
+file: ./test/marmot/internal/codegen_test.gleam
+test_name: codegen_insert_returning_test
 ---
 pub type CreateUserRow {
   CreateUserRow(

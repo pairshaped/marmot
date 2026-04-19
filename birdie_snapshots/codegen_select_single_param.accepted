@@ -1,6 +1,8 @@
 ---
-version: 1.5.0
+version: 1.5.5
 title: codegen select single param
+file: ./test/marmot/internal/codegen_test.gleam
+test_name: codegen_select_single_param_test
 ---
 pub type FindUserRow {
   FindUserRow(

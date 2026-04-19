@@ -1,6 +1,8 @@
 ---
-version: 1.5.0
+version: 1.5.5
 title: codegen full module
+file: ./test/marmot/internal/codegen_test.gleam
+test_name: codegen_full_module_test
 ---
 import gleam/dynamic/decode
 import sqlight

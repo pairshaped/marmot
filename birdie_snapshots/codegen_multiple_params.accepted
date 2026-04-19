@@ -1,6 +1,8 @@
 ---
-version: 1.5.0
+version: 1.5.5
 title: codegen multiple params
+file: ./test/marmot/internal/codegen_test.gleam
+test_name: codegen_multiple_params_test
 ---
 pub type FindUsersByAgeRow {
   FindUsersByAgeRow(
