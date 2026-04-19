@@ -1,0 +1,26 @@
+---
+version: 1.5.0
+title: codegen select with boolean
+---
+pub type FindActiveUsersRow {
+  FindActiveUsersRow(
+    id: Int,
+    is_active: Bool,
+  )
+}
+
+pub fn find_active_users(db: sqlight.Connection) {
+  sqlight.query(
+    "SELECT id, is_active FROM users",
+    on: db,
+    with: [],
+    expecting: {
+      use id <- decode.field(0, decode.int)
+      use is_active <- decode.field(1, sqlight.decode_bool())
+      decode.success(FindActiveUsersRow(
+        id:,
+        is_active:,
+      ))
+    },
+  )
+}

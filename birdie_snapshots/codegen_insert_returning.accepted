@@ -1,0 +1,26 @@
+---
+version: 1.5.0
+title: codegen insert returning
+---
+pub type CreateUserRow {
+  CreateUserRow(
+    id: Int,
+    created_at: timestamp.Timestamp,
+  )
+}
+
+pub fn create_user(db: sqlight.Connection, username: String, email: String) {
+  sqlight.query(
+    "INSERT INTO users (username, email) VALUES (?, ?) RETURNING id, created_at",
+    on: db,
+    with: [sqlight.text(username), sqlight.text(email)],
+    expecting: {
+      use id <- decode.field(0, decode.int)
+      use created_at_raw <- decode.field(1, decode.int)
+      decode.success(CreateUserRow(
+        id:,
+        created_at: timestamp.from_unix_seconds(created_at_raw),
+      ))
+    },
+  )
+}

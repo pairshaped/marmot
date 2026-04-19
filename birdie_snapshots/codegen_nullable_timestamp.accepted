@@ -1,0 +1,26 @@
+---
+version: 1.5.0
+title: codegen nullable timestamp
+---
+pub type FindUserRow {
+  FindUserRow(
+    id: Int,
+    deleted_at: Option(timestamp.Timestamp),
+  )
+}
+
+pub fn find_user(db: sqlight.Connection, id: Int) {
+  sqlight.query(
+    "SELECT id, deleted_at FROM users WHERE id = ?",
+    on: db,
+    with: [sqlight.int(id)],
+    expecting: {
+      use id <- decode.field(0, decode.int)
+      use deleted_at_raw <- decode.field(1, decode.optional(decode.int))
+      decode.success(FindUserRow(
+        id:,
+        deleted_at: option.map(deleted_at_raw, timestamp.from_unix_seconds),
+      ))
+    },
+  )
+}

@@ -1,0 +1,26 @@
+---
+version: 1.5.0
+title: codegen multiple params
+---
+pub type FindUsersByAgeRow {
+  FindUsersByAgeRow(
+    id: Int,
+    name: String,
+  )
+}
+
+pub fn find_users_by_age(db: sqlight.Connection, age_min: Int, age_max: Int) {
+  sqlight.query(
+    "SELECT id, name FROM users WHERE age > ? AND age < ?",
+    on: db,
+    with: [sqlight.int(age_min), sqlight.int(age_max)],
+    expecting: {
+      use id <- decode.field(0, decode.int)
+      use name <- decode.field(1, decode.string)
+      decode.success(FindUsersByAgeRow(
+        id:,
+        name:,
+      ))
+    },
+  )
+}

@@ -1,0 +1,26 @@
+---
+version: 1.5.0
+title: codegen select with timestamp
+---
+pub type FindUserRow {
+  FindUserRow(
+    id: Int,
+    created_at: timestamp.Timestamp,
+  )
+}
+
+pub fn find_user(db: sqlight.Connection, id: Int) {
+  sqlight.query(
+    "SELECT id, created_at FROM users WHERE id = ?",
+    on: db,
+    with: [sqlight.int(id)],
+    expecting: {
+      use id <- decode.field(0, decode.int)
+      use created_at_raw <- decode.field(1, decode.int)
+      decode.success(FindUserRow(
+        id:,
+        created_at: timestamp.from_unix_seconds(created_at_raw),
+      ))
+    },
+  )
+}

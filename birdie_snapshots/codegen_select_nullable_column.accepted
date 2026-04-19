@@ -1,0 +1,29 @@
+---
+version: 1.5.0
+title: codegen select nullable column
+---
+pub type FindUserBioRow {
+  FindUserBioRow(
+    id: Int,
+    username: String,
+    bio: Option(String),
+  )
+}
+
+pub fn find_user_bio(db: sqlight.Connection, id: Int) {
+  sqlight.query(
+    "SELECT id, username, bio FROM users WHERE id = ?",
+    on: db,
+    with: [sqlight.int(id)],
+    expecting: {
+      use id <- decode.field(0, decode.int)
+      use username <- decode.field(1, decode.string)
+      use bio <- decode.field(2, decode.optional(decode.string))
+      decode.success(FindUserBioRow(
+        id:,
+        username:,
+        bio:,
+      ))
+    },
+  )
+}

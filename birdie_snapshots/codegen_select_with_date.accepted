@@ -1,0 +1,26 @@
+---
+version: 1.5.0
+title: codegen select with date
+---
+pub type FindEventRow {
+  FindEventRow(
+    id: Int,
+    event_date: calendar.Date,
+  )
+}
+
+pub fn find_event(db: sqlight.Connection, id: Int) {
+  sqlight.query(
+    "SELECT id, event_date FROM events WHERE id = ?",
+    on: db,
+    with: [sqlight.int(id)],
+    expecting: {
+      use id <- decode.field(0, decode.int)
+      use event_date_raw <- decode.field(1, decode.string)
+      decode.success(FindEventRow(
+        id:,
+        event_date: parse_date(event_date_raw),
+      ))
+    },
+  )
+}

@@ -1,0 +1,26 @@
+---
+version: 1.5.0
+title: codegen select with float
+---
+pub type FindProductRow {
+  FindProductRow(
+    id: Int,
+    price: Float,
+  )
+}
+
+pub fn find_product(db: sqlight.Connection, id: Int) {
+  sqlight.query(
+    "SELECT id, price FROM products WHERE id = ?",
+    on: db,
+    with: [sqlight.int(id)],
+    expecting: {
+      use id <- decode.field(0, decode.int)
+      use price <- decode.field(1, decode.float)
+      decode.success(FindProductRow(
+        id:,
+        price:,
+      ))
+    },
+  )
+}

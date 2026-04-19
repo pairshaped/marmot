@@ -1,0 +1,29 @@
+---
+version: 1.5.0
+title: codegen select single param
+---
+pub type FindUserRow {
+  FindUserRow(
+    id: Int,
+    username: String,
+    email: String,
+  )
+}
+
+pub fn find_user(db: sqlight.Connection, username: String) {
+  sqlight.query(
+    "SELECT id, username, email FROM users WHERE username = ?",
+    on: db,
+    with: [sqlight.text(username)],
+    expecting: {
+      use id <- decode.field(0, decode.int)
+      use username <- decode.field(1, decode.string)
+      use email <- decode.field(2, decode.string)
+      decode.success(FindUserRow(
+        id:,
+        username:,
+        email:,
+      ))
+    },
+  )
+}

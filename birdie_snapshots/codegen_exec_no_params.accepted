@@ -1,0 +1,12 @@
+---
+version: 1.5.0
+title: codegen exec no params
+---
+pub fn delete_all_users(db: sqlight.Connection) {
+  sqlight.query(
+    "DELETE FROM users",
+    on: db,
+    with: [],
+    expecting: decode.success(Nil),
+  )
+}

@@ -1,0 +1,12 @@
+---
+version: 1.5.0
+title: codegen timestamp parameter
+---
+pub fn update_last_seen(db: sqlight.Connection, last_seen: timestamp.Timestamp, id: Int) {
+  sqlight.query(
+    "UPDATE users SET last_seen = ? WHERE id = ?",
+    on: db,
+    with: [sqlight.int({ let #(s, _) = timestamp.to_unix_seconds_and_nanoseconds(last_seen) s }), sqlight.int(id)],
+    expecting: decode.success(Nil),
+  )
+}
