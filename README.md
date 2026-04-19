@@ -99,6 +99,11 @@ gleam run -m marmot check
 
 Exits with code 0 if everything is current, code 1 if regeneration is needed.
 
+## Known Limitations
+
+- Table names containing SQL keywords (`RETURNING`, `INTO`) may confuse the SQL parser. Use simple table names.
+- `INSERT INTO t VALUES (?, ?)` without an explicit column list will not infer parameter names or types correctly. Always specify columns: `INSERT INTO t (col1, col2) VALUES (?, ?)`.
+
 ## Credits
 
 Marmot's design, conventions, and approach are directly inspired by [Squirrel](https://github.com/giacomocavalieri/squirrel) by [Giacomo Cavalieri](https://github.com/giacomocavalieri). Squirrel targets Postgres with beautiful ergonomics — marmot brings that same experience to SQLite.
