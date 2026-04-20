@@ -1,0 +1,47 @@
+---
+version: 1.5.5
+title: shared_row_types_two_queries
+file: ./test/marmot_test.gleam
+test_name: snapshot_shared_row_types_output_test
+---
+import gleam/dynamic/decode
+import gleam/option.{type Option}
+import sqlight
+
+pub type OrgRow {
+  OrgRow(
+    id: Int,
+    name: String,
+    bio: Option(String),
+  )
+}
+
+fn org_row_decoder() -> decode.Decoder(OrgRow) {
+  use id <- decode.field(0, decode.int)
+  use name <- decode.field(1, decode.string)
+  use bio <- decode.field(2, decode.optional(decode.string))
+  decode.success(OrgRow(
+    id:,
+    name:,
+    bio:,
+  ))
+}
+
+pub fn get_org(db db: sqlight.Connection, id id: Int) -> Result(List(OrgRow), sqlight.Error) {
+  sqlight.query(
+    "SELECT id, name, bio FROM orgs WHERE id = @id",
+    on: db,
+    with: [sqlight.int(id)],
+    expecting: org_row_decoder(),
+  )
+}
+
+pub fn list_orgs(db db: sqlight.Connection) -> Result(List(OrgRow), sqlight.Error) {
+  sqlight.query(
+    "SELECT id, name, bio FROM orgs",
+    on: db,
+    with: [],
+    expecting: org_row_decoder(),
+  )
+}
+

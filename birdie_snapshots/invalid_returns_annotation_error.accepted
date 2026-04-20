@@ -1,6 +1,8 @@
 ---
 version: 1.5.5
 title: invalid returns annotation error
+file: ./test/marmot/internal/error_test.gleam
+test_name: invalid_returns_annotation_error_test
 ---
 error: Invalid -- returns: annotation
   ┌─ src/server/orgs/sql/get_org.sql
