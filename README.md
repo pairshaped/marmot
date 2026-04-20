@@ -89,7 +89,7 @@ So now you get the best of both worlds:
 
 - You don't have to take care of keeping encoders and decoders in sync, Marmot
   does that for you.
-- And you're not compromising on type safety either: Marmot connects to your
+- You're not compromising on type safety either: Marmot connects to your
   SQLite database and uses `PRAGMA table_info` and `EXPLAIN` to understand the
   types of your queries.
 - You can stick to writing plain SQL in `*.sql` files. You'll have better
