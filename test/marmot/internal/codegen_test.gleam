@@ -1,6 +1,8 @@
 import birdie
+import gleam/int
 import gleam/list
 import gleam/option
+import gleam/string
 import marmot/internal/codegen
 import marmot/internal/query.{
   type Column, type Query, BitArrayType, BoolType, Column, DateType, FloatType,
@@ -626,4 +628,65 @@ pub fn group_shared_queries_separate_names_do_not_collide_test() {
     )
   let assert Ok(#(shared, _)) = codegen.group_shared_queries([q1, q2])
   let assert 2 = list.length(shared)
+}
+
+pub fn generate_emits_shared_row_type_once_test() {
+  let cols = [
+    Column(name: "id", column_type: IntType, nullable: False),
+    Column(name: "name", column_type: StringType, nullable: False),
+  ]
+  let q1 = make_query("get_org_by_id", "a.sql", cols, option.Some("OrgRow"))
+  let q2 = make_query("list_orgs", "b.sql", cols, option.Some("OrgRow"))
+  let output = codegen.generate_module_with_config([q1, q2], option.None)
+  let assert 1 = count_substring(output, "pub type OrgRow {")
+  let assert 0 = count_substring(output, "pub type GetOrgByIdRow {")
+  let assert 0 = count_substring(output, "pub type ListOrgsRow {")
+}
+
+pub fn generate_emits_per_query_type_for_unannotated_test() {
+  let cols = [Column(name: "id", column_type: IntType, nullable: False)]
+  let q = make_query("get_foo", "a.sql", cols, option.None)
+  let output = codegen.generate_module_with_config([q], option.None)
+  let assert 1 = count_substring(output, "pub type GetFooRow {")
+  let assert 0 = count_substring(output, "pub type OrgRow {")
+}
+
+pub fn generate_mixed_annotated_and_plain_test() {
+  let cols_a = [Column(name: "id", column_type: IntType, nullable: False)]
+  let cols_b = [Column(name: "name", column_type: StringType, nullable: False)]
+  let q1 = make_query("get_org", "a.sql", cols_a, option.Some("OrgRow"))
+  let q2 = make_query("other_query", "b.sql", cols_b, option.None)
+  let output = codegen.generate_module_with_config([q1, q2], option.None)
+  let assert 1 = count_substring(output, "pub type OrgRow {")
+  let assert 1 = count_substring(output, "pub type OtherQueryRow {")
+}
+
+pub fn generate_emits_shared_decoder_once_test() {
+  let cols = [Column(name: "id", column_type: IntType, nullable: False)]
+  let q1 = make_query("get_org", "a.sql", cols, option.Some("OrgRow"))
+  let q2 = make_query("list_orgs", "b.sql", cols, option.Some("OrgRow"))
+  let output = codegen.generate_module_with_config([q1, q2], option.None)
+  let assert 1 = count_substring(output, "fn org_row_decoder()")
+}
+
+pub fn generate_query_function_references_shared_decoder_test() {
+  let cols = [Column(name: "id", column_type: IntType, nullable: False)]
+  let q = make_query("get_org", "a.sql", cols, option.Some("OrgRow"))
+  let output = codegen.generate_module_with_config([q], option.None)
+  let assert True = string.contains(output, "org_row_decoder()")
+  let q_plain =
+    make_query(
+      "other",
+      "x.sql",
+      [Column(name: "x", column_type: IntType, nullable: False)],
+      option.None,
+    )
+  let output2 = codegen.generate_module_with_config([q_plain], option.None)
+  let assert False = string.contains(output2, "other_row_decoder()")
+}
+
+fn count_substring(haystack: String, needle: String) -> Int {
+  string.split(haystack, needle)
+  |> list.length
+  |> int.subtract(1)
 }

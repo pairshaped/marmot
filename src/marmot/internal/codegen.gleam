@@ -138,11 +138,57 @@ pub fn generate_module_with_config(
     [] -> ""
     parts -> "\n\n" <> string.join(list.reverse(parts), "\n\n")
   }
+
+  let assert Ok(#(shared_groups, _plain_queries)) =
+    group_shared_queries(queries)
+
+  // Shared types (one per group)
+  let shared_types = case shared_groups {
+    [] -> ""
+    _ ->
+      shared_groups
+      |> list.map(fn(g) { generate_row_type_named(g.name, g.columns) })
+      |> string.join("\n\n")
+      |> fn(s) { "\n\n" <> s }
+  }
+
+  // Shared decoders (one per group)
+  let shared_decoders = case shared_groups {
+    [] -> ""
+    _ ->
+      shared_groups
+      |> list.map(fn(g) { generate_shared_decoder(g.name, g.columns) })
+      |> string.join("\n\n")
+      |> fn(s) { "\n\n" <> s }
+  }
+
+  // Functions: for each query, generate appropriately
   let functions =
     queries
-    |> list.map(fn(q) { generate_function_with_config(q, query_function) })
+    |> list.map(fn(q) {
+      case query.has_return_columns(q) {
+        False -> generate_exec_function(q, config)
+        True -> {
+          case q.custom_type_name {
+            option.Some(type_name) ->
+              generate_shared_query_function(q, type_name, config)
+            option.None ->
+              generate_row_type(q)
+              <> "\n\n"
+              <> generate_query_function(q, config)
+          }
+        }
+      }
+    })
     |> string.join("\n\n")
-  imports <> helpers <> "\n\n" <> functions <> "\n"
+
+  imports
+  <> helpers
+  <> shared_types
+  <> shared_decoders
+  <> "\n\n"
+  <> functions
+  <> "\n"
 }
 
 fn generate_imports(
@@ -195,9 +241,12 @@ fn generate_imports(
 }
 
 fn generate_row_type(q: Query) -> String {
-  let type_name = query.row_type_name(q.name)
+  generate_row_type_named(query.row_type_name(q.name), q.columns)
+}
+
+fn generate_row_type_named(type_name: String, columns: List(Column)) -> String {
   let fields =
-    q.columns
+    columns
     |> list.map(fn(col) {
       let type_str = case col.nullable {
         True -> "Option(" <> query.gleam_type(col.column_type) <> ")"
@@ -213,6 +262,117 @@ fn generate_row_type(q: Query) -> String {
   <> "(\n"
   <> fields
   <> "\n  )\n}"
+}
+
+pub fn shared_decoder_name(type_name: String) -> String {
+  pascal_to_snake(type_name) <> "_decoder"
+}
+
+fn pascal_to_snake(name: String) -> String {
+  string.to_graphemes(name)
+  |> list.index_map(fn(ch, idx) {
+    case is_upper_char(ch), idx {
+      True, 0 -> string.lowercase(ch)
+      True, _ -> "_" <> string.lowercase(ch)
+      _, _ -> ch
+    }
+  })
+  |> string.join("")
+}
+
+fn is_upper_char(ch: String) -> Bool {
+  ch == string.uppercase(ch) && ch != string.lowercase(ch)
+}
+
+fn generate_shared_decoder(type_name: String, columns: List(Column)) -> String {
+  let decoder_name = shared_decoder_name(type_name)
+  let fields =
+    columns
+    |> list.index_map(fn(col, idx) {
+      let idx_str = int.to_string(idx)
+      let decoder = column_decoder(col)
+      let name = decoder_var_name(col)
+      "  use "
+      <> name
+      <> " <- decode.field("
+      <> idx_str
+      <> ", "
+      <> decoder
+      <> ")"
+    })
+    |> string.join("\n")
+
+  let constructor_args =
+    columns
+    |> list.map(fn(col) {
+      let name = sanitize_name(col.name)
+      case col.column_type {
+        TimestampType ->
+          case col.nullable {
+            True ->
+              "    "
+              <> name
+              <> ": option.map("
+              <> name
+              <> "_raw, timestamp.from_unix_seconds),"
+            False ->
+              "    "
+              <> name
+              <> ": timestamp.from_unix_seconds("
+              <> name
+              <> "_raw),"
+          }
+        _ -> "    " <> name <> ":,"
+      }
+    })
+    |> string.join("\n")
+
+  "fn "
+  <> decoder_name
+  <> "() -> decode.Decoder("
+  <> type_name
+  <> ") {\n"
+  <> fields
+  <> "\n"
+  <> "  decode.success("
+  <> type_name
+  <> "(\n"
+  <> constructor_args
+  <> "\n"
+  <> "  ))\n"
+  <> "}"
+}
+
+fn generate_shared_query_function(
+  q: Query,
+  type_name: String,
+  query_function: Option(QueryFunctionConfig),
+) -> String {
+  let params = generate_param_list(q.parameters)
+  let with_args = generate_with_args(q.parameters)
+  let decoder_name = shared_decoder_name(type_name)
+  "pub fn "
+  <> q.name
+  <> "(db db: sqlight.Connection"
+  <> params
+  <> ") -> Result(List("
+  <> type_name
+  <> "), sqlight.Error) {\n"
+  <> "  "
+  <> query_call(query_function)
+  <> "(\n"
+  <> "    \""
+  <> escape_sql(q.sql)
+  <> "\",\n"
+  <> "    on: db,\n"
+  <> "    with: ["
+  <> with_args
+  <> "],\n"
+  <> "    expecting: "
+  <> decoder_name
+  <> "(),\n"
+  <> "  )\n"
+  <> "}"
 }
 
 fn query_call(query_function: Option(QueryFunctionConfig)) -> String {
