@@ -132,10 +132,7 @@ pub fn output_path_common_prefix_test() {
   // output and sql_dir share "src/", so relative is "app/accounts/sql",
   // strip trailing /sql -> "app/accounts"
   let assert "src/generated/app/accounts.gleam" =
-    project.output_path(
-      "src/app/accounts/sql",
-      option.Some("src/generated"),
-    )
+    project.output_path("src/app/accounts/sql", option.Some("src/generated"))
 }
 
 pub fn output_path_deeper_common_prefix_test() {
@@ -165,16 +162,8 @@ pub fn output_path_trailing_slash_on_output_test() {
 }
 
 pub fn output_path_multi_dir_no_collision_test() {
-  let path1 =
-    project.output_path(
-      "src/users/sql",
-      option.Some("src/generated"),
-    )
-  let path2 =
-    project.output_path(
-      "src/posts/sql",
-      option.Some("src/generated"),
-    )
+  let path1 = project.output_path("src/users/sql", option.Some("src/generated"))
+  let path2 = project.output_path("src/posts/sql", option.Some("src/generated"))
   let assert True = path1 != path2
   let assert "src/generated/users.gleam" = path1
   let assert "src/generated/posts.gleam" = path2

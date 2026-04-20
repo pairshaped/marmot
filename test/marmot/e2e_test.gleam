@@ -281,8 +281,7 @@ pub fn e2e_configured_output_dir_test() {
       "SELECT id FROM users WHERE id = ?",
     )
 
-  let output_path =
-    project.output_path(sql_dir, option.Some(output_dir))
+  let output_path = project.output_path(sql_dir, option.Some(output_dir))
   // Common prefix is "test_e2e_tmp2/src/", relative is "app/sql",
   // strip trailing /sql -> "app"
   let expected = output_dir <> "/" <> "app.gleam"

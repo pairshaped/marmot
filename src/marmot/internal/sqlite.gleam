@@ -1303,9 +1303,28 @@ fn find_column_for_register(
           Column(name: "rowid", column_type: query.IntType, nullable: False)
       }
     Error(_) -> {
-      // Check for Column opcode (p3=dest_register)
+      // Find the ResultRow address so we can prefer Column opcodes in the
+      // output phase (after sorting/ephemeral fill) over those in the fill
+      // phase. When ORDER BY is used, the same register may be written to
+      // twice: once during the sorter-fill phase (writing a different value)
+      // and once during the output phase (writing the actual result). We want
+      // the output-phase write, which is the LAST Column writing to this
+      // register before ResultRow.
+      let result_row_addr =
+        list.fold(opcodes, 0, fn(acc, op) {
+          case op.opcode == "ResultRow" {
+            True -> op.addr
+            False -> acc
+          }
+        })
+
       let column_op =
-        list.find(opcodes, fn(op) { op.opcode == "Column" && op.p3 == reg })
+        list.find(
+          list.reverse(
+            list.filter(opcodes, fn(op) { op.addr < result_row_addr }),
+          ),
+          fn(op) { op.opcode == "Column" && op.p3 == reg },
+        )
 
       case column_op {
         Ok(op) -> resolve_column(op.p1, op.p2, cursor_table, table_schemas)

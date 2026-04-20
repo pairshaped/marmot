@@ -108,8 +108,7 @@ pub fn to_string(error: MarmotError) -> String {
   Run `gleam run -m marmot` to update."
     }
 
-    OutputNotUnderSrc(output:) ->
-      "error: Output directory must be under src/
+    OutputNotUnderSrc(output:) -> "error: Output directory must be under src/
   \u{250c}\u{2500} gleam.toml
   \u{2502}
   \u{2502} output = \"" <> output <> "\"

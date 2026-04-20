@@ -136,10 +136,7 @@ pub fn list_sql_files(dir: String) -> List(String) {
 ///   and `sql_dir`, strip it from `sql_dir`, strip trailing `/sql`, then join
 ///   with `output` (e.g., `src/app/accounts/sql` with output `src/generated`
 ///   -> `src/generated/app/accounts.gleam`).
-pub fn output_path(
-  sql_dir: String,
-  configured_output: Option(String),
-) -> String {
+pub fn output_path(sql_dir: String, configured_output: Option(String)) -> String {
   case configured_output {
     option.None -> sql_dir <> ".gleam"
     option.Some(output) -> {
@@ -164,11 +161,7 @@ pub fn output_path(
   }
 }
 
-fn common_prefix_length(
-  a: List(String),
-  b: List(String),
-  acc: Int,
-) -> Int {
+fn common_prefix_length(a: List(String), b: List(String), acc: Int) -> Int {
   case a, b {
     [x, ..rest_a], [y, ..rest_b] if x == y ->
       common_prefix_length(rest_a, rest_b, acc + 1)
