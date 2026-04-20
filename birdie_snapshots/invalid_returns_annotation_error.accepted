@@ -1,0 +1,8 @@
+---
+version: 1.5.5
+title: invalid returns annotation error
+---
+error: Invalid -- returns: annotation
+  ┌─ src/server/orgs/sql/get_org.sql
+  │
+  │ `-- returns: Org` is invalid: type name must end with `Row` (e.g., `OrgRow`)

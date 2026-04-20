@@ -85,10 +85,10 @@ pub fn database_open_error_test() {
 }
 
 pub fn duplicate_columns_error_test() {
-  error.DuplicateColumns(
-    path: "src/app/sql/find_user.sql",
-    columns: ["id", "name"],
-  )
+  error.DuplicateColumns(path: "src/app/sql/find_user.sql", columns: [
+    "id",
+    "name",
+  ])
   |> error.to_string
   |> birdie.snap(title: "duplicate columns error")
 }
@@ -129,4 +129,14 @@ pub fn unknown_table_no_suggestion_error_test() {
   )
   |> error.to_string
   |> birdie.snap(title: "unknown table error without suggestion")
+}
+
+pub fn invalid_returns_annotation_error_test() {
+  error.InvalidReturnsAnnotation(
+    path: "src/server/orgs/sql/get_org.sql",
+    name: "Org",
+    reason: "type name must end with `Row` (e.g., `OrgRow`)",
+  )
+  |> error.to_string
+  |> birdie.snap(title: "invalid returns annotation error")
 }

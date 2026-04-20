@@ -21,6 +21,7 @@ pub type MarmotError {
   DuplicateColumns(path: String, columns: List(String))
   StaleGeneratedCode(files: List(String))
   OutputNotUnderSrc(output: String)
+  InvalidReturnsAnnotation(path: String, name: String, reason: String)
 }
 
 pub fn to_string(error: MarmotError) -> String {
@@ -133,6 +134,12 @@ pub fn to_string(error: MarmotError) -> String {
   \u{2502}
   hint: Gleam compiles modules from src/, so generated code must live there.
         For example: output = \"src/generated/sql\""
+
+    InvalidReturnsAnnotation(path:, name:, reason:) ->
+      "error: Invalid -- returns: annotation
+  \u{250c}\u{2500} " <> path <> "
+  \u{2502}
+  \u{2502} `-- returns: " <> name <> "` is invalid: " <> reason
   }
 }
 
