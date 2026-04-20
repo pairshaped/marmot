@@ -215,7 +215,7 @@ fn process_sql_file(
   use _ <- result.try(check_duplicate_columns(query_info.columns, file_path))
   Ok(query.Query(
     name: name,
-    sql: sql,
+    sql: sqlite.strip_nullability_suffixes(sql),
     path: file_path,
     parameters: query_info.parameters,
     columns: query_info.columns,

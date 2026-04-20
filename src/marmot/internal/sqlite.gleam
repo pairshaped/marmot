@@ -344,7 +344,7 @@ pub fn introspect_query(
 /// appears directly after an identifier character and is followed by
 /// whitespace, comma, end-of-string, or closing paren. This avoids
 /// mangling legitimate SQL like `WHERE x != y` or `?` placeholders.
-fn strip_nullability_suffixes(sql: String) -> String {
+pub fn strip_nullability_suffixes(sql: String) -> String {
   do_strip_nullability_suffixes(sql, "", False, False)
 }
 
