@@ -505,6 +505,40 @@ pub fn introspect_left_join_marks_right_side_nullable_test() {
   ] = result.columns
 }
 
+pub fn introspect_left_join_on_unindexed_column_marks_right_side_nullable_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT NOT NULL
+      );
+      CREATE TABLE profiles (
+        id INTEGER NOT NULL PRIMARY KEY,
+        user_name TEXT NOT NULL,
+        bio TEXT NOT NULL
+      )",
+      on: db,
+    )
+  // LEFT JOIN on user_name (unindexed TEXT column) forces SQLite to build a
+  // transient OpenAutoindex cursor. NullRow then targets that autoindex cursor
+  // rather than the profiles table cursor directly. apply_cursor_nullability
+  // must propagate the nullable-cursor flag through the autoindex path so
+  // p.bio is still marked nullable. Verified via EXPLAIN: OpenAutoindex at
+  // addr 5, NullRow targeting cursor 2 (the autoindex), not cursor 1.
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT u.name, p.bio
+       FROM users u
+       LEFT JOIN profiles p ON p.user_name = u.name",
+    )
+  let assert [
+    Column(name: "name", column_type: StringType, nullable: False),
+    Column(name: "bio", column_type: StringType, nullable: True),
+  ] = result.columns
+}
+
 pub fn introspect_inner_join_keeps_both_sides_non_nullable_test() {
   use db <- sqlight.with_connection(":memory:")
   let assert Ok(_) =

@@ -403,10 +403,10 @@ fn extract_result_columns(
                     // If opcode tracing found a nullable cursor (e.g. via
                     // an autoindex cursor that NullRow targets), propagate
                     // that nullability to the text-resolved column.
-                    case opcode_column.nullable {
-                      True -> Column(..resolved, nullable: True)
-                      False -> resolved
-                    }
+                    Column(
+                      ..resolved,
+                      nullable: resolved.nullable || opcode_column.nullable,
+                    )
                 }
               option.None ->
                 case opcode_column.name {
