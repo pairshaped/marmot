@@ -1180,7 +1180,18 @@ fn extract_parameters(
             False -> opcode_fallback()
           }
         }
-        _ -> opcode_fallback()
+        Select | Delete -> {
+          // Text-based WHERE clause parsing: match parameter positions
+          // against columns mentioned in WHERE conditions. Covers simple
+          // `col = ?` patterns; mixes with opcode fallback when counts
+          // don't line up (e.g. subqueries, HAVING, LIMIT with params).
+          let parsed = extract_select_parameters(table_schemas, sql, stmt_type)
+          case list.length(parsed) == param_count {
+            True -> parsed
+            False -> opcode_fallback()
+          }
+        }
+        Other -> opcode_fallback()
       }
     }
   }
@@ -1212,6 +1223,73 @@ fn extract_insert_parameters(
       list.map(columns, fn(col_name) {
         Parameter(name: col_name, column_type: StringType, nullable: False)
       })
+  }
+}
+
+/// For SELECT/DELETE statements, parameters correspond to columns mentioned
+/// in WHERE conditions (in positional order). Column types come from any
+/// table in the FROM list. Useful for `col = ?`, `col > ?`, etc.
+///
+/// Returns an empty list if the WHERE clause contains subqueries, complex
+/// expressions, or any condition whose extracted column name isn't a simple
+/// identifier. The caller falls back to opcode-based inference in that case.
+fn extract_select_parameters(
+  table_schemas: Dict(String, List(Column)),
+  sql: String,
+  stmt_type: StatementType,
+) -> List(Parameter) {
+  let cols = parse_where_columns(sql)
+  // Reject if any extracted "column" isn't a clean identifier or qualified
+  // identifier like `t.col`. Protects against subqueries (`id IN (SELECT
+  // ...)`), complex predicates, etc.
+  let all_simple = list.all(cols, fn(name) { is_simple_column_ref(name) })
+  case all_simple {
+    False -> []
+    True -> {
+      let from_tables = case stmt_type {
+        Select -> parse_from_tables(sql)
+        Delete -> [parse_delete_table_name(sql)]
+        _ -> []
+      }
+      list.map(cols, fn(col_name) {
+        // Strip table prefix for schema lookup
+        let bare_name = case string.split_once(col_name, ".") {
+          Ok(#(_, after)) -> after
+          Error(_) -> col_name
+        }
+        // Find the column in any of the FROM tables
+        let resolved =
+          list.find_map(from_tables, fn(table) {
+            case dict.get(table_schemas, table) {
+              Ok(cols) ->
+                case list.find(cols, fn(c) { c.name == bare_name }) {
+                  Ok(col) -> Ok(col)
+                  Error(_) -> Error(Nil)
+                }
+              Error(_) -> Error(Nil)
+            }
+          })
+        case resolved {
+          Ok(col) ->
+            Parameter(
+              name: bare_name,
+              column_type: col.column_type,
+              nullable: col.nullable,
+            )
+          Error(_) ->
+            Parameter(name: bare_name, column_type: StringType, nullable: False)
+        }
+      })
+    }
+  }
+}
+
+fn is_simple_column_ref(s: String) -> Bool {
+  // Accept "col" or "table.col" where col and table are simple identifiers.
+  case string.split_once(s, ".") {
+    Ok(#(table, col)) ->
+      is_simple_identifier(table) && is_simple_identifier(col)
+    Error(_) -> is_simple_identifier(s)
   }
 }
 
