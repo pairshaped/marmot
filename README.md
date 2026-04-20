@@ -282,6 +282,36 @@ supported are:
 | `DATE`                     | [`calendar.Date`](https://hexdocs.pm/gleam_time/gleam/time/calendar.html#Date)                                    | Stored as ISO 8601 text     |
 | nullable column            | `Option(T)`                                                                                                       |                             |
 
+## Shared return types
+
+When multiple queries in the same `sql/` directory return the same shape, you
+can annotate them to share a single Row type and decoder:
+
+```sql
+-- src/app/sql/get_org.sql
+-- returns: OrgRow
+SELECT id, name FROM orgs WHERE id = @id
+```
+
+```sql
+-- src/app/sql/list_orgs.sql
+-- returns: OrgRow
+SELECT id, name FROM orgs
+```
+
+Both queries now share one `pub type OrgRow` and one decoder function in the
+generated module. This eliminates the need for adapter boilerplate when multiple
+queries return the same columns.
+
+**Rules:**
+- Annotation must appear before the first SQL statement
+- Type name must end in `Row` and be valid PascalCase (`OrgRow`, `UserProfileRow`)
+- All queries with the same annotation must return the exact same columns (names,
+  types, nullability, order). Mismatch is a generation-time error.
+- Scope is per-directory: `OrgRow` in `admin/sql/` is distinct from `OrgRow` in
+  `public/sql/`
+- Unannotated queries keep their per-query Row type (backwards compatible)
+
 ## FAQ
 
 ### What flavour of SQL does Marmot support?

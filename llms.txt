@@ -86,6 +86,39 @@ pub fn delete_user(db db: sqlight.Connection, id id: Int) {
 
 **Module:** imports are conditional (only include `decode`, `option`, `timestamp`, `calendar` when needed). Date modules get `parse_date`/`date_to_string` private helpers.
 
+## Shared return types
+
+Multiple queries in the same `sql/` directory can share a single Row type
+and decoder by annotating each with a top-of-file SQL comment:
+
+```sql
+-- returns: OrgRow
+SELECT id, name, subdomain FROM orgs WHERE id = @id
+```
+
+Rules:
+- The annotation must appear before the first SQL statement. Blank lines
+  and other `--` comments may precede it.
+- The type name must end in `Row` and be a valid Gleam PascalCase identifier.
+- All queries in the same directory annotated with the same name must
+  return the exact same shape: same field names, types, nullability, and
+  column order. Marmot reports a generation-time error on mismatch.
+- Unannotated queries keep the default per-query Row type.
+
+Scope: per-directory (per generated module). `OrgRow` in `admin/orgs/sql/`
+is a distinct type from `OrgRow` in `public/orgs/sql/`.
+
+Generated output for shared types:
+```gleam
+pub type OrgRow { OrgRow(id: Int, name: String, subdomain: String) }
+
+fn org_row_decoder() -> decode.Decoder(OrgRow) { ... }
+
+pub fn get_org(db db: ..., id id: Int) -> Result(List(OrgRow), sqlight.Error) {
+  sqlight.query("...", on: db, with: [...], expecting: org_row_decoder())
+}
+```
+
 ## Known limitations
 
 - Table names containing SQL keywords (`RETURNING`, `INTO`) confuse the string-based SQL parser
