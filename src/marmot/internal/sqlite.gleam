@@ -2443,7 +2443,7 @@ fn extract_update_parameters(
 ) -> List(Parameter) {
   let table_name = parse_update_table_name(sql)
   let set_params = parse_update_set_columns(sql)
-  let where_cols = parse_where_columns(sql)
+  let where_params = parse_where_columns(sql)
 
   case dict.get(table_schemas, table_name) {
     Ok(table_cols) -> {
@@ -2466,17 +2466,18 @@ fn extract_update_parameters(
           }
         })
       let where_parameters =
-        list.map(where_cols, fn(col_name) {
-          case list.find(table_cols, fn(c) { c.name == col_name }) {
+        list.map(where_params, fn(param) {
+          let #(param_name, lookup_col) = param
+          case list.find(table_cols, fn(c) { c.name == lookup_col }) {
             Ok(col) ->
               Parameter(
-                name: col_name,
+                name: param_name,
                 column_type: col.column_type,
                 nullable: col.nullable,
               )
             Error(_) ->
               Parameter(
-                name: col_name,
+                name: param_name,
                 column_type: StringType,
                 nullable: False,
               )
@@ -2491,8 +2492,9 @@ fn extract_update_parameters(
           Parameter(name: param_name, column_type: StringType, nullable: False)
         })
       let where_parameters =
-        list.map(where_cols, fn(col_name) {
-          Parameter(name: col_name, column_type: StringType, nullable: False)
+        list.map(where_params, fn(param) {
+          let #(param_name, _lookup_col) = param
+          Parameter(name: param_name, column_type: StringType, nullable: False)
         })
       list.append(set_parameters, where_parameters)
     }
@@ -2835,7 +2837,13 @@ fn take_identifier_chars(s: String, acc: String) -> String {
 /// Parse WHERE column names from UPDATE/DELETE statement.
 /// Uses depth-aware top-level WHERE detection so subquery WHERE clauses
 /// (inside parentheses) are not mistaken for the main WHERE.
-fn parse_where_columns(sql: String) -> List(String) {
+/// Returns a list of #(param_name, lookup_col) tuples for WHERE parameters.
+/// - param_name: the generated function argument label
+/// - lookup_col: the schema column to use for type inference
+/// For simple conditions like "col = ?" or "col = @name", both are the same col.
+/// For arithmetic conditions like "balance_cents + @min_delta >= 0",
+/// param_name is "min_delta" and lookup_col is "balance_cents".
+fn parse_where_columns(sql: String) -> List(#(String, String)) {
   case find_top_level_keyword_offset(sql, " WHERE ") {
     option.None -> []
     option.Some(where_offset) -> {
@@ -2853,10 +2861,41 @@ fn parse_where_columns(sql: String) -> List(String) {
         // Match patterns like "col = ?", "col > ?", "col=?", or "col = @name"
         case string.contains(trimmed, "?") || string.contains(trimmed, "@") {
           True -> {
-            let col_name = extract_column_before_operator(trimmed)
-            case col_name {
+            let lhs = extract_column_before_operator(trimmed)
+            case lhs {
               "" -> Error(Nil)
-              name -> Ok(normalize_column_ref(name))
+              _ -> {
+                // If LHS contains "@", it's an arithmetic expr like "balance_cents + @min_delta"
+                // Extract the @param_name and use the base column for type lookup
+                case string.contains(lhs, "@") {
+                  True -> {
+                    case extract_named_param_from_rhs(lhs) {
+                      Ok(param_name) -> {
+                        // Find the base column (everything before the @)
+                        let lookup_col = case string.split_once(lhs, "@") {
+                          Ok(#(before_at, _)) ->
+                            // Strip the arithmetic operator and spaces
+                            before_at
+                            |> string.trim
+                            |> fn(s) {
+                              case string.ends_with(s, "+") || string.ends_with(s, "-") || string.ends_with(s, "*") || string.ends_with(s, "/") {
+                                True -> string.drop_end(s, 1) |> string.trim
+                                False -> s
+                              }
+                            }
+                          Error(_) -> param_name
+                        }
+                        Ok(#(param_name, normalize_column_ref(lookup_col)))
+                      }
+                      Error(_) -> Ok(#(normalize_column_ref(lhs), normalize_column_ref(lhs)))
+                    }
+                  }
+                  False -> {
+                    let col_name = normalize_column_ref(lhs)
+                    Ok(#(col_name, col_name))
+                  }
+                }
+              }
             }
           }
           False -> Error(Nil)
