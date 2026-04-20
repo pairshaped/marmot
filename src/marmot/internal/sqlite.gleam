@@ -2872,15 +2872,18 @@ fn parse_where_columns(sql: String) -> List(#(String, String)) {
         // Match patterns like "col = ?", "col > ?", "col=?", or "col = @name"
         case string.contains(trimmed, "?") || string.contains(trimmed, "@") {
           True -> {
-            // Special case: "col IN (subquery with @param)" — extract @param from subquery
+            // Special case: "col IN (subquery)" or "col = (subquery)" where
+            // @param is inside the subquery. Extract the first @named param
+            // from the subquery RHS. Type lookup searches all tables since
+            // the column may come from a JOINed table, not the main UPDATE table.
             let upper = string.uppercase(trimmed)
-            // Match "IN (...SELECT..." with optional spaces: "IN (SELECT", "IN ( SELECT"
-            let has_in_subquery =
+            let has_subquery =
               string.contains(upper, " IN (SELECT")
               || string.contains(upper, " IN ( SELECT")
-            case has_in_subquery {
+              || string.contains(upper, "= (SELECT")
+              || string.contains(upper, "= ( SELECT")
+            case has_subquery {
               True -> {
-                // Find the first @name in the RHS subquery
                 case extract_named_param_from_rhs(trimmed) {
                   Ok(param_name) -> Ok(#(param_name, param_name))
                   Error(_) -> Error(Nil)
