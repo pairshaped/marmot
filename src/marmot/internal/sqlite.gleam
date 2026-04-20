@@ -394,34 +394,42 @@ fn resolve_select_item(
 /// explicit CASTs. Falls back to StringType nullable.
 fn infer_expression_type(item: SelectItem) -> Column {
   let upper = string.uppercase(item.expression)
-  case string.starts_with(upper, "COUNT(") {
-    True ->
-      Column(name: item.alias, column_type: query.IntType, nullable: False)
-    False ->
-      case string.starts_with(upper, "EXISTS(") {
+  // Literal constants: "0", "1", "42", "'text'", "3.14"
+  case infer_literal_type(string.trim(item.expression)) {
+    option.Some(t) -> Column(name: item.alias, column_type: t, nullable: False)
+    option.None ->
+      case string.starts_with(upper, "COUNT(") {
         True ->
           Column(name: item.alias, column_type: query.IntType, nullable: False)
         False ->
-          case string.starts_with(upper, "CAST(") {
-            True -> infer_cast_type(item.alias, upper)
+          case string.starts_with(upper, "EXISTS(") {
+            True ->
+              Column(
+                name: item.alias,
+                column_type: query.IntType,
+                nullable: False,
+              )
             False ->
-              case string.starts_with(upper, "COALESCE(") {
-                True -> infer_coalesce_type(item.alias, item.expression)
+              case string.starts_with(upper, "CAST(") {
+                True -> infer_cast_type(item.alias, upper)
                 False ->
-                  case string.starts_with(upper, "SUM(") {
-                    True ->
-                      // SUM() can be NULL with no rows
-                      Column(
-                        name: item.alias,
-                        column_type: query.IntType,
-                        nullable: True,
-                      )
+                  case string.starts_with(upper, "COALESCE(") {
+                    True -> infer_coalesce_type(item.alias, item.expression)
                     False ->
-                      Column(
-                        name: item.alias,
-                        column_type: StringType,
-                        nullable: True,
-                      )
+                      case string.starts_with(upper, "SUM(") {
+                        True ->
+                          Column(
+                            name: item.alias,
+                            column_type: query.IntType,
+                            nullable: True,
+                          )
+                        False ->
+                          Column(
+                            name: item.alias,
+                            column_type: StringType,
+                            nullable: True,
+                          )
+                      }
                   }
               }
           }
@@ -1290,9 +1298,6 @@ fn extract_parameters(
 
       case stmt_type {
         Insert -> {
-          // Only use text-based parsing for INSERT ... VALUES (...). For
-          // INSERT ... SELECT, parameter positions come from the SELECT/WHERE
-          // clauses, not from the INSERT column list — fall back to opcode.
           case contains_keyword(sql, "VALUES") {
             True -> {
               let parsed = extract_insert_parameters(table_schemas, sql)
@@ -1301,7 +1306,16 @@ fn extract_parameters(
                 False -> opcode_fallback()
               }
             }
-            False -> opcode_fallback()
+            False -> {
+              // INSERT ... SELECT: parameters come from the SELECT list
+              // (positional, matched to INSERT target columns) plus any
+              // WHERE conditions in the SELECT.
+              let parsed = extract_insert_select_parameters(table_schemas, sql)
+              case list.length(parsed) == param_count {
+                True -> parsed
+                False -> opcode_fallback()
+              }
+            }
           }
         }
         Update -> {
@@ -1433,6 +1447,117 @@ fn do_dedupe_variables(
         True -> do_dedupe_variables(rest, last_p1, acc)
         False -> do_dedupe_variables(rest, op.p1, [op, ..acc])
       }
+  }
+}
+
+/// For INSERT ... SELECT, match parameters positionally across both the
+/// SELECT list (where `?` at position i in the SELECT maps to the i-th
+/// INSERT target column) and any WHERE clause in the SELECT.
+fn extract_insert_select_parameters(
+  table_schemas: Dict(String, List(Column)),
+  sql: String,
+) -> List(Parameter) {
+  let target_cols = parse_insert_columns(sql)
+  let target_table = parse_insert_table_name(sql)
+  let target_col_types = case dict.get(table_schemas, target_table) {
+    Ok(cols) -> cols
+    Error(_) -> []
+  }
+
+  // Extract the SELECT ... FROM ... part that follows the INSERT column list
+  let upper = string.uppercase(sql)
+  let marker = ") SELECT "
+  case string.split_once(upper, marker) {
+    Error(_) -> []
+    Ok(#(before, _)) -> {
+      let offset = string.length(before) + string.length(marker)
+      let after_select = string.drop_start(sql, offset) |> string.trim_start
+      // SELECT-list ends at " FROM " at top level
+      let end_idx = case
+        do_find_top_level_keyword(after_select, " FROM ", 0, 0)
+      {
+        option.Some(idx) -> idx
+        option.None -> string.length(after_select)
+      }
+      let select_list = string.slice(after_select, 0, end_idx)
+      let items = split_top_level_commas(select_list)
+      // For each item that is `?`, use the target column at that position
+      let select_params =
+        items
+        |> list.index_map(fn(item, idx) {
+          let trimmed = string.trim(item)
+          case trimmed == "?" {
+            True ->
+              case list_at(target_cols, idx) {
+                Ok(col_name) ->
+                  case
+                    list.find(target_col_types, fn(c) { c.name == col_name })
+                  {
+                    Ok(col) ->
+                      option.Some(Parameter(
+                        name: col_name,
+                        column_type: col.column_type,
+                        nullable: col.nullable,
+                      ))
+                    Error(_) ->
+                      option.Some(Parameter(
+                        name: col_name,
+                        column_type: StringType,
+                        nullable: False,
+                      ))
+                  }
+                Error(_) -> option.None
+              }
+            False -> option.None
+          }
+        })
+        |> list.filter_map(fn(o) {
+          case o {
+            option.Some(p) -> Ok(p)
+            option.None -> Error(Nil)
+          }
+        })
+      // Now also look in the SELECT's FROM/WHERE part for `?` bindings
+      let from_onwards = string.drop_start(after_select, end_idx)
+      let where_tables =
+        find_all_subquery_tables(from_onwards)
+        |> list.filter(fn(t) {
+          case dict.get(table_schemas, t) {
+            Ok(_) -> True
+            Error(_) -> False
+          }
+        })
+      let where_binders = find_param_binders(from_onwards, 0, [])
+      let where_params =
+        list.map(where_binders, fn(binder) {
+          let bare = case string.split_once(binder.name, ".") {
+            Ok(#(_, after)) -> after
+            Error(_) -> binder.name
+          }
+          case
+            list.find_map(where_tables, fn(table) {
+              case dict.get(table_schemas, table) {
+                Ok(cols) ->
+                  case list.find(cols, fn(c) { c.name == bare }) {
+                    Ok(col) -> Ok(col)
+                    Error(_) -> Error(Nil)
+                  }
+                Error(_) -> Error(Nil)
+              }
+            })
+          {
+            Ok(col) ->
+              Parameter(
+                name: bare,
+                column_type: col.column_type,
+                nullable: col.nullable,
+              )
+            Error(_) ->
+              Parameter(name: bare, column_type: StringType, nullable: False)
+          }
+        })
+      list.append(select_params, where_params)
+    }
   }
 }
 
@@ -1685,32 +1810,87 @@ fn do_read_named(s: String, idx: Int, acc: String) -> Placeholder {
 }
 
 /// Given the SQL text before a `?`, extract the column name being compared
-/// against it. Looks for trailing ` column OP ` pattern. Handles LIKE and
-/// IS (NOT) separately because they're keywords that require whitespace.
+/// against it. Looks for trailing ` column OP ` pattern. Handles:
+/// - Symbolic operators: `=`, `>=`, `<=`, `!=`, `<>`, `>`, `<`
+/// - Keyword operators: LIKE, IS, IS NOT
+/// - BETWEEN: `col BETWEEN ?` and `col BETWEEN ? AND ?` (both bind to col)
+/// - Function-call LHS: `LOWER(col) = ?` → unwrap to `col`
 fn extract_column_binder(before: String) -> option.Option(String) {
   let trimmed = string.trim_end(before)
-  // Try symbolic operators first
-  let sym_operators = [">=", "<=", "!=", "<>", "=", ">", "<"]
-  let without_sym = strip_trailing_operator(trimmed, sym_operators)
-  // If a symbolic operator was stripped, proceed. Otherwise try keyword
-  // operators (LIKE, IS, IS NOT).
-  let without_op = case without_sym == trimmed {
-    True -> strip_trailing_keyword_operator(trimmed)
-    False -> without_sym
+  let upper = string.uppercase(trimmed)
+  // Check for BETWEEN bindings first. Two forms:
+  //   1. `col BETWEEN ? AND` — the first `?` of a BETWEEN
+  //   2. `col BETWEEN literal AND` or `col BETWEEN ? AND` — the second
+  //      `?` (where `AND` is the separator inside BETWEEN, NOT a boolean
+  //      connector).
+  case extract_between_column(trimmed, upper) {
+    option.Some(col) -> option.Some(col)
+    option.None -> {
+      // Try symbolic operators first
+      let sym_operators = [">=", "<=", "!=", "<>", "=", ">", "<"]
+      let without_sym = strip_trailing_operator(trimmed, sym_operators)
+      let without_op = case without_sym == trimmed {
+        True -> strip_trailing_keyword_operator(trimmed)
+        False -> without_sym
+      }
+      let trimmed2 = string.trim_end(without_op)
+      let id = case take_trailing_identifier(trimmed2) {
+        "" -> extract_identifier_from_trailing_parens(trimmed2)
+        name -> name
+      }
+      case id {
+        "" -> option.None
+        name ->
+          case is_simple_column_ref(name) {
+            True -> option.Some(name)
+            False -> option.None
+          }
+      }
+    }
   }
-  let trimmed2 = string.trim_end(without_op)
-  let id = case take_trailing_identifier(trimmed2) {
-    "" ->
-      // Maybe the LHS is a function call like `LOWER(email)`. Look inside
-      // the trailing parenthesized group for the last identifier.
-      extract_identifier_from_trailing_parens(trimmed2)
-    name -> name
-  }
-  case id {
-    "" -> option.None
-    name ->
+}
+
+/// Recognize the BETWEEN pattern and return the column name.
+/// - `col BETWEEN` → first `?` of a BETWEEN. Returns col.
+/// - `col BETWEEN <literal> AND` or `col BETWEEN ? AND` → second `?`. Returns col.
+///
+/// Uses the original (not uppercased) trimmed string for column extraction
+/// so downstream schema lookups match the column name's real case.
+fn extract_between_column(
+  trimmed: String,
+  upper: String,
+) -> option.Option(String) {
+  // Case 1: ends with " BETWEEN"
+  case string.ends_with(upper, " BETWEEN") {
+    True -> {
+      let without_kw = string.drop_end(trimmed, 8)
+      let name = take_trailing_identifier(string.trim_end(without_kw))
       case is_simple_column_ref(name) {
         True -> option.Some(name)
+        False -> option.None
+      }
+    }
+    False ->
+      // Case 2: ends with " AND" and earlier has " BETWEEN "
+      case string.ends_with(upper, " AND") {
+        True -> {
+          let upper_before_and = string.drop_end(upper, 4)
+          case string.split_once(upper_before_and, " BETWEEN ") {
+            Ok(#(before_between_upper, _)) -> {
+              // Use original-case string — cut at the length of the upper
+              // prefix (ASCII, so char count matches byte count).
+              let prefix_len = string.length(before_between_upper)
+              let before_between = string.slice(trimmed, 0, prefix_len)
+              let trimmed_before_between = string.trim_end(before_between)
+              let name = take_trailing_identifier(trimmed_before_between)
+              case is_simple_column_ref(name) {
+                True -> option.Some(name)
+                False -> option.None
+              }
+            }
+            Error(_) -> option.None
+          }
+        }
         False -> option.None
       }
   }
