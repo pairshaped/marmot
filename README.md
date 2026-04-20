@@ -397,6 +397,41 @@ but has diverged in several ways:
   single Row type and decoder via a `-- returns: EntityRow` annotation.
   Eliminates adapter boilerplate when multiple queries return the same shape.
 
+## Why not just fork Squirrel?
+
+Marmot deliberately mirrors Squirrel's ergonomics, so this question comes up.
+The surface layers (SQL file conventions, code generation, formatting,
+configuration) could have been forked. The engine underneath couldn't.
+Postgres and SQLite expose type information in fundamentally incompatible
+ways, so the "figure out the types" part had to be built from scratch.
+
+Specifically:
+
+- Postgres' wire protocol returns full type info for parameters and result
+  columns when a statement is prepared. SQLite doesn't.
+- SQLite columns have *affinity*, not types. A `TEXT` column can store an
+  `INTEGER`, and the engine never commits to a type for a result slot.
+- Result columns have to be traced through `EXPLAIN` opcodes
+  (`OpenRead` / `Column` / `Rowid` / `ResultRow`) back to physical table columns,
+  then joined against `PRAGMA table_info` for the declared type.
+- Nullability has to be derived from joins, subqueries, and `COALESCE` usage
+  instead of reported by the engine. Marmot tracks nullable-cursor sets
+  through the opcode trace.
+- Computed columns (`COUNT`, `CAST`, `COALESCE`, `CASE`, `SUM`, window
+  functions) carry no type information and need a shape-based inference
+  fallback that pattern-matches on expression text.
+- Parameter types are reverse-engineered from usage sites (`WHERE col = ?`,
+  `LIMIT ?`, `CAST(? AS TEXT)`) instead of reported.
+- Repeated `@name` parameters need a dedup/unification pass to pick a single
+  inferred type across occurrences.
+- SQLite-specific quirks (`WITHOUT ROWID`, `STRICT` tables, `INTEGER PRIMARY
+  KEY` aliasing `rowid`, affinity rules) have no Postgres analogue and
+  required their own handling.
+
+Squirrel's output shape is the right one for SQLite too, and we've kept it.
+The path from SQL to "here are the types" is a different problem in SQLite,
+so Marmot's type-inference pipeline is its own.
+
 ## Credits
 
 Marmot's design, conventions, and approach are directly inspired by
