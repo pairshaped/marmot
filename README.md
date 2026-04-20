@@ -333,6 +333,30 @@ function it calls.
   deduplicates them natively, so `WHERE org_id = @org_id AND ... WHERE
   org_id = @org_id` generates a single `org_id` argument. Named parameters
   are also self-documenting and generally preferable.
+- `WHERE id IN (?)` with a dynamic list is not supported. SQLite has no native
+  array parameter type, so there is no way to bind a list to a single `?`.
+  Workarounds:
+  - Write separate queries for known list sizes
+  - Use `json_each(?)` with a JSON array string:
+    `WHERE id IN (SELECT value FROM json_each(?))`
+  - Build the query string dynamically in your application code (outside Marmot)
+
+## Differences from Squirrel
+
+Marmot is inspired by [Squirrel](https://github.com/giacomocavalieri/squirrel)
+but has diverged in several ways:
+
+- **Output directory**: Marmot defaults to `src/generated/sql/` with a `_sql`
+  filename suffix (e.g., `users_sql.gleam`). Squirrel places `sql.gleam` as a
+  sibling of the `sql/` directory.
+- **Named parameters**: Marmot supports `@name`, `:name`, and `$name`
+  placeholders natively. Squirrel uses Postgres `$1` positional parameters and
+  generates `arg_1`, `arg_2` names.
+- **Return type signatures**: Generated functions include explicit
+  `-> Result(List(RowType), sqlight.Error)` return types.
+- **Formatting**: Generated code is run through `gleam format` automatically,
+  so it never causes diffs when users run the formatter.
+- **Target**: SQLite instead of Postgres.
 
 ## Credits
 
