@@ -1928,8 +1928,7 @@ fn extract_insert_select_parameters(
         })
       let where_binders = find_param_binders(from_onwards, 0, [])
       // Filter out named params that were already matched in the SELECT list
-      let select_param_names =
-        list.map(select_params, fn(p) { p.name })
+      let select_param_names = list.map(select_params, fn(p) { p.name })
       let unmatched_where_binders =
         list.filter(where_binders, fn(b) {
           !list.contains(select_param_names, b.name)
@@ -2468,7 +2467,15 @@ fn extract_update_parameters(
       let where_parameters =
         list.map(where_params, fn(param) {
           let #(param_name, lookup_col) = param
-          case list.find(table_cols, fn(c) { c.name == lookup_col }) {
+          // First try the main UPDATE table, then search all tables (for subquery params)
+          let found_col =
+            list.find(table_cols, fn(c) { c.name == lookup_col })
+            |> result.lazy_or(fn() {
+              dict.values(table_schemas)
+              |> list.flatten
+              |> list.find(fn(c) { c.name == lookup_col })
+            })
+          case found_col {
             Ok(col) ->
               Parameter(
                 name: param_name,
@@ -2843,6 +2850,8 @@ fn take_identifier_chars(s: String, acc: String) -> String {
 /// For simple conditions like "col = ?" or "col = @name", both are the same col.
 /// For arithmetic conditions like "balance_cents + @min_delta >= 0",
 /// param_name is "min_delta" and lookup_col is "balance_cents".
+/// For IN (subquery) conditions like "col IN (SELECT ... WHERE x = @param)",
+/// param_name is extracted from the subquery's @named param.
 fn parse_where_columns(sql: String) -> List(#(String, String)) {
   case find_top_level_keyword_offset(sql, " WHERE ") {
     option.None -> []
@@ -2861,38 +2870,64 @@ fn parse_where_columns(sql: String) -> List(#(String, String)) {
         // Match patterns like "col = ?", "col > ?", "col=?", or "col = @name"
         case string.contains(trimmed, "?") || string.contains(trimmed, "@") {
           True -> {
-            let lhs = extract_column_before_operator(trimmed)
-            case lhs {
-              "" -> Error(Nil)
-              _ -> {
-                // If LHS contains "@", it's an arithmetic expr like "balance_cents + @min_delta"
-                // Extract the @param_name and use the base column for type lookup
-                case string.contains(lhs, "@") {
-                  True -> {
-                    case extract_named_param_from_rhs(lhs) {
-                      Ok(param_name) -> {
-                        // Find the base column (everything before the @)
-                        let lookup_col = case string.split_once(lhs, "@") {
-                          Ok(#(before_at, _)) ->
-                            // Strip the arithmetic operator and spaces
-                            before_at
-                            |> string.trim
-                            |> fn(s) {
-                              case string.ends_with(s, "+") || string.ends_with(s, "-") || string.ends_with(s, "*") || string.ends_with(s, "/") {
-                                True -> string.drop_end(s, 1) |> string.trim
-                                False -> s
-                              }
+            // Special case: "col IN (subquery with @param)" — extract @param from subquery
+            let upper = string.uppercase(trimmed)
+            // Match "IN (...SELECT..." with optional spaces: "IN (SELECT", "IN ( SELECT"
+            let has_in_subquery =
+              string.contains(upper, " IN (SELECT")
+              || string.contains(upper, " IN ( SELECT")
+            case has_in_subquery {
+              True -> {
+                // Find the first @name in the RHS subquery
+                case extract_named_param_from_rhs(trimmed) {
+                  Ok(param_name) -> Ok(#(param_name, param_name))
+                  Error(_) -> Error(Nil)
+                }
+              }
+              False -> {
+                let lhs = extract_column_before_operator(trimmed)
+                case lhs {
+                  "" -> Error(Nil)
+                  _ -> {
+                    // If LHS contains "@", it's an arithmetic expr like "balance_cents + @min_delta"
+                    // Extract the @param_name and use the base column for type lookup
+                    case string.contains(lhs, "@") {
+                      True -> {
+                        case extract_named_param_from_rhs(lhs) {
+                          Ok(param_name) -> {
+                            // Find the base column (everything before the @)
+                            let lookup_col = case string.split_once(lhs, "@") {
+                              Ok(#(before_at, _)) ->
+                                // Strip the arithmetic operator and spaces
+                                before_at
+                                |> string.trim
+                                |> fn(s) {
+                                  case
+                                    string.ends_with(s, "+")
+                                    || string.ends_with(s, "-")
+                                    || string.ends_with(s, "*")
+                                    || string.ends_with(s, "/")
+                                  {
+                                    True -> string.drop_end(s, 1) |> string.trim
+                                    False -> s
+                                  }
+                                }
+                              Error(_) -> param_name
                             }
-                          Error(_) -> param_name
+                            Ok(#(param_name, normalize_column_ref(lookup_col)))
+                          }
+                          Error(_) ->
+                            Ok(#(
+                              normalize_column_ref(lhs),
+                              normalize_column_ref(lhs),
+                            ))
                         }
-                        Ok(#(param_name, normalize_column_ref(lookup_col)))
                       }
-                      Error(_) -> Ok(#(normalize_column_ref(lhs), normalize_column_ref(lhs)))
+                      False -> {
+                        let col_name = normalize_column_ref(lhs)
+                        Ok(#(col_name, col_name))
+                      }
                     }
-                  }
-                  False -> {
-                    let col_name = normalize_column_ref(lhs)
-                    Ok(#(col_name, col_name))
                   }
                 }
               }

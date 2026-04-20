@@ -783,6 +783,41 @@ pub fn introspect_update_with_subquery_named_param_test() {
   ] = result.parameters
 }
 
+// Update with IN (subquery) WHERE condition and a @named param inside the subquery.
+// The @org_id param is in the subquery's WHERE, not the outer WHERE.
+// It should be inferred as Int from orders.org_id.
+pub fn introspect_update_with_in_subquery_named_param_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE line_item_question_values (
+        id INTEGER NOT NULL PRIMARY KEY,
+        line_item_id INTEGER NOT NULL,
+        question_key TEXT NOT NULL,
+        question_name TEXT
+      );
+      CREATE TABLE line_items (
+        id INTEGER NOT NULL PRIMARY KEY,
+        order_id INTEGER NOT NULL
+      );
+      CREATE TABLE orders (
+        id INTEGER NOT NULL PRIMARY KEY,
+        org_id INTEGER NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "UPDATE line_item_question_values SET question_name = @question_name WHERE question_key = @question_key AND line_item_id IN (SELECT li.id FROM line_items li JOIN orders o ON o.id = li.order_id WHERE o.org_id = @org_id)",
+    )
+  let assert [
+    Parameter(name: "question_name", column_type: StringType, nullable: True),
+    Parameter(name: "question_key", column_type: StringType, nullable: False),
+    Parameter(name: "org_id", column_type: IntType, nullable: False),
+  ] = result.parameters
+}
+
 pub fn introspect_insert_select_with_named_params_in_select_list_test() {
   use db <- sqlight.with_connection(":memory:")
   let assert Ok(_) =
