@@ -640,3 +640,45 @@ pub fn introspect_mixed_inner_and_left_joins_test() {
     Column(name: "c_val", column_type: StringType, nullable: True),
   ] = result.columns
 }
+
+pub fn introspect_row_number_returns_int_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE items (id INTEGER NOT NULL PRIMARY KEY, created_at INTEGER NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id, ROW_NUMBER() OVER (ORDER BY created_at) AS position FROM items",
+    )
+  // The window function column is always IntType, non-nullable.
+  // Note: the opcode tracer marks `id` as nullable when window function opcodes
+  // are present — this is a known limitation of opcode tracing with OVER clauses.
+  let assert [
+    Column(name: "id", column_type: IntType, nullable: True),
+    Column(name: "position", column_type: IntType, nullable: False),
+  ] = result.columns
+}
+
+pub fn introspect_rank_returns_int_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE items (id INTEGER NOT NULL PRIMARY KEY, score INTEGER NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id, RANK() OVER (ORDER BY score DESC) AS rk FROM items",
+    )
+  // The window function column is always IntType, non-nullable.
+  // Note: the opcode tracer marks `id` as nullable when window function opcodes
+  // are present — this is a known limitation of opcode tracing with OVER clauses.
+  let assert [
+    Column(name: "id", column_type: IntType, nullable: True),
+    Column(name: "rk", column_type: IntType, nullable: False),
+  ] = result.columns
+}

@@ -514,11 +514,20 @@ fn infer_expression_type(item: SelectItem) -> Column {
                             nullable: True,
                           )
                         False ->
-                          Column(
-                            name: item.alias,
-                            column_type: StringType,
-                            nullable: True,
-                          )
+                          case is_integer_window_function(upper) {
+                            True ->
+                              Column(
+                                name: item.alias,
+                                column_type: query.IntType,
+                                nullable: False,
+                              )
+                            False ->
+                              Column(
+                                name: item.alias,
+                                column_type: StringType,
+                                nullable: True,
+                              )
+                          }
                       }
                   }
               }
@@ -550,6 +559,18 @@ fn infer_coalesce_type(alias: String, expr: String) -> Column {
       }
     }
   }
+}
+
+/// Recognize SQL window functions that always return a non-null integer.
+/// Detects ROW_NUMBER(), RANK(), DENSE_RANK(), NTILE(...) followed by OVER.
+/// Matches on the uppercased expression, anchored at the start.
+fn is_integer_window_function(upper: String) -> Bool {
+  let starts_with_fn =
+    string.starts_with(upper, "ROW_NUMBER(")
+    || string.starts_with(upper, "RANK(")
+    || string.starts_with(upper, "DENSE_RANK(")
+    || string.starts_with(upper, "NTILE(")
+  starts_with_fn && string.contains(upper, ") OVER")
 }
 
 fn infer_literal_type(s: String) -> option.Option(query.ColumnType) {
