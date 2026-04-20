@@ -1,9 +1,10 @@
 import birdie
+import gleam/list
 import gleam/option
 import marmot/internal/codegen
 import marmot/internal/query.{
-  BitArrayType, BoolType, Column, DateType, FloatType, IntType, Parameter, Query,
-  StringType, TimestampType,
+  type Column, type Query, BitArrayType, BoolType, Column, DateType, FloatType,
+  IntType, Parameter, Query, StringType, TimestampType,
 }
 
 pub fn codegen_select_single_param_test() {
@@ -536,4 +537,93 @@ pub fn columns_equal_different_lengths_test() {
   ]
   let b = [Column(name: "id", column_type: IntType, nullable: False)]
   let assert False = codegen.columns_equal(a, b)
+}
+
+fn make_query(
+  name: String,
+  path: String,
+  columns: List(Column),
+  custom: option.Option(String),
+) -> Query {
+  Query(
+    name: name,
+    sql: "SELECT 1",
+    path: path,
+    parameters: [],
+    columns: columns,
+    custom_type_name: custom,
+  )
+}
+
+pub fn group_shared_queries_no_annotations_test() {
+  let q =
+    make_query(
+      "get_foo",
+      "a.sql",
+      [Column(name: "id", column_type: IntType, nullable: False)],
+      option.None,
+    )
+  let assert Ok(#(shared, unannotated)) = codegen.group_shared_queries([q])
+  let assert [] = shared
+  let assert [_] = unannotated
+}
+
+pub fn group_shared_queries_single_annotation_test() {
+  let q =
+    make_query(
+      "get_org",
+      "a.sql",
+      [Column(name: "id", column_type: IntType, nullable: False)],
+      option.Some("OrgRow"),
+    )
+  let assert Ok(#(shared, unannotated)) = codegen.group_shared_queries([q])
+  let assert [codegen.SharedGroup(name: "OrgRow", queries: [_], columns: _)] =
+    shared
+  let assert [] = unannotated
+}
+
+pub fn group_shared_queries_matching_shapes_test() {
+  let cols = [Column(name: "id", column_type: IntType, nullable: False)]
+  let q1 = make_query("a", "a.sql", cols, option.Some("OrgRow"))
+  let q2 = make_query("b", "b.sql", cols, option.Some("OrgRow"))
+  let assert Ok(#(shared, _)) = codegen.group_shared_queries([q1, q2])
+  let assert [codegen.SharedGroup(name: "OrgRow", queries: [_, _], columns: _)] =
+    shared
+}
+
+pub fn group_shared_queries_mismatched_shapes_errors_test() {
+  let q1 =
+    make_query(
+      "a",
+      "a.sql",
+      [Column(name: "id", column_type: IntType, nullable: False)],
+      option.Some("OrgRow"),
+    )
+  let q2 =
+    make_query(
+      "b",
+      "b.sql",
+      [Column(name: "name", column_type: StringType, nullable: False)],
+      option.Some("OrgRow"),
+    )
+  let assert Error(_) = codegen.group_shared_queries([q1, q2])
+}
+
+pub fn group_shared_queries_separate_names_do_not_collide_test() {
+  let q1 =
+    make_query(
+      "a",
+      "a.sql",
+      [Column(name: "id", column_type: IntType, nullable: False)],
+      option.Some("OrgRow"),
+    )
+  let q2 =
+    make_query(
+      "b",
+      "b.sql",
+      [Column(name: "name", column_type: StringType, nullable: False)],
+      option.Some("UserRow"),
+    )
+  let assert Ok(#(shared, _)) = codegen.group_shared_queries([q1, q2])
+  let assert 2 = list.length(shared)
 }

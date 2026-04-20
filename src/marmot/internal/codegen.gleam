@@ -1,8 +1,10 @@
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{type Option}
 import gleam/result
 import gleam/string
+import marmot/internal/error
 import marmot/internal/query.{
   type Column, type ColumnType, type Parameter, type Query, BitArrayType,
   BoolType, DateType, FloatType, IntType, StringType, TimestampType,
@@ -537,6 +539,74 @@ pub fn columns_equal(a: List(Column), b: List(Column)) -> Bool {
       && col_a.nullable == col_b.nullable
       && columns_equal(rest_a, rest_b)
     _, _ -> False
+  }
+}
+
+pub type SharedGroup {
+  SharedGroup(name: String, queries: List(Query), columns: List(Column))
+}
+
+pub fn group_shared_queries(
+  queries: List(Query),
+) -> Result(#(List(SharedGroup), List(Query)), error.MarmotError) {
+  let #(annotated, unannotated) =
+    list.partition(queries, fn(q) {
+      case q.custom_type_name {
+        option.Some(_) -> True
+        option.None -> False
+      }
+    })
+
+  let by_name =
+    list.fold(annotated, dict.new(), fn(acc, q) {
+      case q.custom_type_name {
+        option.Some(name) ->
+          dict.upsert(acc, name, fn(existing) {
+            case existing {
+              option.Some(existing_list) -> [q, ..existing_list]
+              option.None -> [q]
+            }
+          })
+        option.None -> acc
+      }
+    })
+
+  let validated =
+    dict.to_list(by_name)
+    |> list.try_map(fn(pair) {
+      let #(name, queries) = pair
+      let reversed = list.reverse(queries)
+      case validate_group_shapes(name, reversed) {
+        Ok(cols) ->
+          Ok(SharedGroup(name: name, queries: reversed, columns: cols))
+        Error(e) -> Error(e)
+      }
+    })
+
+  case validated {
+    Ok(groups) -> Ok(#(groups, unannotated))
+    Error(e) -> Error(e)
+  }
+}
+
+fn validate_group_shapes(
+  name: String,
+  queries: List(Query),
+) -> Result(List(Column), error.MarmotError) {
+  case queries {
+    [] -> Ok([])
+    [first, ..rest] -> {
+      case list.find(rest, fn(q) { !columns_equal(first.columns, q.columns) }) {
+        Error(Nil) -> Ok(first.columns)
+        Ok(mismatched) ->
+          Error(
+            error.SharedTypeMismatch(name: name, conflicts: [
+              #(first.path, first.columns),
+              #(mismatched.path, mismatched.columns),
+            ]),
+          )
+      }
+    }
   }
 }
 
