@@ -318,14 +318,16 @@ pub fn introspect_query(
       }
   }
 
-  // Determine parameters
+  // Determine parameters — use SQL with nullability suffixes stripped so that
+  // `col_name?` and `col_name!` aliases are not mistaken for `?` placeholders.
+  let param_sql = strip_nullability_suffixes(normalized_sql)
   let parameters =
     extract_parameters(
       opcodes,
       cursor_table,
       table_schemas,
       pk_columns,
-      normalized_sql,
+      param_sql,
     )
 
   let parameters = deduplicate_parameter_names(parameters)
