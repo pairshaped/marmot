@@ -782,3 +782,30 @@ pub fn introspect_update_with_subquery_named_param_test() {
     Parameter(name: "order_id", column_type: IntType, nullable: False),
   ] = result.parameters
 }
+
+pub fn introspect_insert_select_with_named_params_in_select_list_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE item_features (
+        id INTEGER NOT NULL PRIMARY KEY,
+        item_id INTEGER NOT NULL,
+        field_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "INSERT INTO item_features (item_id, field_key, created_at)
+       SELECT @item_id, lf.field_key, @created_at
+       FROM item_features lf
+       WHERE lf.item_id = @source_item_id",
+    )
+  let assert [
+    Parameter(name: "item_id", column_type: IntType, nullable: False),
+    Parameter(name: "created_at", column_type: IntType, nullable: False),
+    Parameter(name: "source_item_id", column_type: IntType, nullable: False),
+  ] = result.parameters
+}

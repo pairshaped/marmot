@@ -1866,30 +1866,44 @@ fn extract_insert_select_parameters(
       }
       let select_list = string.slice(after_select, 0, end_idx)
       let items = split_top_level_commas(select_list)
-      // For each item that is `?`, use the target column at that position
+      // For each item that is `?` or `@name`, use the target column at that position
       let select_params =
         items
         |> list.index_map(fn(item, idx) {
           let trimmed = string.trim(item)
-          case trimmed == "?" {
+          let is_anon = trimmed == "?"
+          let is_named = string.starts_with(trimmed, "@")
+          case is_anon || is_named {
             True ->
               case list_at(target_cols, idx) {
                 Ok(col_name) ->
                   case
                     list.find(target_col_types, fn(c) { c.name == col_name })
                   {
-                    Ok(col) ->
+                    Ok(col) -> {
+                      // For named params, use the @name (stripped of @) as the
+                      // parameter name; for positional ?, use the column name.
+                      let param_name = case is_named {
+                        True -> string.drop_start(trimmed, 1)
+                        False -> col_name
+                      }
                       option.Some(Parameter(
-                        name: col_name,
+                        name: param_name,
                         column_type: col.column_type,
                         nullable: col.nullable,
                       ))
-                    Error(_) ->
+                    }
+                    Error(_) -> {
+                      let param_name = case is_named {
+                        True -> string.drop_start(trimmed, 1)
+                        False -> col_name
+                      }
                       option.Some(Parameter(
-                        name: col_name,
+                        name: param_name,
                         column_type: StringType,
                         nullable: False,
                       ))
+                    }
                   }
                 Error(_) -> option.None
               }
@@ -1913,32 +1927,56 @@ fn extract_insert_select_parameters(
           }
         })
       let where_binders = find_param_binders(from_onwards, 0, [])
+      // Filter out named params that were already matched in the SELECT list
+      let select_param_names =
+        list.map(select_params, fn(p) { p.name })
+      let unmatched_where_binders =
+        list.filter(where_binders, fn(b) {
+          !list.contains(select_param_names, b.name)
+        })
       let where_params =
-        list.map(where_binders, fn(binder) {
-          let bare = case string.split_once(binder.name, ".") {
-            Ok(#(_, after)) -> after
-            Error(_) -> binder.name
+        list.map(unmatched_where_binders, fn(binder) {
+          // Build a list of column names to try: the binder_column (with table
+          // prefix stripped) takes priority, then fall back to binder.name itself.
+          let names_to_try = case binder.binder_column {
+            option.Some(col) -> {
+              let bare_col = case string.split_once(col, ".") {
+                Ok(#(_, after)) -> after
+                Error(_) -> col
+              }
+              case bare_col == binder.name {
+                True -> [binder.name]
+                False -> [bare_col, binder.name]
+              }
+            }
+            option.None -> [binder.name]
           }
           case
-            list.find_map(where_tables, fn(table) {
-              case dict.get(table_schemas, table) {
-                Ok(cols) ->
-                  case list.find(cols, fn(c) { c.name == bare }) {
-                    Ok(col) -> Ok(col)
-                    Error(_) -> Error(Nil)
-                  }
-                Error(_) -> Error(Nil)
-              }
+            list.find_map(names_to_try, fn(name) {
+              list.find_map(where_tables, fn(table) {
+                case dict.get(table_schemas, table) {
+                  Ok(cols) ->
+                    case list.find(cols, fn(c) { c.name == name }) {
+                      Ok(col) -> Ok(col)
+                      Error(_) -> Error(Nil)
+                    }
+                  Error(_) -> Error(Nil)
+                }
+              })
             })
           {
             Ok(col) ->
               Parameter(
-                name: bare,
+                name: binder.name,
                 column_type: col.column_type,
                 nullable: col.nullable,
               )
             Error(_) ->
-              Parameter(name: bare, column_type: StringType, nullable: False)
+              Parameter(
+                name: binder.name,
+                column_type: StringType,
+                nullable: False,
+              )
           }
         })
       list.append(select_params, where_params)
