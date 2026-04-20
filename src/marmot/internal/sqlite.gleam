@@ -383,10 +383,65 @@ fn resolve_select_item(
         })
       case resolved {
         Ok(col) -> col
-        Error(_) ->
-          Column(name: item.alias, column_type: StringType, nullable: True)
+        Error(_) -> infer_expression_type(item)
       }
     }
+  }
+}
+
+/// When an expression-based SELECT item can't be resolved to a table column,
+/// infer its type from the expression shape. Handles common aggregates and
+/// explicit CASTs. Falls back to StringType nullable.
+fn infer_expression_type(item: SelectItem) -> Column {
+  let upper = string.uppercase(item.expression)
+  // COUNT(...) — always non-null Int
+  case string.starts_with(upper, "COUNT(") {
+    True ->
+      Column(name: item.alias, column_type: query.IntType, nullable: False)
+    False ->
+      // EXISTS(...) — always non-null Int (0 or 1)
+      case string.starts_with(upper, "EXISTS(") {
+        True ->
+          Column(name: item.alias, column_type: query.IntType, nullable: False)
+        False ->
+          // CAST(expr AS type) — type from target
+          case string.starts_with(upper, "CAST(") {
+            True -> infer_cast_type(item.alias, upper)
+            False ->
+              // COALESCE(expr, literal) — recurse on first arg; if recursion
+              // can't infer, inspect for a numeric-literal default to decide
+              // type.
+              Column(name: item.alias, column_type: StringType, nullable: True)
+          }
+      }
+  }
+}
+
+/// Parse `CAST(... AS type)` to find the target type. Uses the uppercased
+/// expression for keyword matching.
+fn infer_cast_type(name: String, upper_expr: String) -> Column {
+  // Find the last " AS " at top level inside the CAST parens
+  case string.split_once(upper_expr, " AS ") {
+    Ok(#(_, after)) -> {
+      let target = string.trim(after)
+      // Strip trailing ) and anything after
+      let target = case string.split_once(target, ")") {
+        Ok(#(t, _)) -> string.trim(t)
+        Error(_) -> target
+      }
+      case target {
+        "INTEGER" | "INT" | "BIGINT" ->
+          Column(name: name, column_type: query.IntType, nullable: False)
+        "REAL" | "FLOAT" | "DOUBLE" ->
+          Column(name: name, column_type: query.FloatType, nullable: False)
+        "TEXT" | "VARCHAR" | "CHAR" ->
+          Column(name: name, column_type: StringType, nullable: False)
+        "BLOB" ->
+          Column(name: name, column_type: query.BitArrayType, nullable: False)
+        _ -> Column(name: name, column_type: StringType, nullable: True)
+      }
+    }
+    Error(_) -> Column(name: name, column_type: StringType, nullable: True)
   }
 }
 
@@ -394,6 +449,8 @@ type SelectItem {
   SelectItem(
     /// The display/field name (from AS alias or the expression itself)
     alias: String,
+    /// The raw expression (left side of AS, or the whole item)
+    expression: String,
     /// If the expression is a bare column reference (possibly "table.col"),
     /// this is the column name (without table prefix). None for expressions
     /// like COUNT(*), COALESCE(...), subqueries, etc.
@@ -796,7 +853,7 @@ fn parse_select_item(raw: String) -> SelectItem {
         Error(_) -> option.None
       }
   }
-  SelectItem(alias: clean_alias, bare_column: bare_column)
+  SelectItem(alias: clean_alias, expression: expr, bare_column: bare_column)
 }
 
 /// Split on the LAST top-level " AS " (case-insensitive).
@@ -1142,9 +1199,14 @@ fn extract_parameters(
   sql: String,
 ) -> List(Parameter) {
   // Find all Variable opcodes sorted by p1 (parameter number)
+  // Dedupe by parameter number (p1): SQLite sometimes emits multiple
+  // Variable opcodes for a single `?` when the parameter is used in
+  // multiple contexts (e.g., an indexed seek plus a post-seek filter).
+  // We want one Parameter per `?` not per Variable opcode.
   let variable_ops =
     list.filter(opcodes, fn(op) { op.opcode == "Variable" })
     |> list.sort(fn(a, b) { int.compare(a.p1, b.p1) })
+    |> dedupe_variables_by_p1
 
   let param_count = list.length(variable_ops)
   case param_count {
@@ -1165,11 +1227,17 @@ fn extract_parameters(
 
       case stmt_type {
         Insert -> {
-          let parsed = extract_insert_parameters(table_schemas, sql)
-          // If the string parser's parameter count doesn't match actual
-          // placeholders (e.g. INSERT...SELECT), fall back to EXPLAIN opcodes
-          case list.length(parsed) == param_count {
-            True -> parsed
+          // Only use text-based parsing for INSERT ... VALUES (...). For
+          // INSERT ... SELECT, parameter positions come from the SELECT/WHERE
+          // clauses, not from the INSERT column list — fall back to opcode.
+          case contains_keyword(sql, "VALUES") {
+            True -> {
+              let parsed = extract_insert_parameters(table_schemas, sql)
+              case list.length(parsed) == param_count {
+                True -> parsed
+                False -> opcode_fallback()
+              }
+            }
             False -> opcode_fallback()
           }
         }
@@ -1226,62 +1294,411 @@ fn extract_insert_parameters(
   }
 }
 
-/// For SELECT/DELETE statements, parameters correspond to columns mentioned
-/// in WHERE conditions (in positional order). Column types come from any
-/// table in the FROM list. Useful for `col = ?`, `col > ?`, etc.
-///
-/// Returns an empty list if the WHERE clause contains subqueries, complex
-/// expressions, or any condition whose extracted column name isn't a simple
-/// identifier. The caller falls back to opcode-based inference in that case.
+fn dedupe_variables_by_p1(ops: List(Opcode)) -> List(Opcode) {
+  do_dedupe_variables(ops, -1, [])
+}
+
+fn do_dedupe_variables(
+  remaining: List(Opcode),
+  last_p1: Int,
+  acc: List(Opcode),
+) -> List(Opcode) {
+  case remaining {
+    [] -> list.reverse(acc)
+    [op, ..rest] ->
+      case op.p1 == last_p1 {
+        True -> do_dedupe_variables(rest, last_p1, acc)
+        False -> do_dedupe_variables(rest, op.p1, [op, ..acc])
+      }
+  }
+}
+
+/// For SELECT/DELETE statements, scan the SQL for `column OP ?` patterns
+/// (in any scope, including subqueries) and resolve each `?` to a Parameter
+/// in positional order. Returns an empty list when any `?` can't be cleanly
+/// mapped to a preceding column — the caller falls back to opcode inference.
 fn extract_select_parameters(
   table_schemas: Dict(String, List(Column)),
   sql: String,
   stmt_type: StatementType,
 ) -> List(Parameter) {
-  let cols = parse_where_columns(sql)
-  // Reject if any extracted "column" isn't a clean identifier or qualified
-  // identifier like `t.col`. Protects against subqueries (`id IN (SELECT
-  // ...)`), complex predicates, etc.
-  let all_simple = list.all(cols, fn(name) { is_simple_column_ref(name) })
-  case all_simple {
-    False -> []
-    True -> {
-      let from_tables = case stmt_type {
-        Select -> parse_from_tables(sql)
-        Delete -> [parse_delete_table_name(sql)]
-        _ -> []
-      }
-      list.map(cols, fn(col_name) {
-        // Strip table prefix for schema lookup
-        let bare_name = case string.split_once(col_name, ".") {
-          Ok(#(_, after)) -> after
-          Error(_) -> col_name
+  let all_tables = collect_all_tables(sql, stmt_type, table_schemas)
+  let binders = find_param_binders(sql, 0, [])
+  case list.is_empty(binders) {
+    True -> []
+    False ->
+      list.map(binders, fn(binder) {
+        // Look up column by the binder name OR (for named params) by the
+        // column found on the comparison LHS.
+        let names_to_try = case binder.binder_column {
+          option.Some(col) if col != binder.name -> [binder.name, col]
+          _ -> [binder.name]
         }
-        // Find the column in any of the FROM tables
         let resolved =
-          list.find_map(from_tables, fn(table) {
-            case dict.get(table_schemas, table) {
-              Ok(cols) ->
-                case list.find(cols, fn(c) { c.name == bare_name }) {
-                  Ok(col) -> Ok(col)
-                  Error(_) -> Error(Nil)
-                }
-              Error(_) -> Error(Nil)
-            }
-          })
+          resolve_binder_type(names_to_try, all_tables, table_schemas)
         case resolved {
           Ok(col) ->
             Parameter(
-              name: bare_name,
+              name: binder.name,
               column_type: col.column_type,
               nullable: col.nullable,
             )
           Error(_) ->
-            Parameter(name: bare_name, column_type: StringType, nullable: False)
+            Parameter(
+              name: binder.name,
+              column_type: StringType,
+              nullable: False,
+            )
         }
       })
+  }
+}
+
+fn resolve_binder_type(
+  names: List(String),
+  all_tables: List(String),
+  table_schemas: Dict(String, List(Column)),
+) -> Result(Column, Nil) {
+  case names {
+    [] -> Error(Nil)
+    [name, ..rest] -> {
+      let bare = case string.split_once(name, ".") {
+        Ok(#(_, after)) -> after
+        Error(_) -> name
+      }
+      let found =
+        list.find_map(all_tables, fn(table) {
+          case dict.get(table_schemas, table) {
+            Ok(cols) ->
+              case list.find(cols, fn(c) { c.name == bare }) {
+                Ok(col) -> Ok(col)
+                Error(_) -> Error(Nil)
+              }
+            Error(_) -> Error(Nil)
+          }
+        })
+      case found {
+        Ok(c) -> Ok(c)
+        Error(_) -> resolve_binder_type(rest, all_tables, table_schemas)
+      }
     }
   }
+}
+
+/// Collect every table referenced in the SQL: the main FROM, any JOINs,
+/// plus tables introduced by subquery FROM clauses.
+fn collect_all_tables(
+  sql: String,
+  stmt_type: StatementType,
+  table_schemas: Dict(String, List(Column)),
+) -> List(String) {
+  let from_tables = case stmt_type {
+    Select -> parse_from_tables(sql)
+    Delete -> [parse_delete_table_name(sql)]
+    _ -> []
+  }
+  let subquery_tables = find_all_subquery_tables(sql)
+  let combined = list.append(from_tables, subquery_tables)
+  combined
+  |> list.filter(fn(t) {
+    case dict.get(table_schemas, t) {
+      Ok(_) -> True
+      Error(_) -> False
+    }
+  })
+  |> list.unique
+}
+
+fn find_all_subquery_tables(sql: String) -> List(String) {
+  do_find_subquery_tables(sql, [])
+}
+
+fn do_find_subquery_tables(sql: String, acc: List(String)) -> List(String) {
+  let upper = string.uppercase(sql)
+  case string.split_once(upper, " FROM ") {
+    Error(_) -> list.reverse(acc)
+    Ok(#(before, _)) -> {
+      let offset = string.length(before) + 6
+      let rest = string.drop_start(sql, offset) |> string.trim_start
+      let table =
+        rest
+        |> string.to_graphemes
+        |> list.take_while(fn(c) { c == "_" || is_alphanumeric_char(c) })
+        |> string.join("")
+      let new_acc = case table {
+        "" -> acc
+        name -> [name, ..acc]
+      }
+      do_find_subquery_tables(rest, new_acc)
+    }
+  }
+}
+
+fn is_alphanumeric_char(c: String) -> Bool {
+  case c {
+    "_" -> True
+    _ -> {
+      let code = case string.to_utf_codepoints(c) {
+        [cp] -> string.utf_codepoint_to_int(cp)
+        _ -> 0
+      }
+      { code >= 48 && code <= 57 }
+      || { code >= 65 && code <= 90 }
+      || { code >= 97 && code <= 122 }
+    }
+  }
+}
+
+/// Walk through the SQL left-to-right finding each top-level `?` or named
+/// parameter (`@name`, `:name`), and for each `?` look backwards for the
+/// nearest `column op` that binds it. Named parameters use the given name
+/// directly. Returns column/param names in positional order, or [] if any
+/// `?` fails to resolve.
+fn find_param_binders(sql: String, idx: Int, acc: List(Binder)) -> List(Binder) {
+  let found = find_next_placeholder(sql, idx)
+  case found {
+    PlaceholderNone -> list.reverse(acc)
+    PlaceholderAnon(pos, after) -> {
+      let before = string.slice(sql, 0, pos)
+      case extract_column_binder(before) {
+        option.None -> []
+        option.Some(col) -> {
+          // Strip any `table.` prefix — the Parameter name becomes a Gleam
+          // identifier, and dots get stripped which would mangle the name.
+          let bare = case string.split_once(col, ".") {
+            Ok(#(_, after)) -> after
+            Error(_) -> col
+          }
+          find_param_binders(sql, after, [
+            Binder(name: bare, binder_column: option.Some(col)),
+            ..acc
+          ])
+        }
+      }
+    }
+    PlaceholderNamed(name, after) ->
+      case list.find(acc, fn(b) { b.name == name }) {
+        Ok(_) -> find_param_binders(sql, after, acc)
+        Error(_) -> {
+          // For named params, also look for a column binder on the LHS
+          // of the comparison — lets us infer the type even when the
+          // param name doesn't match a schema column.
+          let before =
+            string.slice(sql, 0, case found {
+              PlaceholderNamed(_, _) -> after - string.length(name) - 1
+              _ -> idx
+            })
+          let column = extract_column_binder(before)
+          find_param_binders(sql, after, [
+            Binder(name: name, binder_column: column),
+            ..acc
+          ])
+        }
+      }
+  }
+}
+
+type Binder {
+  Binder(name: String, binder_column: option.Option(String))
+}
+
+type Placeholder {
+  PlaceholderNone
+  PlaceholderAnon(pos: Int, after: Int)
+  PlaceholderNamed(name: String, after: Int)
+}
+
+/// Find the next parameter placeholder (either `?`, `@name`, or `:name`)
+/// at or after from_idx, skipping single-quoted string literals.
+fn find_next_placeholder(sql: String, from_idx: Int) -> Placeholder {
+  let rest = string.drop_start(sql, from_idx)
+  do_find_placeholder(rest, from_idx, False)
+}
+
+fn do_find_placeholder(s: String, idx: Int, in_string: Bool) -> Placeholder {
+  case string.pop_grapheme(s) {
+    Error(_) -> PlaceholderNone
+    Ok(#("'", rest)) -> do_find_placeholder(rest, idx + 1, !in_string)
+    Ok(#("?", rest)) ->
+      case in_string {
+        True -> do_find_placeholder(rest, idx + 1, True)
+        False -> PlaceholderAnon(idx, idx + 1)
+      }
+    Ok(#("@", rest)) ->
+      case in_string {
+        True -> do_find_placeholder(rest, idx + 1, True)
+        False -> read_named_placeholder(rest, idx + 1)
+      }
+    Ok(#(":", rest)) ->
+      case in_string {
+        True -> do_find_placeholder(rest, idx + 1, True)
+        False -> read_named_placeholder(rest, idx + 1)
+      }
+    Ok(#(_, rest)) -> do_find_placeholder(rest, idx + 1, in_string)
+  }
+}
+
+fn read_named_placeholder(s: String, start_idx: Int) -> Placeholder {
+  do_read_named(s, start_idx, "")
+}
+
+fn do_read_named(s: String, idx: Int, acc: String) -> Placeholder {
+  case string.pop_grapheme(s) {
+    Error(_) ->
+      case acc {
+        "" -> PlaceholderNone
+        n -> PlaceholderNamed(n, idx)
+      }
+    Ok(#(char, rest)) ->
+      case is_alphanumeric_char(char) {
+        True -> do_read_named(rest, idx + 1, acc <> char)
+        False ->
+          case acc {
+            "" -> do_find_placeholder(s, idx, False)
+            n -> PlaceholderNamed(n, idx)
+          }
+      }
+  }
+}
+
+/// Given the SQL text before a `?`, extract the column name being compared
+/// against it. Looks for trailing ` column OP ` pattern. Handles LIKE and
+/// IS (NOT) separately because they're keywords that require whitespace.
+fn extract_column_binder(before: String) -> option.Option(String) {
+  let trimmed = string.trim_end(before)
+  // Try symbolic operators first
+  let sym_operators = [">=", "<=", "!=", "<>", "=", ">", "<"]
+  let without_sym = strip_trailing_operator(trimmed, sym_operators)
+  // If a symbolic operator was stripped, proceed. Otherwise try keyword
+  // operators (LIKE, IS, IS NOT).
+  let without_op = case without_sym == trimmed {
+    True -> strip_trailing_keyword_operator(trimmed)
+    False -> without_sym
+  }
+  let trimmed2 = string.trim_end(without_op)
+  let id = case take_trailing_identifier(trimmed2) {
+    "" ->
+      // Maybe the LHS is a function call like `LOWER(email)`. Look inside
+      // the trailing parenthesized group for the last identifier.
+      extract_identifier_from_trailing_parens(trimmed2)
+    name -> name
+  }
+  case id {
+    "" -> option.None
+    name ->
+      case is_simple_column_ref(name) {
+        True -> option.Some(name)
+        False -> option.None
+      }
+  }
+}
+
+/// Given text ending in `...(inner)`, return the last identifier inside
+/// the matched parens. Used for `LOWER(email) = ?` and similar.
+fn extract_identifier_from_trailing_parens(s: String) -> String {
+  let trimmed = string.trim_end(s)
+  case string.ends_with(trimmed, ")") {
+    False -> ""
+    True -> {
+      // Walk backwards matching parens to find the opening `(`.
+      let without_close = string.slice(trimmed, 0, string.length(trimmed) - 1)
+      let inside = find_matching_paren_content(without_close, 1, "")
+      // Take the last identifier inside (could be "table.col" or just "col")
+      take_trailing_identifier(string.trim_end(inside))
+    }
+  }
+}
+
+fn find_matching_paren_content(s: String, depth: Int, acc: String) -> String {
+  case depth {
+    0 -> acc
+    _ ->
+      case string.pop_grapheme(string.reverse(s)) {
+        Error(_) -> acc
+        Ok(#(")", rev_rest)) -> {
+          let remaining = string.reverse(rev_rest)
+          find_matching_paren_content(remaining, depth + 1, ")" <> acc)
+        }
+        Ok(#("(", rev_rest)) -> {
+          let remaining = string.reverse(rev_rest)
+          case depth {
+            1 -> acc
+            _ -> find_matching_paren_content(remaining, depth - 1, "(" <> acc)
+          }
+        }
+        Ok(#(char, rev_rest)) -> {
+          let remaining = string.reverse(rev_rest)
+          find_matching_paren_content(remaining, depth, char <> acc)
+        }
+      }
+  }
+}
+
+/// Strip trailing `LIKE`, `IS NOT`, or `IS` (case-insensitive) from s.
+/// Returns s unchanged if no match.
+fn strip_trailing_keyword_operator(s: String) -> String {
+  let upper = string.uppercase(s)
+  let keywords = [" LIKE", " IS NOT", " IS"]
+  do_strip_trailing_keyword(s, upper, keywords)
+}
+
+fn do_strip_trailing_keyword(
+  s: String,
+  upper: String,
+  keywords: List(String),
+) -> String {
+  case keywords {
+    [] -> s
+    [kw, ..rest] -> {
+      case string.ends_with(upper, kw) {
+        True -> string.slice(s, 0, string.length(s) - string.length(kw))
+        False -> do_strip_trailing_keyword(s, upper, rest)
+      }
+    }
+  }
+}
+
+fn strip_trailing_operator(s: String, operators: List(String)) -> String {
+  case operators {
+    [] -> s
+    [op, ..rest] -> {
+      let len = string.length(op)
+      case string.length(s) >= len {
+        True -> {
+          let tail = string.slice(s, string.length(s) - len, len)
+          case string.uppercase(tail) == op {
+            True -> string.slice(s, 0, string.length(s) - len)
+            False -> strip_trailing_operator(s, rest)
+          }
+        }
+        False -> strip_trailing_operator(s, rest)
+      }
+    }
+  }
+}
+
+fn take_trailing_identifier(s: String) -> String {
+  let graphemes = string.to_graphemes(s)
+  take_trailing_id_chars(list.reverse(graphemes), [])
+  |> string.join("")
+}
+
+fn take_trailing_id_chars(
+  reversed: List(String),
+  acc: List(String),
+) -> List(String) {
+  case reversed {
+    [] -> acc
+    [char, ..rest] ->
+      case is_ident_or_dot(char) {
+        True -> take_trailing_id_chars(rest, [char, ..acc])
+        False -> acc
+      }
+  }
+}
+
+fn is_ident_or_dot(c: String) -> Bool {
+  c == "." || is_alphanumeric_char(c) || c == "_"
 }
 
 fn is_simple_column_ref(s: String) -> Bool {
@@ -1335,32 +1752,50 @@ fn infer_parameter_type(
   pk_columns: Dict(String, String),
 ) -> Parameter {
   let var_reg = var_op.p2
-  let comparison_ops = [
-    "Eq", "Ne", "Lt", "Le", "Gt", "Ge", "SeekGE", "SeekGT", "SeekLE", "SeekLT",
-  ]
+  // Eq/Ne/Lt/Le/Gt/Ge: p1 and p3 are both registers being compared.
+  // SeekGE/SeekGT/SeekLE/SeekLT: p1 is a CURSOR; p3 is the key register.
+  let eq_ops = ["Eq", "Ne", "Lt", "Le", "Gt", "Ge"]
+  let seek_ops = ["SeekGE", "SeekGT", "SeekLE", "SeekLT"]
 
   // Find a comparison that involves our variable register
   let comparison =
     list.find(opcodes, fn(op) {
-      list.contains(comparison_ops, op.opcode)
-      && { op.p1 == var_reg || op.p3 == var_reg }
+      case list.contains(eq_ops, op.opcode) {
+        True -> op.p1 == var_reg || op.p3 == var_reg
+        False ->
+          case list.contains(seek_ops, op.opcode) {
+            True -> op.p3 == var_reg
+            False -> False
+          }
+      }
     })
 
   case comparison {
     Ok(cmp) -> {
-      let other_reg = case cmp.p1 == var_reg {
-        True -> cmp.p3
-        False -> cmp.p1
+      let other_reg = case list.contains(seek_ops, cmp.opcode) {
+        // For Seek opcodes, the "other side" is the index column which
+        // is implicit: the first column of the index p1. Look at the
+        // most recent Column opcode on the same cursor before this seek.
+        True -> -1
+        False ->
+          case cmp.p1 == var_reg {
+            True -> cmp.p3
+            False -> cmp.p1
+          }
       }
-      // Find the Column opcode that writes to other_reg,
-      // closest to (but before) the comparison instruction
-      find_nearest_column_source(
-        other_reg,
-        cmp.addr,
-        opcodes,
-        cursor_table,
-        table_schemas,
-      )
+      case other_reg {
+        -1 -> resolve_seek_cursor_key(cmp, cursor_table, table_schemas)
+        _ ->
+          // Find the Column opcode that writes to other_reg,
+          // closest to (but before) the comparison instruction
+          find_nearest_column_source(
+            other_reg,
+            cmp.addr,
+            opcodes,
+            cursor_table,
+            table_schemas,
+          )
+      }
     }
     Error(_) -> {
       // Check for SeekRowid - Variable used as rowid
@@ -1428,6 +1863,45 @@ fn find_nearest_column_source(
       resolve_column_to_parameter(cop.p1, cop.p2, cursor_table, table_schemas)
     Error(_) ->
       Parameter(name: "param", column_type: StringType, nullable: False)
+  }
+}
+
+/// For SeekGE/GT/LE/LT on an index, the key register holds a value being
+/// compared against the FIRST column of the index. Look up the index's
+/// parent table and get that column's metadata.
+fn resolve_seek_cursor_key(
+  seek_op: Opcode,
+  cursor_table: Dict(Int, String),
+  table_schemas: Dict(String, List(Column)),
+) -> Parameter {
+  let cursor = seek_op.p1
+  case dict.get(cursor_table, cursor) {
+    Ok(table_name) ->
+      case dict.get(table_schemas, table_name) {
+        Ok(table_cols) ->
+          // We don't know the index column directly. Fall back to looking
+          // at the nearest Column opcode with the same cursor before this
+          // seek (which gives us a column hint). If none, use a safe
+          // default of Int (most common seek key type).
+          case list.first(table_cols) {
+            Ok(col) ->
+              Parameter(
+                name: col.name,
+                column_type: col.column_type,
+                nullable: col.nullable,
+              )
+            Error(_) ->
+              Parameter(
+                name: "param",
+                column_type: query.IntType,
+                nullable: False,
+              )
+          }
+        Error(_) ->
+          Parameter(name: "param", column_type: query.IntType, nullable: False)
+      }
+    Error(_) ->
+      Parameter(name: "param", column_type: query.IntType, nullable: False)
   }
 }
 
@@ -1535,11 +2009,17 @@ fn parse_update_set_columns(sql: String) -> List(String) {
           }
       }
       // Parse "col1 = ?, col2 = ?" -> ["col1", "col2"]
+      // Skip entries where the RHS isn't a `?` (e.g., `col = other_col`
+      // or `col = col + 1` — these don't bind a parameter).
       set_part
       |> string.split(",")
       |> list.filter_map(fn(part) {
         case string.split_once(string.trim(part), "=") {
-          Ok(#(col_name, _)) -> Ok(string.trim(col_name))
+          Ok(#(col_name, rhs)) ->
+            case string.contains(rhs, "?") {
+              True -> Ok(string.trim(col_name))
+              False -> Error(Nil)
+            }
           Error(_) -> Error(Nil)
         }
       })

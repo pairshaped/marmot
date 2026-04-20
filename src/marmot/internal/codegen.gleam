@@ -421,6 +421,10 @@ fn column_decoder(col: Column) -> String {
 
 fn escape_sql(sql: String) -> String {
   sql
+  // Strip line comments BEFORE collapsing newlines, otherwise a leading
+  // `-- comment\nSELECT ...` becomes `-- comment SELECT ...` which comments
+  // out the actual SQL at runtime. (Block comments /* ... */ stay.)
+  |> strip_line_comments
   |> string.replace("\\", "\\\\")
   |> string.replace("\"", "\\\"")
   |> string.replace("\r\n", " ")
@@ -428,6 +432,59 @@ fn escape_sql(sql: String) -> String {
   |> string.replace("\n", " ")
   |> string.replace("\t", " ")
   |> collapse_whitespace
+}
+
+fn strip_line_comments(sql: String) -> String {
+  do_strip_line_comments(sql, "", False, False, False)
+}
+
+fn do_strip_line_comments(
+  remaining: String,
+  acc: String,
+  in_single: Bool,
+  in_double: Bool,
+  in_comment: Bool,
+) -> String {
+  case string.pop_grapheme(remaining) {
+    Error(_) -> acc
+    Ok(#("\n", rest)) ->
+      do_strip_line_comments(rest, acc <> "\n", in_single, in_double, False)
+    Ok(#(_, rest)) if in_comment ->
+      do_strip_line_comments(rest, acc, in_single, in_double, True)
+    Ok(#("'", rest)) ->
+      case in_double {
+        True -> do_strip_line_comments(rest, acc <> "'", in_single, True, False)
+        False ->
+          do_strip_line_comments(rest, acc <> "'", !in_single, False, False)
+      }
+    Ok(#("\"", rest)) ->
+      case in_single {
+        True ->
+          do_strip_line_comments(rest, acc <> "\"", True, in_double, False)
+        False ->
+          do_strip_line_comments(rest, acc <> "\"", False, !in_double, False)
+      }
+    Ok(#("-", rest)) ->
+      case in_single || in_double {
+        True ->
+          do_strip_line_comments(rest, acc <> "-", in_single, in_double, False)
+        False ->
+          case string.pop_grapheme(rest) {
+            Ok(#("-", rest2)) ->
+              do_strip_line_comments(rest2, acc, False, False, True)
+            _ ->
+              do_strip_line_comments(
+                rest,
+                acc <> "-",
+                in_single,
+                in_double,
+                False,
+              )
+          }
+      }
+    Ok(#(char, rest)) ->
+      do_strip_line_comments(rest, acc <> char, in_single, in_double, False)
+  }
 }
 
 fn collapse_whitespace(s: String) -> String {
