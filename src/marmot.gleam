@@ -17,11 +17,7 @@ import sqlight
 
 pub fn main() -> Nil {
   let args = argv.load().arguments
-
-  case args {
-    ["check", ..] -> run_check(args)
-    _ -> run_generate(args)
-  }
+  run_generate(args)
 }
 
 fn with_database(
@@ -368,52 +364,6 @@ fn do_check_semicolon(
     Ok(#(_, rest)) ->
       do_check_semicolon(rest, in_single_quote, in_double_quote, False)
   }
-}
-
-fn run_check(args: List(String)) -> Nil {
-  with_database(args, fn(db, config) {
-    let stale = check_all(db, config)
-    case stale {
-      [] -> {
-        io.println("All generated code is up to date.")
-        halt(0)
-      }
-      files -> {
-        io.println_error(
-          error.to_string(error.StaleGeneratedCode(files: files)),
-        )
-        halt(1)
-      }
-    }
-  })
-}
-
-fn check_all(db: sqlight.Connection, config: project.Config) -> List(String) {
-  let sql_dirs = project.find_sql_directories("src")
-  list.filter_map(sql_dirs, fn(dir) {
-    let sql_files = project.list_sql_files(dir)
-    let queries =
-      list.filter_map(sql_files, fn(file_path) {
-        process_sql_file(db, file_path)
-      })
-
-    case queries {
-      [] -> Error(Nil)
-      _ -> {
-        let output = project.output_path(dir, config.output)
-        let expected =
-          codegen.generate_module_with_config(queries, config.query_function)
-          |> format_gleam
-        let current =
-          simplifile.read(output)
-          |> result.unwrap("")
-        case expected == current {
-          True -> Error(Nil)
-          False -> Ok(output)
-        }
-      }
-    }
-  })
 }
 
 /// Run `gleam format` on generated code. Falls back to the original string

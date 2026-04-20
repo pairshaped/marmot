@@ -20,7 +20,6 @@ pub type MarmotError {
   InvalidFilename(path: String)
   MultipleQueries(path: String)
   DuplicateColumns(path: String, columns: List(String))
-  StaleGeneratedCode(files: List(String))
   OutputNotUnderSrc(output: String)
   InvalidReturnsAnnotation(path: String, name: String, reason: String)
   SharedTypeMismatch(name: String, conflicts: List(#(String, List(Column))))
@@ -114,19 +113,6 @@ pub fn to_string(error: MarmotError) -> String {
   \u{2502}
   hint: Use column aliases to give each column a unique name:
         SELECT a.id AS a_id, b.id AS b_id ..."
-    }
-
-    StaleGeneratedCode(files:) -> {
-      let file_list =
-        files
-        |> list.map(fn(f) { "    \u{2022} " <> f })
-        |> string.join("\n")
-      "error: Generated code is out of date
-
-  These files need regeneration:
-" <> file_list <> "
-
-  Run `gleam run -m marmot` to update."
     }
 
     OutputNotUnderSrc(output:) -> "error: Output directory must be under src/

@@ -155,14 +155,6 @@ work:
 > my_app_sql.find_user(db, id: 1)
 > ```
 
-### CLI Commands
-
-- `gleam run -m marmot`: Generates type-safe Gleam code for all SQL queries
-  found in `src/**/sql/*.sql`.
-- `gleam run -m marmot check`: Validates that the generated Gleam code is
-  up-to-date with the SQL queries. This is particularly useful to run in a CI
-  pipeline to make sure you don't forget to run `gleam run -m marmot`.
-
 ### Talking to the database
 
 In order to understand the types of your queries, Marmot needs to open the
@@ -332,37 +324,54 @@ queries.
 ### Why isn't Marmot configurable in any way?
 
 Following Squirrel's lead, Marmot leans heavily on convention over
-configuration. Small projects should just work with zero config. The opt-in
-knobs Marmot does expose -- `output` and `query_function` -- are there for
-larger codebases where the default conventions become awkward (scattered
-`sql/` directories, custom logging/instrumentation around every query). They
-don't change the generated code's shape, just where it lands and which
-function it calls.
+configuration. Small projects work with zero config. The two opt-in knobs --
+`output` and `query_function` -- exist for real needs that convention can't
+cover: centralizing generated code somewhere other than the default, and
+wrapping queries with logging or timing. They don't change the shape of the
+generated code, just where it lands and which function it calls.
 
 ## Known Limitations
 
-- Table names containing SQL keywords (`RETURNING`, `INTO`) may confuse the SQL
-  parser. Use simple table names.
-- `INSERT INTO t VALUES (?, ?)` without an explicit column list will not infer
-  parameter names or types correctly. Always specify columns:
-  `INSERT INTO t (col1, col2) VALUES (?, ?)`.
-- Complex expressions (subqueries, CTEs, `COALESCE`) may not have their types
-  inferred. Use `CAST(... AS TYPE)` to help Marmot.
-- `TIMESTAMP` and `DATETIME` columns are stored as Unix seconds (integer).
-  Sub-second precision (nanoseconds) is not preserved.
-- `DATE` columns are stored as ISO 8601 text (`YYYY-MM-DD`). Malformed date
-  strings in the database will produce a decode error.
-- Repeated anonymous `?` placeholders that refer to the same value generate
-  a separate function argument for each occurrence
-  (`WHERE org_id = ? AND ... WHERE org_id = ?` produces `org_id` and `org_id_2`).
-  This is a SQLite protocol limitation: anonymous `?` are always distinct
-  bind slots. **Use named parameters (`@name` or `:name`) instead** -- SQLite
-  deduplicates them natively, so `WHERE org_id = @org_id AND ... WHERE
-  org_id = @org_id` generates a single `org_id` argument. Named parameters
-  are also self-documenting and generally preferable.
-- `WHERE id IN (?)` with a dynamic list is not supported. SQLite has no native
-  array parameter type, so there is no way to bind a list to a single `?`.
-  Workarounds:
+### Fixable, worth doing eventually
+
+These are limitations of Marmot's current implementation, not fundamental
+constraints. Contributions welcome.
+
+- **Table names containing SQL keywords** (`RETURNING`, `INTO`) may confuse
+  the string-based parser. Use simple table names for now. A proper SQL
+  tokenizer would fix this and unlocks the next two limitations too.
+- **`INSERT INTO t VALUES (?, ?)` without an explicit column list** will not
+  infer parameter names or types correctly. Always specify columns:
+  `INSERT INTO t (col1, col2) VALUES (?, ?)`. Marmot could look up the table
+  schema and match positionally.
+- **Complex expressions** (subqueries, CTEs, `COALESCE`) may not have their
+  types inferred. Use `CAST(... AS TYPE)` to help Marmot. Incremental
+  improvements are possible per expression kind.
+
+### Design decisions, not bugs
+
+These work by choice. We could change them, but it would be a design shift.
+
+- **`TIMESTAMP` and `DATETIME` columns are stored as Unix seconds (integer).**
+  Sub-second precision (nanoseconds) is not preserved. We picked integer
+  seconds for simplicity and interop with `strftime('%s', ...)`. Preserving
+  nanos would need a new storage format or type mapping.
+
+### Hard limits
+
+Not Marmot's to fix.
+
+- **Repeated anonymous `?` placeholders** that refer to the same value
+  generate a separate function argument for each occurrence
+  (`WHERE org_id = ? AND ... WHERE org_id = ?` produces `org_id` and
+  `org_id_2`). This is a SQLite protocol limitation: anonymous `?` are
+  always distinct bind slots. **Use named parameters (`@name` or `:name`)
+  instead** -- SQLite deduplicates them natively, so `WHERE org_id = @org_id
+  AND ... WHERE org_id = @org_id` generates a single `org_id` argument.
+  Named parameters are also self-documenting and generally preferable.
+- **`WHERE id IN (?)` with a dynamic list is not supported.** SQLite has no
+  native array parameter type, so there is no way to bind a list to a single
+  `?`. Workarounds:
   - Write separate queries for known list sizes
   - Use `json_each(?)` with a JSON array string:
     `WHERE id IN (SELECT value FROM json_each(?))`

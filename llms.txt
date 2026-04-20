@@ -18,21 +18,20 @@ Write SQL in `src/**/sql/*.sql`, one query per file. Filename becomes the functi
 2. Opens the SQLite file, scans `src/` for `sql/` directories
 3. For each `.sql` file: reads SQL, introspects via `PRAGMA table_info` + `EXPLAIN`
 4. Generates a `sql.gleam` module per `sql/` directory with typed functions + decoders
-5. `gleam run -m marmot check` compares generated output to existing files (CI mode)
 
 ## Config (`[marmot]` in `gleam.toml`)
 
 | Key | Default | Purpose |
 |---|---|---|
 | `database` | — | Path to the SQLite file used for introspection (also `DATABASE_URL` env, `--database` CLI) |
-| `output` | sibling of each `sql/` dir | Centralized output directory for generated modules (must be under `src/`). Marmot infers the directory structure by finding the longest common path prefix between `output` and each `sql/` directory, then uses the remainder as the namespace (e.g. `output = "src/generated"` with `src/app/users/sql/` produces `src/generated/app/users.gleam`). |
+| `output` | `src/generated/sql` | Output directory for generated modules (must be under `src/`). Marmot infers the directory structure by finding the longest common path prefix between `output` and each `sql/` directory, then uses the remainder as the namespace (e.g. `output = "src/generated"` with `src/app/users/sql/` produces `src/generated/app/users.gleam`). |
 | `query_function` | `sqlight.query` | Fully-qualified function (`module/path.name`) that generated code calls instead of `sqlight.query`. Wrapper must match `sqlight.query`'s labelled signature (`sql: String, on connection, with parameters, expecting decoder`). Useful for logging, timing, instrumentation. |
 
 ## Project structure
 
 ```
 src/
-  marmot.gleam                    -- CLI entry point (main, run_generate, run_check)
+  marmot.gleam                    -- CLI entry point (main, run_generate)
   marmot/
     internal/
       error.gleam                 -- MarmotError type + to_string (pretty-printed errors)
@@ -121,9 +120,17 @@ pub fn get_org(db db: ..., id id: Int) -> Result(List(OrgRow), sqlight.Error) {
 
 ## Known limitations
 
-- Table names containing SQL keywords (`RETURNING`, `INTO`) confuse the string-based SQL parser
-- `INSERT INTO t VALUES (?, ?)` without explicit column list degrades parameter inference
-- Complex expressions (subqueries, CTEs, `COALESCE`) may not infer types; use `CAST`
+**Fixable (contributions welcome):**
+- Table names containing SQL keywords (`RETURNING`, `INTO`) confuse the string-based SQL parser. A real tokenizer would fix this.
+- `INSERT INTO t VALUES (?, ?)` without explicit column list degrades parameter inference. Could match positionally against schema.
+- Complex expressions (subqueries, CTEs, `COALESCE`) may not infer types. Use `CAST` for now; improvable per-kind.
+
+**Design decisions:**
+- `TIMESTAMP`/`DATETIME` stored as integer Unix seconds — sub-second precision not preserved.
+
+**Hard limits (SQLite protocol):**
+- Repeated anonymous `?` produce distinct function args. Use named parameters (`@name`) — SQLite deduplicates them natively.
+- `WHERE id IN (?)` with dynamic list: no array bind type. Workarounds: `json_each(?)`, fixed-size queries, or build the SQL dynamically in app code.
 
 ## Dependencies
 

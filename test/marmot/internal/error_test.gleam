@@ -71,12 +71,6 @@ pub fn multiple_queries_error_test() {
   |> birdie.snap(title: "multiple queries error")
 }
 
-pub fn stale_generated_code_error_test() {
-  error.StaleGeneratedCode(files: ["src/app/sql.gleam", "src/other/sql.gleam"])
-  |> error.to_string
-  |> birdie.snap(title: "stale generated code error")
-}
-
 pub fn database_open_error_test() {
   error.DatabaseOpenError(
     path: "/tmp/missing.sqlite",
