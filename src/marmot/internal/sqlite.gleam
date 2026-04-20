@@ -93,6 +93,69 @@ type Opcode {
   )
 }
 
+/// Find cursor IDs that may produce NULL rows due to LEFT JOIN semantics.
+/// SQLite emits `NullRow` on cursor P1 when an outer join has no matching
+/// inner row — after this, any `Column` read from that cursor returns NULL.
+/// `IfNullRow` tests this state. Any cursor that is the target of either
+/// opcode is a "nullable cursor": columns resolved against it must be
+/// marked nullable in the generated type.
+fn find_nullable_cursors(opcodes: List(Opcode)) -> dict.Dict(Int, Nil) {
+  list.fold(opcodes, dict.new(), fn(acc, op) {
+    case op.opcode {
+      "NullRow" | "IfNullRow" -> dict.insert(acc, op.p1, Nil)
+      _ -> acc
+    }
+  })
+}
+
+/// Nullable-cursor set + the set of tables those cursors read from.
+/// We track both because text-based column resolution (resolve_select_item)
+/// goes by table name, while opcode-based resolution goes by cursor id.
+type JoinNullability {
+  JoinNullability(
+    nullable_cursors: dict.Dict(Int, Nil),
+    nullable_tables: dict.Dict(String, Nil),
+  )
+}
+
+fn compute_join_nullability(
+  opcodes: List(Opcode),
+  cursor_table: Dict(Int, String),
+) -> JoinNullability {
+  let nullable_cursors = find_nullable_cursors(opcodes)
+  let nullable_tables =
+    dict.fold(nullable_cursors, dict.new(), fn(acc, cursor_id, _) {
+      case dict.get(cursor_table, cursor_id) {
+        Ok(table_name) -> dict.insert(acc, table_name, Nil)
+        Error(_) -> acc
+      }
+    })
+  JoinNullability(nullable_cursors: nullable_cursors, nullable_tables: nullable_tables)
+}
+
+/// If the Column opcode that produced this result register reads from a
+/// nullable cursor (LEFT-JOIN right side), mark the column nullable. The
+/// `Column` opcode format is `Column P1=cursor P2=col_idx P3=dest_reg`.
+fn apply_cursor_nullability(
+  base: Column,
+  dest_reg: Int,
+  opcodes: List(Opcode),
+  join_nullability: JoinNullability,
+) -> Column {
+  let producer =
+    list.find(opcodes, fn(op) {
+      op.opcode == "Column" && op.p3 == dest_reg
+    })
+  case producer {
+    Ok(op) ->
+      case dict.has_key(join_nullability.nullable_cursors, op.p1) {
+        True -> Column(..base, nullable: True)
+        False -> base
+      }
+    Error(_) -> base
+  }
+}
+
 /// Introspect a query using EXPLAIN to determine result columns and parameters
 pub fn introspect_query(
   db: Connection,
@@ -148,6 +211,8 @@ pub fn introspect_query(
       }
     })
 
+  let join_nullability = compute_join_nullability(opcodes, cursor_table)
+
   // Check statement type
   let stmt_type = classify_statement(normalized_sql)
   let is_insert = stmt_type == Insert
@@ -173,6 +238,7 @@ pub fn introspect_query(
             cursor_table,
             table_schemas,
             pk_columns,
+            join_nullability,
             normalized_sql,
           )
       }
@@ -284,6 +350,7 @@ fn extract_result_columns(
   cursor_table: Dict(Int, String),
   table_schemas: Dict(String, List(Column)),
   pk_columns: Dict(String, String),
+  join_nullability: JoinNullability,
   sql: String,
 ) -> List(Column) {
   let result_row = list.find(opcodes, fn(op) { op.opcode == "ResultRow" })
@@ -297,14 +364,17 @@ fn extract_result_columns(
       let from_tables = parse_from_tables(sql)
 
       list.index_map(result_regs, fn(reg, idx) {
-        let opcode_column =
-          find_column_for_register(
-            reg,
-            opcodes,
-            cursor_table,
-            table_schemas,
-            pk_columns,
-          )
+        let opcode_column = {
+          let base =
+            find_column_for_register(
+              reg,
+              opcodes,
+              cursor_table,
+              table_schemas,
+              pk_columns,
+            )
+          apply_cursor_nullability(base, reg, opcodes, join_nullability)
+        }
         let select_item = list_at(select_items, idx)
         case select_item {
           // No SELECT list available: use opcode result as-is.
@@ -324,11 +394,19 @@ fn extract_result_columns(
                     select_items,
                     from_tables,
                     table_schemas,
+                    join_nullability,
                   )
                 {
                   Column(name: "unknown", ..) ->
                     Column(..opcode_column, name: item.alias)
-                  resolved -> resolved
+                  resolved ->
+                    // If opcode tracing found a nullable cursor (e.g. via
+                    // an autoindex cursor that NullRow targets), propagate
+                    // that nullability to the text-resolved column.
+                    case opcode_column.nullable {
+                      True -> Column(..resolved, nullable: True)
+                      False -> resolved
+                    }
                 }
               option.None ->
                 case opcode_column.name {
@@ -338,6 +416,7 @@ fn extract_result_columns(
                       select_items,
                       from_tables,
                       table_schemas,
+                      join_nullability,
                     )
                   _ -> Column(..opcode_column, name: item.alias)
                 }
@@ -357,6 +436,7 @@ fn resolve_select_item(
   select_items: List(SelectItem),
   from_tables: List(String),
   table_schemas: Dict(String, List(Column)),
+  join_nullability: JoinNullability,
 ) -> Column {
   case list_at(select_items, idx) {
     Error(_) -> Column(name: "unknown", column_type: StringType, nullable: True)
@@ -372,7 +452,17 @@ fn resolve_select_item(
                   case
                     list.find(cols, fn(c) { string.lowercase(c.name) == lower })
                   {
-                    Ok(col) -> Ok(Column(..col, name: item.alias))
+                    Ok(col) -> {
+                      // Override nullability if the source table is on the
+                      // right side of a LEFT JOIN.
+                      let nullable = case
+                        dict.has_key(join_nullability.nullable_tables, table)
+                      {
+                        True -> True
+                        False -> col.nullable
+                      }
+                      Ok(Column(..col, name: item.alias, nullable: nullable))
+                    }
                     Error(_) -> Error(Nil)
                   }
                 }
