@@ -203,6 +203,20 @@ fn process_sql_file(
 
   let trimmed = string.trim(content)
   use sql <- result.try(validate_sql(trimmed, file_path))
+  use custom_type_name <- result.try(
+    sqlite.parse_returns_annotation(sql)
+    |> result.map_error(fn(err) {
+      let sqlite.InvalidReturnsTypeName(name: n, reason: r) = err
+      io.println_error(
+        error.to_string(error.InvalidReturnsAnnotation(
+          path: file_path,
+          name: n,
+          reason: r,
+        )),
+      )
+      Nil
+    }),
+  )
   use query_info <- result.try(
     sqlite.introspect_query(db, sql)
     |> result.map_error(fn(err) {
@@ -219,7 +233,7 @@ fn process_sql_file(
     path: file_path,
     parameters: query_info.parameters,
     columns: query_info.columns,
-    custom_type_name: option.None,
+    custom_type_name: custom_type_name,
   ))
 }
 
