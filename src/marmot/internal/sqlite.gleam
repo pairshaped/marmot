@@ -2694,17 +2694,20 @@ fn parse_update_set_columns(sql: String) -> List(String) {
       }
       // Parse "col1 = ?, col2 = ?" -> ["col1", "col2"]
       // Also handles named params: "col1 = @col1, col2 = @col2" -> ["col1", "col2"]
+      // Also handles COALESCE: "col1 = COALESCE(@col1, col1)" -> ["col1"]
       // Skip entries where the RHS isn't a `?` or `@name` (e.g., `col = other_col`
       // or `col = col + 1` — these don't bind a parameter).
+      // Use split_top_level_commas so commas inside COALESCE(...) are not treated
+      // as assignment separators.
       set_part
-      |> string.split(",")
+      |> split_top_level_commas
       |> list.filter_map(fn(part) {
         case string.split_once(string.trim(part), "=") {
           Ok(#(col_name, rhs)) -> {
             let rhs_trimmed = string.trim(rhs)
             case
               string.contains(rhs_trimmed, "?")
-              || string.starts_with(rhs_trimmed, "@")
+              || string.contains(rhs_trimmed, "@")
             {
               True -> Ok(string.trim(col_name))
               False -> Error(Nil)
@@ -2718,19 +2721,19 @@ fn parse_update_set_columns(sql: String) -> List(String) {
   }
 }
 
-/// Parse WHERE column names from UPDATE/DELETE statement
+/// Parse WHERE column names from UPDATE/DELETE statement.
+/// Uses depth-aware top-level WHERE detection so subquery WHERE clauses
+/// (inside parentheses) are not mistaken for the main WHERE.
 fn parse_where_columns(sql: String) -> List(String) {
-  let upper = string.uppercase(sql)
-  case split_on_keyword(upper, " WHERE ") {
-    Ok(#(before_where, _)) -> {
-      let offset = string.length(before_where) + string.length(" WHERE ")
+  case find_top_level_keyword_offset(sql, " WHERE ") {
+    option.None -> []
+    option.Some(where_offset) -> {
+      let offset = where_offset + string.length(" WHERE ")
       let rest = string.drop_start(sql, offset)
-      // Get part before RETURNING if present
-      let where_part = case
-        split_on_keyword(string.uppercase(rest), " RETURNING ")
-      {
-        Ok(#(before, _)) -> string.slice(rest, 0, string.length(before))
-        Error(_) -> rest
+      // Get part before RETURNING if present (also top-level only)
+      let where_part = case find_top_level_keyword_offset(rest, " RETURNING ") {
+        option.Some(ret_offset) -> string.slice(rest, 0, ret_offset)
+        option.None -> rest
       }
       // Replace AND/OR with commas (case-insensitive) to split conditions
       split_where_conditions(where_part)
@@ -2749,7 +2752,6 @@ fn parse_where_columns(sql: String) -> List(String) {
         }
       })
     }
-    Error(_) -> []
   }
 }
 

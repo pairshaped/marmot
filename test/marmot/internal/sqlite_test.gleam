@@ -731,3 +731,54 @@ pub fn introspect_alias_with_question_forces_nullable_test() {
   let assert [Column(name: "name", column_type: StringType, nullable: True)] =
     result.columns
 }
+
+pub fn introspect_update_with_coalesce_named_param_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE participants (
+        id INTEGER NOT NULL PRIMARY KEY,
+        gender TEXT,
+        birthdate TEXT,
+        updated_at INTEGER NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "UPDATE participants SET gender = COALESCE(@gender, gender), birthdate = COALESCE(@birthdate, birthdate), updated_at = @updated_at WHERE id = @id",
+    )
+  let assert [
+    Parameter(name: "gender", column_type: StringType, nullable: True),
+    Parameter(name: "birthdate", column_type: StringType, nullable: True),
+    Parameter(name: "updated_at", column_type: IntType, nullable: False),
+    Parameter(name: "id", column_type: IntType, nullable: False),
+  ] = result.parameters
+}
+
+pub fn introspect_update_with_subquery_named_param_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE line_items (
+        id INTEGER NOT NULL PRIMARY KEY,
+        order_id INTEGER NOT NULL,
+        discount_cents INTEGER NOT NULL
+      );
+      CREATE TABLE line_item_discounts (
+        id INTEGER NOT NULL PRIMARY KEY,
+        line_item_id INTEGER NOT NULL,
+        amount_cents INTEGER NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "UPDATE line_items SET discount_cents = COALESCE((SELECT SUM(amount_cents) FROM line_item_discounts WHERE line_item_id = line_items.id), 0) WHERE order_id = @order_id",
+    )
+  let assert [
+    Parameter(name: "order_id", column_type: IntType, nullable: False),
+  ] = result.parameters
+}
