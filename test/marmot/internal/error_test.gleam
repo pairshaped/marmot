@@ -1,5 +1,4 @@
 import birdie
-import gleam/option
 import gleam/string
 import marmot/internal/error.{SharedTypeMismatch}
 import marmot/internal/query.{Column, IntType, StringType}
@@ -26,37 +25,6 @@ pub fn sql_error_test() {
   )
   |> error.to_string
   |> birdie.snap(title: "sql syntax error")
-}
-
-pub fn unknown_column_error_test() {
-  error.UnknownColumn(
-    path: "src/app/sql/find_user.sql",
-    column: "naem",
-    table: "users",
-    suggestion: option.Some("name"),
-  )
-  |> error.to_string
-  |> birdie.snap(title: "unknown column error with suggestion")
-}
-
-pub fn unknown_column_no_suggestion_error_test() {
-  error.UnknownColumn(
-    path: "src/app/sql/find_user.sql",
-    column: "xyz",
-    table: "users",
-    suggestion: option.None,
-  )
-  |> error.to_string
-  |> birdie.snap(title: "unknown column error without suggestion")
-}
-
-pub fn type_inference_error_test() {
-  error.TypeInferenceError(
-    path: "src/app/sql/complex.sql",
-    expression: "coalesce(a.foo, b.bar)",
-  )
-  |> error.to_string
-  |> birdie.snap(title: "type inference error")
 }
 
 pub fn empty_sql_file_error_test() {
@@ -105,26 +73,6 @@ pub fn sql_error_no_such_table_hint_test() {
   )
   |> error.to_string
   |> birdie.snap(title: "sql error with no such table hint")
-}
-
-pub fn unknown_table_error_test() {
-  error.UnknownTable(
-    path: "src/app/sql/find_user.sql",
-    table: "usres",
-    suggestion: option.Some("users"),
-  )
-  |> error.to_string
-  |> birdie.snap(title: "unknown table error with suggestion")
-}
-
-pub fn unknown_table_no_suggestion_error_test() {
-  error.UnknownTable(
-    path: "src/app/sql/find_user.sql",
-    table: "xyz",
-    suggestion: option.None,
-  )
-  |> error.to_string
-  |> birdie.snap(title: "unknown table error without suggestion")
 }
 
 pub fn invalid_returns_annotation_error_test() {

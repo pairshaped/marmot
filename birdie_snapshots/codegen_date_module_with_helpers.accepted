@@ -1,8 +1,6 @@
 ---
 version: 1.5.5
 title: codegen date module with helpers
-file: ./test/marmot/internal/codegen_test.gleam
-test_name: codegen_date_module_test
 ---
 import gleam/dynamic/decode
 import gleam/int
@@ -19,7 +17,11 @@ fn date_decoder() -> decode.Decoder(Date) {
       case int.parse(year_str), int.parse(month_str), int.parse(day_str) {
         Ok(year), Ok(month_int), Ok(day) ->
           case month_from_int(month_int) {
-            Ok(month) -> decode.success(Date(year:, month:, day:))
+            Ok(month) ->
+              case day >= 1 && day <= 31 {
+                True -> decode.success(Date(year:, month:, day:))
+                False -> decode.failure(Date(0, January, 1), "ISO 8601 date (YYYY-MM-DD)")
+              }
             Error(_) -> decode.failure(Date(0, January, 1), "ISO 8601 date (YYYY-MM-DD)")
           }
         _, _, _ -> decode.failure(Date(0, January, 1), "ISO 8601 date (YYYY-MM-DD)")

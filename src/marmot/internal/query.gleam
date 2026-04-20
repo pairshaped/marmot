@@ -173,3 +173,90 @@ fn to_pascal_case(snake: String) -> String {
 pub fn has_return_columns(query: Query) -> Bool {
   query.columns != []
 }
+
+/// Check if a character is a valid SQL identifier character (letters, digits,
+/// underscore). Handles both upper and lowercase.
+pub fn is_sql_ident_char(c: String) -> Bool {
+  case c {
+    "_" -> True
+    _ -> {
+      let code = case string.to_utf_codepoints(c) {
+        [cp] -> string.utf_codepoint_to_int(cp)
+        _ -> 0
+      }
+      // 0-9, A-Z, a-z
+      { code >= 48 && code <= 57 }
+      || { code >= 65 && code <= 90 }
+      || { code >= 97 && code <= 122 }
+    }
+  }
+}
+
+/// Remove `-- line comments` from SQL, preserving string literals.
+/// Handles single-quoted strings with '' escapes and double-quoted identifiers.
+/// A line comment starts with `--` outside of a string literal and extends to
+/// end of line. Preserves newlines so subsequent whitespace collapsing works.
+pub fn strip_line_comments(sql: String) -> String {
+  do_strip_line_comments(sql, "", False, False, False)
+}
+
+fn do_strip_line_comments(
+  remaining: String,
+  acc: String,
+  in_single: Bool,
+  in_double: Bool,
+  in_comment: Bool,
+) -> String {
+  case string.pop_grapheme(remaining) {
+    Error(_) -> acc
+    Ok(#("\n", rest)) ->
+      do_strip_line_comments(rest, acc <> "\n", in_single, in_double, False)
+    Ok(#(_, rest)) if in_comment ->
+      do_strip_line_comments(rest, acc, in_single, in_double, True)
+    Ok(#("'", rest)) ->
+      case in_double {
+        True ->
+          do_strip_line_comments(rest, acc <> "'", in_single, True, False)
+        False ->
+          case in_single {
+            True ->
+              // Check for escaped quote ''
+              case string.pop_grapheme(rest) {
+                Ok(#("'", rest2)) ->
+                  do_strip_line_comments(rest2, acc <> "''", True, False, False)
+                _ ->
+                  do_strip_line_comments(rest, acc <> "'", False, False, False)
+              }
+            False ->
+              do_strip_line_comments(rest, acc <> "'", True, False, False)
+          }
+      }
+    Ok(#("\"", rest)) ->
+      case in_single {
+        True ->
+          do_strip_line_comments(rest, acc <> "\"", True, in_double, False)
+        False ->
+          do_strip_line_comments(rest, acc <> "\"", False, !in_double, False)
+      }
+    Ok(#("-", rest)) ->
+      case in_single || in_double {
+        True ->
+          do_strip_line_comments(rest, acc <> "-", in_single, in_double, False)
+        False ->
+          case string.pop_grapheme(rest) {
+            Ok(#("-", rest2)) ->
+              do_strip_line_comments(rest2, acc, False, False, True)
+            _ ->
+              do_strip_line_comments(
+                rest,
+                acc <> "-",
+                in_single,
+                in_double,
+                False,
+              )
+          }
+      }
+    Ok(#(char, rest)) ->
+      do_strip_line_comments(rest, acc <> char, in_single, in_double, False)
+  }
+}

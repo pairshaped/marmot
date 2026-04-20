@@ -1049,3 +1049,159 @@ pub fn introspect_mixed_left_inner_joins_test() {
   ] = result.columns
   let assert 1 = list.length(result.parameters)
 }
+
+// --- CASE expression inference tests ---
+
+pub fn introspect_case_int_literals_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, active BOOLEAN NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT CASE WHEN active THEN 1 ELSE 0 END AS registered FROM t",
+    )
+  let assert [Column(name: "registered", column_type: IntType, nullable: False)] =
+    result.columns
+}
+
+pub fn introspect_case_string_literals_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, active BOOLEAN NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT CASE WHEN active THEN 'yes' ELSE 'no' END AS label FROM t",
+    )
+  let assert [Column(name: "label", column_type: StringType, nullable: False)] =
+    result.columns
+}
+
+pub fn introspect_case_no_else_nullable_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, active BOOLEAN NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT CASE WHEN active THEN 1 END AS maybe_val FROM t",
+    )
+  let assert [Column(name: "maybe_val", column_type: IntType, nullable: True)] =
+    result.columns
+}
+
+pub fn introspect_case_null_branch_nullable_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, active BOOLEAN NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT CASE WHEN active THEN 1 ELSE NULL END AS maybe_val FROM t",
+    )
+  let assert [Column(name: "maybe_val", column_type: IntType, nullable: True)] =
+    result.columns
+}
+
+pub fn introspect_case_mixed_types_fallback_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, active BOOLEAN NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT CASE WHEN active THEN 1 ELSE 'a' END AS mixed FROM t",
+    )
+  let assert [Column(name: "mixed", column_type: StringType, nullable: True)] =
+    result.columns
+}
+
+pub fn introspect_case_nested_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, a BOOLEAN NOT NULL, b BOOLEAN NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT CASE WHEN a THEN CASE WHEN b THEN 1 ELSE 0 END ELSE 2 END AS val FROM t",
+    )
+  // The inner CASE is a non-literal expression, but "2" is a literal.
+  // Since the inner CASE can't be resolved by infer_literal_type, it falls back.
+  let assert [Column(name: "val", column_type: StringType, nullable: True)] =
+    result.columns
+}
+
+pub fn introspect_case_simple_form_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, status INT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT CASE status WHEN 1 THEN 'active' WHEN 2 THEN 'inactive' ELSE 'unknown' END AS label FROM t",
+    )
+  let assert [Column(name: "label", column_type: StringType, nullable: False)] =
+    result.columns
+}
+
+pub fn introspect_case_column_ref_fallback_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, a TEXT NOT NULL, b TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT CASE WHEN id > 0 THEN a ELSE b END AS val FROM t",
+    )
+  // Column refs fall through infer_expression_type, but the opcode path
+  // traces the result back to the source column, resolving correctly.
+  let assert [Column(name: "val", column_type: StringType, nullable: False)] =
+    result.columns
+}
+
+pub fn introspect_case_with_exists_subquery_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE events (id INTEGER NOT NULL PRIMARY KEY, season_id INT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE seasons (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT CASE WHEN EXISTS(SELECT 1 FROM events WHERE events.season_id = seasons.id) THEN 1 ELSE 0 END AS registered FROM seasons",
+    )
+  let assert [
+    Column(name: "registered", column_type: IntType, nullable: False),
+  ] = result.columns
+}

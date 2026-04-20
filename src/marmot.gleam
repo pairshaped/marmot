@@ -113,6 +113,7 @@ fn generate_for_directory(
   config: project.Config,
 ) -> Bool {
   let sql_files = project.list_sql_files(sql_dir)
+  warn_subdirectories(sql_dir)
   let queries =
     list.filter_map(sql_files, fn(file_path) { process_sql_file(db, file_path) })
 
@@ -144,6 +145,32 @@ fn generate_for_directory(
           }
       }
     }
+  }
+}
+
+fn warn_subdirectories(sql_dir: String) -> Nil {
+  case simplifile.read_directory(sql_dir) {
+    Ok(entries) -> {
+      let subdirs =
+        list.filter(entries, fn(e) {
+          case simplifile.is_directory(sql_dir <> "/" <> e) {
+            Ok(True) -> True
+            _ -> False
+          }
+        })
+      case subdirs {
+        [] -> Nil
+        dirs ->
+          io.println_error(
+            "warning: "
+            <> sql_dir
+            <> " contains subdirectories that will be ignored: "
+            <> string.join(dirs, ", ")
+            <> "\n  hint: Marmot only reads .sql files directly inside sql/ directories",
+          )
+      }
+    }
+    Error(_) -> Nil
   }
 }
 
@@ -369,7 +396,8 @@ fn do_check_semicolon(
 /// Run `gleam format` on generated code. Falls back to the original string
 /// if formatting fails (e.g., gleam not on PATH).
 fn format_gleam(code: String) -> String {
-  let tmp = ".marmot_fmt.gleam"
+  let suffix = int.to_string(int.absolute_value(unique_integer()))
+  let tmp = ".marmot_fmt_" <> suffix <> ".gleam"
   case simplifile.write(tmp, code) {
     Error(_) -> code
     Ok(_) -> {
@@ -398,12 +426,19 @@ fn halt(code: Int) -> Nil {
   // init:stop/1 performs a graceful shutdown that flushes I/O buffers,
   // unlike erlang:halt/1 which exits immediately and may lose stderr output
   init_stop(code)
-  // init:stop is async; block until the VM shuts down
-  timer_sleep(100_000_000)
+  // init:stop is async; wait for graceful shutdown, then force exit
+  timer_sleep(5000)
+  erlang_halt(code)
 }
 
 @external(erlang, "init", "stop")
 fn init_stop(code: Int) -> Nil
+
+@external(erlang, "erlang", "halt")
+fn erlang_halt(code: Int) -> Nil
+
+@external(erlang, "erlang", "unique_integer")
+fn unique_integer() -> Int
 
 @external(erlang, "timer", "sleep")
 fn timer_sleep(ms: Int) -> Nil

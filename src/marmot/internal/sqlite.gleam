@@ -404,63 +404,7 @@ fn do_strip_nullability_suffixes(
 }
 
 fn is_ident_char(c: String) -> Bool {
-  case c {
-    "a"
-    | "b"
-    | "c"
-    | "d"
-    | "e"
-    | "f"
-    | "g"
-    | "h"
-    | "i"
-    | "j"
-    | "k"
-    | "l"
-    | "m"
-    | "n"
-    | "o"
-    | "p"
-    | "q"
-    | "r"
-    | "s"
-    | "t"
-    | "u"
-    | "v"
-    | "w"
-    | "x"
-    | "y"
-    | "z" -> True
-    "A"
-    | "B"
-    | "C"
-    | "D"
-    | "E"
-    | "F"
-    | "G"
-    | "H"
-    | "I"
-    | "J"
-    | "K"
-    | "L"
-    | "M"
-    | "N"
-    | "O"
-    | "P"
-    | "Q"
-    | "R"
-    | "S"
-    | "T"
-    | "U"
-    | "V"
-    | "W"
-    | "X"
-    | "Y"
-    | "Z" -> True
-    "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" -> True
-    "_" -> True
-    _ -> False
-  }
+  query.is_sql_ident_char(c)
 }
 
 fn string_last(s: String) -> Result(String, Nil) {
@@ -472,7 +416,7 @@ fn string_last(s: String) -> Result(String, Nil) {
 
 fn normalize_sql_whitespace(sql: String) -> String {
   sql
-  |> strip_line_comments
+  |> query.strip_line_comments
   |> string.replace("\r\n", " ")
   |> string.replace("\r", " ")
   |> string.replace("\n", " ")
@@ -481,68 +425,12 @@ fn normalize_sql_whitespace(sql: String) -> String {
   |> string.trim
 }
 
-/// Remove `-- line comments` from SQL. A line comment starts with `--`
-/// outside of a string literal and extends to end of line. Preserves
-/// newlines so subsequent whitespace collapsing works naturally.
-fn strip_line_comments(sql: String) -> String {
-  do_strip_line_comments(sql, "", False, False, False)
-}
-
-fn do_strip_line_comments(
-  remaining: String,
-  acc: String,
-  in_single: Bool,
-  in_double: Bool,
-  in_comment: Bool,
-) -> String {
-  case string.pop_grapheme(remaining) {
-    Error(_) -> acc
-    Ok(#("\n", rest)) ->
-      // Newline ends comment and is kept as whitespace
-      do_strip_line_comments(rest, acc <> "\n", in_single, in_double, False)
-    Ok(#(_, rest)) if in_comment ->
-      do_strip_line_comments(rest, acc, in_single, in_double, True)
-    Ok(#("'", rest)) ->
-      case in_double {
-        True -> do_strip_line_comments(rest, acc <> "'", in_single, True, False)
-        False ->
-          do_strip_line_comments(rest, acc <> "'", !in_single, False, False)
-      }
-    Ok(#("\"", rest)) ->
-      case in_single {
-        True ->
-          do_strip_line_comments(rest, acc <> "\"", True, in_double, False)
-        False ->
-          do_strip_line_comments(rest, acc <> "\"", False, !in_double, False)
-      }
-    Ok(#("-", rest)) ->
-      case in_single || in_double {
-        True ->
-          do_strip_line_comments(rest, acc <> "-", in_single, in_double, False)
-        False ->
-          case string.pop_grapheme(rest) {
-            Ok(#("-", rest2)) ->
-              do_strip_line_comments(rest2, acc, False, False, True)
-            _ ->
-              do_strip_line_comments(
-                rest,
-                acc <> "-",
-                in_single,
-                in_double,
-                False,
-              )
-          }
-      }
-    Ok(#(char, rest)) ->
-      do_strip_line_comments(rest, acc <> char, in_single, in_double, False)
-  }
-}
 
 fn collapse_spaces(sql: String) -> String {
-  case string.contains(sql, "  ") {
-    True -> collapse_spaces(string.replace(sql, "  ", " "))
-    False -> sql
-  }
+  sql
+  |> string.split(" ")
+  |> list.filter(fn(part) { part != "" })
+  |> string.join(" ")
 }
 
 /// Extract result columns for regular (non-INSERT) queries.
@@ -749,11 +637,16 @@ fn infer_expression_type(item: SelectItem) -> Column {
                                 nullable: False,
                               )
                             False ->
-                              Column(
-                                name: item.alias,
-                                column_type: StringType,
-                                nullable: True,
-                              )
+                              case string.starts_with(upper, "CASE ") {
+                                True ->
+                                  infer_case_type(item.alias, item.expression)
+                                False ->
+                                  Column(
+                                    name: item.alias,
+                                    column_type: StringType,
+                                    nullable: True,
+                                  )
+                              }
                           }
                       }
                   }
@@ -783,6 +676,277 @@ fn infer_coalesce_type(alias: String, expr: String) -> Column {
         option.Some(t) -> Column(name: alias, column_type: t, nullable: False)
         option.None ->
           Column(name: alias, column_type: StringType, nullable: True)
+      }
+    }
+  }
+}
+
+/// Infer the type of a CASE expression by examining its THEN/ELSE branches.
+/// If all branches resolve to the same literal type, use that type.
+/// Nullable if there is no ELSE branch or any branch is NULL.
+/// Falls back to StringType nullable when branches have mixed types or
+/// contain non-literal expressions (e.g., column refs).
+fn infer_case_type(alias: String, expr: String) -> Column {
+  let #(branches, has_else) = extract_case_branches(expr)
+  case branches {
+    [] -> Column(name: alias, column_type: StringType, nullable: True)
+    _ -> {
+      let types =
+        list.filter_map(branches, fn(branch) {
+          let trimmed = string.trim(branch)
+          case string.uppercase(trimmed) {
+            "NULL" -> Error(Nil)
+            _ ->
+              case infer_literal_type(trimmed) {
+                option.Some(t) -> Ok(t)
+                option.None -> Error(Nil)
+              }
+          }
+        })
+      let has_null =
+        list.any(branches, fn(b) { string.uppercase(string.trim(b)) == "NULL" })
+      let has_unresolved = list.length(types) + { case has_null {
+        True -> list.count(branches, fn(b) { string.uppercase(string.trim(b)) == "NULL" })
+        False -> 0
+      } } != list.length(branches)
+      case has_unresolved {
+        // Some branches are non-literal expressions (column refs etc.) -- fall back
+        True -> Column(name: alias, column_type: StringType, nullable: True)
+        False ->
+          case types {
+            [] ->
+              // All branches are NULL
+              Column(name: alias, column_type: StringType, nullable: True)
+            [first, ..rest] ->
+              case list.all(rest, fn(t) { t == first }) {
+                True -> {
+                  let nullable = has_null || !has_else
+                  Column(
+                    name: alias,
+                    column_type: first,
+                    nullable: nullable,
+                  )
+                }
+                // Mixed types -- fall back
+                False ->
+                  Column(name: alias, column_type: StringType, nullable: True)
+              }
+          }
+      }
+    }
+  }
+}
+
+/// Extract the THEN and ELSE operands from a CASE expression.
+/// Returns #(branches, has_else) where branches is the list of result
+/// expressions and has_else indicates whether an ELSE clause is present.
+///
+/// Tracks depth for both parentheses and nested CASE...END blocks so that
+/// inner CASE expressions are treated as opaque tokens.
+fn extract_case_branches(expr: String) -> #(List(String), Bool) {
+  // Strip the outer "CASE" prefix; the body ends at the final "END".
+  let body = string.drop_start(expr, 4)
+  let upper_body = string.uppercase(body)
+  // Strip trailing END (the outermost one)
+  let body = case find_top_level_end(upper_body) {
+    option.Some(idx) -> string.slice(body, 0, idx)
+    option.None -> body
+  }
+  do_extract_branches(body, string.uppercase(body), "", [], False, 0, InNone)
+}
+
+/// Parsing state: what keyword are we looking for the operand of?
+type CaseScanState {
+  InNone
+  InWhen
+  InThen
+  InElse
+}
+
+/// Walk through the CASE body collecting THEN/ELSE operands at depth 0.
+/// Depth tracks nested CASE...END and parentheses.
+fn do_extract_branches(
+  original: String,
+  upper: String,
+  current: String,
+  acc: List(String),
+  has_else: Bool,
+  depth: Int,
+  state: CaseScanState,
+) -> #(List(String), Bool) {
+  case string.length(upper) {
+    0 -> {
+      // End of body; flush current if we're in THEN or ELSE
+      let final_acc = case state {
+        InThen | InElse ->
+          case string.trim(current) {
+            "" -> acc
+            trimmed -> [trimmed, ..acc]
+          }
+        _ -> acc
+      }
+      #(list.reverse(final_acc), has_else)
+    }
+    _ -> {
+      let head = string.slice(upper, 0, 1)
+      case head {
+        "(" ->
+          do_extract_branches(
+            string.drop_start(original, 1),
+            string.drop_start(upper, 1),
+            current <> string.slice(original, 0, 1),
+            acc, has_else, depth + 1, state,
+          )
+        ")" ->
+          do_extract_branches(
+            string.drop_start(original, 1),
+            string.drop_start(upper, 1),
+            current <> string.slice(original, 0, 1),
+            acc, has_else, depth - 1, state,
+          )
+        _ ->
+          case depth == 0 {
+            False ->
+              // Inside parens or nested CASE -- just accumulate
+              do_extract_branches(
+                string.drop_start(original, 1),
+                string.drop_start(upper, 1),
+                current <> string.slice(original, 0, 1),
+                acc, has_else, depth, state,
+              )
+            True ->
+              // Check for CASE (nested) -- increase depth
+              case string.starts_with(upper, "CASE ") || string.starts_with(upper, "CASE\t") {
+                True ->
+                  do_extract_branches(
+                    string.drop_start(original, 4),
+                    string.drop_start(upper, 4),
+                    current <> string.slice(original, 0, 4),
+                    acc, has_else, depth + 1, state,
+                  )
+                False ->
+                  // Check for END (closes a nested CASE at depth > 0 handled above;
+                  // at depth 0 we should have already stripped the outer END)
+                  case string.starts_with(upper, "END ") || string.starts_with(upper, "END\t") || upper == "END" {
+                    True -> {
+                      let end_len = case upper == "END" { True -> 3 False -> 3 }
+                      do_extract_branches(
+                        string.drop_start(original, end_len),
+                        string.drop_start(upper, end_len),
+                        current <> string.slice(original, 0, end_len),
+                        acc, has_else, depth - 1, state,
+                      )
+                    }
+                    False ->
+                      // Check for top-level keywords WHEN, THEN, ELSE
+                      case string.starts_with(upper, " WHEN ") {
+                        True -> {
+                          // Flush current if in THEN/ELSE
+                          let new_acc = case state {
+                            InThen | InElse ->
+                              case string.trim(current) {
+                                "" -> acc
+                                trimmed -> [trimmed, ..acc]
+                              }
+                            _ -> acc
+                          }
+                          do_extract_branches(
+                            string.drop_start(original, 6),
+                            string.drop_start(upper, 6),
+                            "", new_acc, has_else, 0, InWhen,
+                          )
+                        }
+                        False ->
+                          case string.starts_with(upper, " THEN ") {
+                            True ->
+                              do_extract_branches(
+                                string.drop_start(original, 6),
+                                string.drop_start(upper, 6),
+                                "", acc, has_else, 0, InThen,
+                              )
+                            False ->
+                              case string.starts_with(upper, " ELSE ") {
+                                True -> {
+                                  // Flush current if in THEN
+                                  let new_acc = case state {
+                                    InThen ->
+                                      case string.trim(current) {
+                                        "" -> acc
+                                        trimmed -> [trimmed, ..acc]
+                                      }
+                                    _ -> acc
+                                  }
+                                  do_extract_branches(
+                                    string.drop_start(original, 6),
+                                    string.drop_start(upper, 6),
+                                    "", new_acc, True, 0, InElse,
+                                  )
+                                }
+                                False ->
+                                  // Regular character -- accumulate
+                                  do_extract_branches(
+                                    string.drop_start(original, 1),
+                                    string.drop_start(upper, 1),
+                                    current <> string.slice(original, 0, 1),
+                                    acc, has_else, depth, state,
+                                  )
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+      }
+    }
+  }
+}
+
+/// Find the position of the top-level END keyword in an uppercased CASE body.
+/// Tracks nested CASE...END depth so inner ENDs are skipped.
+fn find_top_level_end(upper: String) -> option.Option(Int) {
+  do_find_top_level_end(upper, 0, 0)
+}
+
+fn do_find_top_level_end(
+  remaining: String,
+  idx: Int,
+  depth: Int,
+) -> option.Option(Int) {
+  case string.length(remaining) {
+    0 -> option.None
+    _ -> {
+      let head = string.slice(remaining, 0, 1)
+      case head {
+        "(" ->
+          do_find_top_level_end(
+            string.drop_start(remaining, 1), idx + 1, depth + 1,
+          )
+        ")" ->
+          do_find_top_level_end(
+            string.drop_start(remaining, 1), idx + 1, depth - 1,
+          )
+        _ ->
+          case depth == 0 {
+            False ->
+              do_find_top_level_end(
+                string.drop_start(remaining, 1), idx + 1, depth,
+              )
+            True ->
+              case string.starts_with(remaining, "CASE ") {
+                True ->
+                  do_find_top_level_end(
+                    string.drop_start(remaining, 4), idx + 4, depth + 1,
+                  )
+                False ->
+                  case remaining == "END" || string.starts_with(remaining, "END ") || string.starts_with(remaining, "END\t") {
+                    True -> option.Some(idx)
+                    False ->
+                      do_find_top_level_end(
+                        string.drop_start(remaining, 1), idx + 1, depth,
+                      )
+                  }
+              }
+          }
       }
     }
   }
@@ -1090,40 +1254,43 @@ fn replace_ignore_case(
   needle: String,
   replacement: String,
 ) -> String {
-  // Case-insensitive replace by walking through and finding uppercase matches
-  do_replace_ignore_case(haystack, needle, replacement, "")
+  // Pre-uppercase both strings once, then scan in parallel
+  let upper_needle = string.uppercase(needle)
+  let upper_haystack = string.uppercase(haystack)
+  do_replace_ignore_case(haystack, upper_haystack, upper_needle, replacement, "")
 }
 
 fn do_replace_ignore_case(
-  remaining: String,
-  needle: String,
+  original: String,
+  upper: String,
+  upper_needle: String,
   replacement: String,
   acc: String,
 ) -> String {
-  let needle_len = string.length(needle)
-  case string.length(remaining) < needle_len {
-    True -> acc <> remaining
-    False -> {
-      let head = string.slice(remaining, 0, needle_len)
-      case string.uppercase(head) == string.uppercase(needle) {
+  let needle_len = string.length(upper_needle)
+  case string.length(upper) < needle_len {
+    True -> acc <> original
+    False ->
+      case string.starts_with(upper, upper_needle) {
         True ->
           do_replace_ignore_case(
-            string.drop_start(remaining, needle_len),
-            needle,
+            string.drop_start(original, needle_len),
+            string.drop_start(upper, needle_len),
+            upper_needle,
             replacement,
             acc <> replacement,
           )
         False -> {
-          let first = string.slice(remaining, 0, 1)
+          let first = string.slice(original, 0, 1)
           do_replace_ignore_case(
-            string.drop_start(remaining, 1),
-            needle,
+            string.drop_start(original, 1),
+            string.drop_start(upper, 1),
+            upper_needle,
             replacement,
             acc <> first,
           )
         }
       }
-    }
   }
 }
 
@@ -1363,19 +1530,7 @@ fn is_simple_identifier(s: String) -> Bool {
 }
 
 fn is_identifier_char(c: String) -> Bool {
-  case c {
-    "_" -> True
-    _ -> {
-      let code = case string.to_utf_codepoints(c) {
-        [cp] -> string.utf_codepoint_to_int(cp)
-        _ -> 0
-      }
-      // 0-9, A-Z, a-z
-      { code >= 48 && code <= 57 }
-      || { code >= 65 && code <= 90 }
-      || { code >= 97 && code <= 122 }
-    }
-  }
+  query.is_sql_ident_char(c)
 }
 
 /// Extract RETURNING columns by parsing the RETURNING clause from SQL
@@ -2107,18 +2262,7 @@ fn do_find_subquery_tables(sql: String, acc: List(String)) -> List(String) {
 }
 
 fn is_alphanumeric_char(c: String) -> Bool {
-  case c {
-    "_" -> True
-    _ -> {
-      let code = case string.to_utf_codepoints(c) {
-        [cp] -> string.utf_codepoint_to_int(cp)
-        _ -> 0
-      }
-      { code >= 48 && code <= 57 }
-      || { code >= 65 && code <= 90 }
-      || { code >= 97 && code <= 122 }
-    }
-  }
+  query.is_sql_ident_char(c)
 }
 
 /// Walk through the SQL left-to-right finding each top-level `?` or named
@@ -2333,26 +2477,30 @@ fn extract_identifier_from_trailing_parens(s: String) -> String {
 }
 
 fn find_matching_paren_content(s: String, depth: Int, acc: String) -> String {
+  // Convert to graphemes and reverse once, then walk the reversed list
+  let reversed = string.to_graphemes(s) |> list.reverse
+  do_find_matching_paren(reversed, depth, acc)
+}
+
+fn do_find_matching_paren(
+  chars: List(String),
+  depth: Int,
+  acc: String,
+) -> String {
   case depth {
     0 -> acc
     _ ->
-      case string.pop_grapheme(string.reverse(s)) {
-        Error(_) -> acc
-        Ok(#(")", rev_rest)) -> {
-          let remaining = string.reverse(rev_rest)
-          find_matching_paren_content(remaining, depth + 1, ")" <> acc)
-        }
-        Ok(#("(", rev_rest)) -> {
-          let remaining = string.reverse(rev_rest)
+      case chars {
+        [] -> acc
+        [")", ..rest] ->
+          do_find_matching_paren(rest, depth + 1, ")" <> acc)
+        ["(", ..rest] ->
           case depth {
             1 -> acc
-            _ -> find_matching_paren_content(remaining, depth - 1, "(" <> acc)
+            _ -> do_find_matching_paren(rest, depth - 1, "(" <> acc)
           }
-        }
-        Ok(#(char, rev_rest)) -> {
-          let remaining = string.reverse(rev_rest)
-          find_matching_paren_content(remaining, depth, char <> acc)
-        }
+        [char, ..rest] ->
+          do_find_matching_paren(rest, depth, char <> acc)
       }
   }
 }
@@ -2977,48 +3125,61 @@ fn extract_column_with_operators(
   }
 }
 
-/// Split WHERE conditions on AND/OR keywords (case-insensitive)
+/// Split WHERE conditions on top-level AND/OR keywords (case-insensitive).
+/// Respects parenthesis depth so subquery conditions are not split.
 fn split_where_conditions(where_part: String) -> List(String) {
-  let delimiter = "\u{0000}"
-  let original_replaced =
-    replace_keyword_ci(where_part, " AND ", delimiter)
-    |> replace_keyword_ci(" OR ", delimiter)
-  string.split(original_replaced, delimiter)
+  do_split_on_and_or(where_part, "", [], 0)
 }
 
-/// Case-insensitive keyword replacement
-fn replace_keyword_ci(
-  input: String,
-  keyword: String,
-  replacement: String,
-) -> String {
-  let upper_input = string.uppercase(input)
-  let upper_keyword = string.uppercase(keyword)
-  replace_keyword_ci_loop(input, upper_input, upper_keyword, replacement, "")
-}
-
-fn replace_keyword_ci_loop(
-  original: String,
-  upper: String,
-  keyword: String,
-  replacement: String,
-  acc: String,
-) -> String {
-  case string.split_once(upper, keyword) {
-    Ok(#(before, after)) -> {
-      let before_len = string.length(before)
-      let keyword_len = string.length(keyword)
-      let original_before = string.slice(original, 0, before_len)
-      let original_after = string.drop_start(original, before_len + keyword_len)
-      replace_keyword_ci_loop(
-        original_after,
-        after,
-        keyword,
-        replacement,
-        acc <> original_before <> replacement,
-      )
-    }
-    Error(_) -> acc <> original
+fn do_split_on_and_or(
+  remaining: String,
+  current: String,
+  acc: List(String),
+  depth: Int,
+) -> List(String) {
+  case string.pop_grapheme(remaining) {
+    Error(_) ->
+      case string.trim(current) {
+        "" -> list.reverse(acc)
+        trimmed -> list.reverse([trimmed, ..acc])
+      }
+    Ok(#("(", rest)) ->
+      do_split_on_and_or(rest, current <> "(", acc, depth + 1)
+    Ok(#(")", rest)) ->
+      do_split_on_and_or(rest, current <> ")", acc, depth - 1)
+    Ok(#(" ", rest)) ->
+      case depth == 0 {
+        True -> {
+          let peek4 = string.uppercase(string.slice(rest, 0, 4))
+          case peek4 {
+            "AND " -> {
+              let trimmed = string.trim(current)
+              let after = string.drop_start(rest, 4)
+              case trimmed {
+                "" -> do_split_on_and_or(after, "", acc, 0)
+                _ -> do_split_on_and_or(after, "", [trimmed, ..acc], 0)
+              }
+            }
+            _ -> {
+              let peek3 = string.uppercase(string.slice(rest, 0, 3))
+              case peek3 {
+                "OR " -> {
+                  let trimmed = string.trim(current)
+                  let after = string.drop_start(rest, 3)
+                  case trimmed {
+                    "" -> do_split_on_and_or(after, "", acc, 0)
+                    _ -> do_split_on_and_or(after, "", [trimmed, ..acc], 0)
+                  }
+                }
+                _ -> do_split_on_and_or(rest, current <> " ", acc, 0)
+              }
+            }
+          }
+        }
+        False -> do_split_on_and_or(rest, current <> " ", acc, depth)
+      }
+    Ok(#(char, rest)) ->
+      do_split_on_and_or(rest, current <> char, acc, depth)
   }
 }
 

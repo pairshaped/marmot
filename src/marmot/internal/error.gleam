@@ -1,5 +1,4 @@
 import gleam/list
-import gleam/option.{type Option}
 import gleam/string
 import marmot/internal/query.{type Column}
 
@@ -8,14 +7,6 @@ pub type MarmotError {
   DatabaseOpenError(path: String, message: String)
   FileReadError(path: String, message: String)
   SqlError(path: String, message: String)
-  UnknownColumn(
-    path: String,
-    column: String,
-    table: String,
-    suggestion: Option(String),
-  )
-  UnknownTable(path: String, table: String, suggestion: Option(String))
-  TypeInferenceError(path: String, expression: String)
   EmptySqlFile(path: String)
   InvalidFilename(path: String)
   MultipleQueries(path: String)
@@ -50,37 +41,6 @@ pub fn to_string(error: MarmotError) -> String {
   \u{2502}
   \u{2502} " <> message <> hint
     }
-
-    UnknownColumn(path:, column:, table:, suggestion:) -> {
-      let hint = case suggestion {
-        option.Some(s) -> "
-  hint: Did you mean \"" <> s <> "\"?"
-        option.None -> ""
-      }
-      "error: Unknown column
-  \u{250c}\u{2500} " <> path <> "
-  \u{2502}
-  \u{2502} Column \"" <> column <> "\" does not exist on table \"" <> table <> "\"" <> hint
-    }
-
-    UnknownTable(path:, table:, suggestion:) -> {
-      let hint = case suggestion {
-        option.Some(s) -> "
-  hint: Did you mean \"" <> s <> "\"?"
-        option.None -> ""
-      }
-      "error: Unknown table
-  \u{250c}\u{2500} " <> path <> "
-  \u{2502}
-  \u{2502} Table \"" <> table <> "\" does not exist" <> hint
-    }
-
-    TypeInferenceError(path:, expression:) -> "error: Could not infer type
-  \u{250c}\u{2500} " <> path <> "
-  \u{2502}
-  \u{2502} Could not determine the type of: " <> expression <> "
-  \u{2502}
-  hint: Consider using a CAST expression: CAST(... AS TEXT)"
 
     InvalidFilename(path:) -> "error: Invalid filename
   \u{250c}\u{2500} " <> path <> "
