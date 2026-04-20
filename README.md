@@ -203,7 +203,8 @@ src/
 │       └── sql.gleam          -- generated
 ```
 
-You can override this with an output directory:
+If you prefer to consolidate generated code in one place (e.g. to exclude it
+from linters), you can set an output directory:
 
 ```toml
 [marmot]
