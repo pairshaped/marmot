@@ -186,7 +186,18 @@ all three options.
 ### Configuring the output directory
 
 By default, the generated `sql.gleam` file is placed as a sibling of the `sql/`
-directory. You can override this with an output directory:
+directory:
+
+```txt
+src/
+├── my_app/
+│   ├── sql/
+│   │   ├── find_user.sql
+│   │   └── list_users.sql
+│   └── sql.gleam              -- generated
+```
+
+You can override this with an output directory:
 
 ```toml
 [marmot]
