@@ -1800,9 +1800,14 @@ fn parse_values_placeholder_positions(sql: String) -> List(Int) {
           list.index_map(parts, fn(part, idx) { #(part, idx) })
           |> list.filter_map(fn(pair) {
             let #(part, idx) = pair
-            case string.trim(part) {
+            let trimmed = string.trim(part)
+            case trimmed {
               "?" -> Ok(idx)
-              _ -> Error(Nil)
+              _ ->
+                case string.starts_with(trimmed, "@") {
+                  True -> Ok(idx)
+                  False -> Error(Nil)
+                }
             }
           })
         }
@@ -2688,17 +2693,23 @@ fn parse_update_set_columns(sql: String) -> List(String) {
           }
       }
       // Parse "col1 = ?, col2 = ?" -> ["col1", "col2"]
-      // Skip entries where the RHS isn't a `?` (e.g., `col = other_col`
+      // Also handles named params: "col1 = @col1, col2 = @col2" -> ["col1", "col2"]
+      // Skip entries where the RHS isn't a `?` or `@name` (e.g., `col = other_col`
       // or `col = col + 1` — these don't bind a parameter).
       set_part
       |> string.split(",")
       |> list.filter_map(fn(part) {
         case string.split_once(string.trim(part), "=") {
-          Ok(#(col_name, rhs)) ->
-            case string.contains(rhs, "?") {
+          Ok(#(col_name, rhs)) -> {
+            let rhs_trimmed = string.trim(rhs)
+            case
+              string.contains(rhs_trimmed, "?")
+              || string.starts_with(rhs_trimmed, "@")
+            {
               True -> Ok(string.trim(col_name))
               False -> Error(Nil)
             }
+          }
           Error(_) -> Error(Nil)
         }
       })
@@ -2725,8 +2736,8 @@ fn parse_where_columns(sql: String) -> List(String) {
       split_where_conditions(where_part)
       |> list.filter_map(fn(part) {
         let trimmed = string.trim(part)
-        // Match patterns like "col = ?", "col > ?", "col=?", etc.
-        case string.contains(trimmed, "?") {
+        // Match patterns like "col = ?", "col > ?", "col=?", or "col = @name"
+        case string.contains(trimmed, "?") || string.contains(trimmed, "@") {
           True -> {
             let col_name = extract_column_before_operator(trimmed)
             case col_name {
