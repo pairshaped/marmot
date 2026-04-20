@@ -213,13 +213,12 @@ fn validate_sql(trimmed: String, file_path: String) -> Result(String, Nil) {
       Error(Nil)
     }
     sql -> {
-      let stripped = case string.ends_with(string.trim(sql), ";") {
+      let stripped = case string.ends_with(sql, ";") {
         True ->
           sql
-          |> string.trim
           |> string.drop_end(1)
           |> string.trim
-        False -> string.trim(sql)
+        False -> sql
       }
       case contains_semicolon_outside_strings(stripped) {
         True -> {

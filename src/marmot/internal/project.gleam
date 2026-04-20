@@ -117,9 +117,6 @@ pub fn list_sql_files(dir: String) -> List(String) {
 
 /// Determine the output path for a sql/ directory.
 /// Default: sibling of the sql/ directory (e.g., src/app/sql -> src/app/sql.gleam)
-/// Configured: use the configured output directory (e.g., src/generated/sql.gleam)
-/// Determine the output path for a sql/ directory.
-/// Default: sibling of the sql/ directory (e.g., src/app/sql -> src/app/sql.gleam)
 /// Configured: derives filename from the parent directory to avoid collisions
 /// (e.g., src/users/sql with output "src/gen" -> src/gen/users_sql.gleam)
 pub fn output_path(sql_dir: String, configured_output: Option(String)) -> String {

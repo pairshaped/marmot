@@ -228,8 +228,13 @@ fn extract_returning_columns(
       case dict.get(table_schemas, table_name) {
         Ok(table_cols) ->
           list.map(cols, fn(col_name) {
-            case list.find(table_cols, fn(c) { c.name == col_name }) {
-              Ok(col) -> col
+            let lower_name = string.lowercase(col_name)
+            case
+              list.find(table_cols, fn(c) {
+                string.lowercase(c.name) == lower_name
+              })
+            {
+              Ok(col) -> Column(..col, name: col_name)
               Error(_) ->
                 Column(name: col_name, column_type: StringType, nullable: True)
             }
@@ -664,6 +669,7 @@ fn resolve_column_to_parameter(
 
 /// Extract the first word after a keyword in SQL (case-insensitive).
 /// Used for parsing table names from INSERT INTO / UPDATE statements.
+/// Handles quoted identifiers (double quotes and backticks).
 fn extract_word_after_keyword(sql: String, keyword: String) -> String {
   let upper = string.uppercase(string.trim(sql))
   let upper_keyword = string.uppercase(keyword)
@@ -671,12 +677,32 @@ fn extract_word_after_keyword(sql: String, keyword: String) -> String {
     Ok(#(before, _)) -> {
       let offset = string.length(before) + string.length(upper_keyword)
       let rest = string.drop_start(string.trim(sql), offset) |> string.trim
-      case string.split_once(rest, " ") {
-        Ok(#(word, _)) -> word
-        Error(_) ->
-          case string.split_once(rest, "(") {
-            Ok(#(word, _)) -> string.trim(word)
+      case string.first(rest) {
+        // Double-quoted identifier
+        Ok("\"") -> {
+          let inner = string.drop_start(rest, 1)
+          case string.split_once(inner, "\"") {
+            Ok(#(name, _)) -> name
             Error(_) -> rest
+          }
+        }
+        // Backtick-quoted identifier
+        Ok("`") -> {
+          let inner = string.drop_start(rest, 1)
+          case string.split_once(inner, "`") {
+            Ok(#(name, _)) -> name
+            Error(_) -> rest
+          }
+        }
+        // Unquoted identifier
+        _ ->
+          case string.split_once(rest, " ") {
+            Ok(#(word, _)) -> word
+            Error(_) ->
+              case string.split_once(rest, "(") {
+                Ok(#(word, _)) -> string.trim(word)
+                Error(_) -> rest
+              }
           }
       }
     }
