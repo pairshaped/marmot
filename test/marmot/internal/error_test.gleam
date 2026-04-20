@@ -1,6 +1,8 @@
 import birdie
 import gleam/option
-import marmot/internal/error
+import gleam/string
+import marmot/internal/error.{SharedTypeMismatch}
+import marmot/internal/query.{Column, IntType, StringType}
 
 pub fn database_not_configured_error_test() {
   error.DatabaseNotConfigured
@@ -139,4 +141,21 @@ pub fn invalid_returns_annotation_error_test() {
   )
   |> error.to_string
   |> birdie.snap(title: "invalid returns annotation error")
+}
+
+pub fn shared_type_mismatch_message_test() {
+  let conflict_a = #("src/server/orgs/sql/get_org_by_id.sql", [
+    Column(name: "id", column_type: IntType, nullable: False),
+    Column(name: "name", column_type: StringType, nullable: False),
+  ])
+  let conflict_b = #("src/server/orgs/sql/list_orgs.sql", [
+    Column(name: "id", column_type: IntType, nullable: False),
+  ])
+  let msg =
+    error.to_string(
+      SharedTypeMismatch(name: "OrgRow", conflicts: [conflict_a, conflict_b]),
+    )
+  let assert True = string.contains(msg, "OrgRow")
+  let assert True = string.contains(msg, "get_org_by_id.sql")
+  let assert True = string.contains(msg, "list_orgs.sql")
 }

@@ -1,6 +1,7 @@
 import gleam/list
 import gleam/option.{type Option}
 import gleam/string
+import marmot/internal/query.{type Column}
 
 pub type MarmotError {
   DatabaseNotConfigured
@@ -22,6 +23,7 @@ pub type MarmotError {
   StaleGeneratedCode(files: List(String))
   OutputNotUnderSrc(output: String)
   InvalidReturnsAnnotation(path: String, name: String, reason: String)
+  SharedTypeMismatch(name: String, conflicts: List(#(String, List(Column))))
 }
 
 pub fn to_string(error: MarmotError) -> String {
@@ -140,6 +142,31 @@ pub fn to_string(error: MarmotError) -> String {
   \u{250c}\u{2500} " <> path <> "
   \u{2502}
   \u{2502} `-- returns: " <> name <> "` is invalid: " <> reason
+
+    SharedTypeMismatch(name:, conflicts:) -> {
+      let header =
+        "error: Shared return type mismatch for `" <> name <> "`\n  \u{2502}\n"
+      let body =
+        list.map(conflicts, fn(pair) {
+          let #(path, cols) = pair
+          let shape =
+            list.map(cols, fn(c) {
+              c.name
+              <> ": "
+              <> query.gleam_type(c.column_type)
+              <> case c.nullable {
+                True -> "?"
+                False -> ""
+              }
+            })
+            |> string.join(", ")
+          "  \u{2502} " <> path <> "\n  \u{2502}   returns: [" <> shape <> "]"
+        })
+        |> string.join("\n  \u{2502}\n")
+      header
+      <> body
+      <> "\n  \u{2502}\n  \u{2502} Align SELECT columns across these queries, or remove the annotation from one."
+    }
   }
 }
 
