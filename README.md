@@ -82,9 +82,7 @@ pub fn main() {
 }
 ```
 
-Behind the scenes Marmot generates the decoders and functions you need; and
-it's pretty-printed, standard Gleam code (actually it's exactly like the hand
-written example I showed you earlier)! Generated functions use labelled
+Behind the scenes Marmot generates the decoders and functions you need. Generated functions use labelled
 arguments (`sql.find_user(db: db, username: "alice")`) so call sites are
 self-documenting.
 So now you get the best of both worlds:
