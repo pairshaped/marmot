@@ -11,7 +11,7 @@ pub type CreateUserRow {
   )
 }
 
-pub fn create_user(db: sqlight.Connection, username: String, email: String) {
+pub fn create_user(db db: sqlight.Connection, username username: String, email email: String) {
   sqlight.query(
     "INSERT INTO users (username, email) VALUES (?, ?) RETURNING id, created_at",
     on: db,

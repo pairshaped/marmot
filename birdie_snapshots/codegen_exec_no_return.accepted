@@ -4,7 +4,7 @@ title: codegen exec no return
 file: ./test/marmot/internal/codegen_test.gleam
 test_name: codegen_exec_no_return_test
 ---
-pub fn delete_user(db: sqlight.Connection, id: Int) {
+pub fn delete_user(db db: sqlight.Connection, id id: Int) {
   sqlight.query(
     "DELETE FROM users WHERE id = ?",
     on: db,

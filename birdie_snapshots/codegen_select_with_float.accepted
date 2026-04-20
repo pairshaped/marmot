@@ -11,7 +11,7 @@ pub type FindProductRow {
   )
 }
 
-pub fn find_product(db: sqlight.Connection, id: Int) {
+pub fn find_product(db db: sqlight.Connection, id id: Int) {
   sqlight.query(
     "SELECT id, price FROM products WHERE id = ?",
     on: db,

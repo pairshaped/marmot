@@ -17,7 +17,7 @@ fn date_to_string(date: Date) -> String {
   year_str <> "-" <> month_str <> "-" <> day_str
 }
 
-pub fn create_event(db: sqlight.Connection, name: String, event_date: calendar.Date) {
+pub fn create_event(db db: sqlight.Connection, name name: String, event_date event_date: calendar.Date) {
   sqlight.query(
     "INSERT INTO events (name, event_date) VALUES (?, ?)",
     on: db,

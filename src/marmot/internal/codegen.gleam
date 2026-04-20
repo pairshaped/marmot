@@ -120,7 +120,7 @@ fn generate_query_function(q: Query) -> String {
   let decoder = generate_decoder(q)
   "pub fn "
   <> q.name
-  <> "(db: sqlight.Connection"
+  <> "(db db: sqlight.Connection"
   <> params
   <> ") {\n"
   <> "  sqlight.query(\n"
@@ -144,7 +144,7 @@ fn generate_exec_function(q: Query) -> String {
 
   "pub fn "
   <> q.name
-  <> "(db: sqlight.Connection"
+  <> "(db db: sqlight.Connection"
   <> params
   <> ") {\n"
   <> "  sqlight.query(\n"
@@ -166,7 +166,8 @@ fn generate_param_list(params: List(Parameter)) -> String {
     _ ->
       params
       |> list.map(fn(p) {
-        ", " <> sanitize_name(p.name) <> ": " <> query.gleam_type(p.column_type)
+        let name = sanitize_name(p.name)
+        ", " <> name <> " " <> name <> ": " <> query.gleam_type(p.column_type)
       })
       |> string.join("")
   }

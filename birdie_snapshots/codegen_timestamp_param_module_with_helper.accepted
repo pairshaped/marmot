@@ -15,7 +15,7 @@ fn timestamp_to_int(ts: Timestamp) -> Int {
   s
 }
 
-pub fn update_last_seen(db: sqlight.Connection, last_seen: timestamp.Timestamp, id: Int) {
+pub fn update_last_seen(db db: sqlight.Connection, last_seen last_seen: timestamp.Timestamp, id id: Int) {
   sqlight.query(
     "UPDATE users SET last_seen = ? WHERE id = ?",
     on: db,

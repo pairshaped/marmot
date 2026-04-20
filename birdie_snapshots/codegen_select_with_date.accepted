@@ -11,7 +11,7 @@ pub type FindEventRow {
   )
 }
 
-pub fn find_event(db: sqlight.Connection, id: Int) {
+pub fn find_event(db db: sqlight.Connection, id id: Int) {
   sqlight.query(
     "SELECT id, event_date FROM events WHERE id = ?",
     on: db,

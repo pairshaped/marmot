@@ -11,7 +11,7 @@ pub type FindUserRow {
   )
 }
 
-pub fn find_user(db: sqlight.Connection, id: Int) {
+pub fn find_user(db db: sqlight.Connection, id id: Int) {
   sqlight.query(
     "SELECT id, created_at FROM users WHERE id = ?",
     on: db,
