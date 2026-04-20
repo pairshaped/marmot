@@ -1,4 +1,5 @@
 import gleam/list
+import gleam/option
 import marmot/internal/query.{
   BitArrayType, BoolType, Column, DateType, FloatType, IntType, Parameter,
   StringType, TimestampType,
@@ -108,6 +109,30 @@ pub fn introspect_query_insert_returning_test() {
   let assert [
     Parameter(name: "username", column_type: StringType, nullable: False),
     Parameter(name: "created_at", column_type: TimestampType, nullable: False),
+  ] = result.parameters
+}
+
+pub fn introspect_insert_with_nullable_column_param_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL,
+        bio TEXT,
+        created_at INTEGER NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "INSERT INTO users (username, bio, created_at) VALUES (@username, @bio, @created_at)",
+    )
+  let assert [
+    Parameter(name: "username", column_type: StringType, nullable: False),
+    Parameter(name: "bio", column_type: StringType, nullable: True),
+    Parameter(name: "created_at", column_type: IntType, nullable: False),
   ] = result.parameters
 }
 
@@ -950,6 +975,53 @@ pub fn introspect_multiple_joins_test() {
     Column(name: "qty", column_type: IntType, nullable: False),
   ] = result.columns
   let assert 1 = list.length(result.parameters)
+}
+
+pub fn parse_returns_no_annotation_test() {
+  let assert Ok(option.None) = sqlite.parse_returns_annotation("SELECT 1")
+}
+
+pub fn parse_returns_simple_annotation_test() {
+  let assert Ok(option.Some("OrgRow")) =
+    sqlite.parse_returns_annotation("-- returns: OrgRow\nSELECT 1")
+}
+
+pub fn parse_returns_with_blank_lines_above_test() {
+  let assert Ok(option.Some("OrgRow")) =
+    sqlite.parse_returns_annotation("\n\n-- returns: OrgRow\nSELECT 1")
+}
+
+pub fn parse_returns_with_other_comments_above_test() {
+  let assert Ok(option.Some("OrgRow")) =
+    sqlite.parse_returns_annotation(
+      "-- this is a comment\n-- returns: OrgRow\nSELECT 1",
+    )
+}
+
+pub fn parse_returns_after_sql_ignored_test() {
+  // Annotation below the first SQL statement must not be picked up.
+  let assert Ok(option.None) =
+    sqlite.parse_returns_annotation("SELECT 1\n-- returns: OrgRow\n")
+}
+
+pub fn parse_returns_extra_whitespace_test() {
+  let assert Ok(option.Some("OrgRow")) =
+    sqlite.parse_returns_annotation("--    returns:    OrgRow   \nSELECT 1")
+}
+
+pub fn parse_returns_missing_row_suffix_test() {
+  let assert Error(_) =
+    sqlite.parse_returns_annotation("-- returns: Org\nSELECT 1")
+}
+
+pub fn parse_returns_invalid_identifier_lowercase_test() {
+  let assert Error(_) =
+    sqlite.parse_returns_annotation("-- returns: orgRow\nSELECT 1")
+}
+
+pub fn parse_returns_invalid_identifier_special_char_test() {
+  let assert Error(_) =
+    sqlite.parse_returns_annotation("-- returns: Org-Row\nSELECT 1")
 }
 
 pub fn introspect_mixed_left_inner_joins_test() {

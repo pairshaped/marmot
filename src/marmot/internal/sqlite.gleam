@@ -3187,6 +3187,114 @@ fn deduplicate_params_loop(
   }
 }
 
+// --- Returns annotation parser ---
+
+pub type ReturnsAnnotationError {
+  InvalidReturnsTypeName(name: String, reason: String)
+}
+
+/// Parse the `-- returns: Name` annotation from the top of a SQL file.
+/// Returns `Ok(None)` when no annotation exists, `Ok(Some(name))` when a valid
+/// annotation is present at the top (before any SQL statement), and
+/// `Error(...)` when an annotation is present but malformed (invalid name,
+/// missing Row suffix).
+pub fn parse_returns_annotation(
+  sql: String,
+) -> Result(option.Option(String), ReturnsAnnotationError) {
+  scan_for_returns(string.split(sql, "\n"))
+}
+
+fn scan_for_returns(
+  lines: List(String),
+) -> Result(option.Option(String), ReturnsAnnotationError) {
+  case lines {
+    [] -> Ok(option.None)
+    [first, ..rest] -> {
+      let trimmed = string.trim(first)
+      case trimmed {
+        "" -> scan_for_returns(rest)
+        _ -> {
+          case string.starts_with(trimmed, "--") {
+            False -> Ok(option.None)
+            True -> {
+              let body = string.drop_start(trimmed, 2) |> string.trim
+              case string.starts_with(body, "returns:") {
+                False -> scan_for_returns(rest)
+                True -> {
+                  let name_part =
+                    string.drop_start(body, 8)
+                    |> string.trim
+                  validate_returns_type_name(name_part)
+                  |> result.map(option.Some)
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+fn validate_returns_type_name(
+  name: String,
+) -> Result(String, ReturnsAnnotationError) {
+  case name {
+    "" -> Error(InvalidReturnsTypeName(name, "type name is empty"))
+    _ -> {
+      case string.ends_with(name, "Row") {
+        False ->
+          Error(InvalidReturnsTypeName(
+            name,
+            "type name must end with `Row` (e.g., `OrgRow`)",
+          ))
+        True ->
+          case is_valid_pascal_case_identifier(name) {
+            False ->
+              Error(InvalidReturnsTypeName(
+                name,
+                "type name must be PascalCase with only letters and digits",
+              ))
+            True -> Ok(name)
+          }
+      }
+    }
+  }
+}
+
+fn is_valid_pascal_case_identifier(name: String) -> Bool {
+  case string.to_graphemes(name) {
+    [] -> False
+    [first, ..rest] -> {
+      let first_code = char_code(first)
+      is_upper(first_code)
+      && list.all(rest, fn(ch) {
+        let code = char_code(ch)
+        is_upper(code) || is_lower(code) || is_ascii_digit(code)
+      })
+    }
+  }
+}
+
+fn char_code(ch: String) -> Int {
+  case string.to_utf_codepoints(ch) {
+    [cp] -> string.utf_codepoint_to_int(cp)
+    _ -> 0
+  }
+}
+
+fn is_upper(code: Int) -> Bool {
+  code >= 65 && code <= 90
+}
+
+fn is_lower(code: Int) -> Bool {
+  code >= 97 && code <= 122
+}
+
+fn is_ascii_digit(code: Int) -> Bool {
+  code >= 48 && code <= 57
+}
+
 /// A decoder that handles both string and non-string p4 values
 fn flexible_string_decoder() -> decode.Decoder(String) {
   decode.one_of(decode.string, [
