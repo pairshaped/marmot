@@ -129,6 +129,7 @@ fn generate_for_directory(
       let output = project.output_path(sql_dir, config.output)
       let module_content =
         codegen.generate_module_with_config(queries, config.query_function)
+        |> format_gleam
       case ensure_parent_dir(output) {
         Error(msg) -> {
           io.println_error("error: " <> msg)
@@ -346,6 +347,7 @@ fn check_all(db: sqlight.Connection, config: project.Config) -> List(String) {
         let output = project.output_path(dir, config.output)
         let expected =
           codegen.generate_module_with_config(queries, config.query_function)
+          |> format_gleam
         let current =
           simplifile.read(output)
           |> result.unwrap("")
@@ -356,6 +358,34 @@ fn check_all(db: sqlight.Connection, config: project.Config) -> List(String) {
       }
     }
   })
+}
+
+/// Run `gleam format` on generated code. Falls back to the original string
+/// if formatting fails (e.g., gleam not on PATH).
+fn format_gleam(code: String) -> String {
+  let tmp = ".marmot_fmt.gleam"
+  case simplifile.write(tmp, code) {
+    Error(_) -> code
+    Ok(_) -> {
+      run_os_cmd("gleam format " <> tmp)
+      let formatted =
+        simplifile.read(tmp)
+        |> result.unwrap(code)
+      let _ = simplifile.delete(tmp)
+      formatted
+    }
+  }
+}
+
+@external(erlang, "os", "cmd")
+fn os_cmd_ffi(command: List(Int)) -> List(Int)
+
+fn run_os_cmd(command: String) -> Nil {
+  command
+  |> string.to_utf_codepoints
+  |> list.map(string.utf_codepoint_to_int)
+  |> os_cmd_ffi
+  Nil
 }
 
 fn halt(code: Int) -> Nil {
