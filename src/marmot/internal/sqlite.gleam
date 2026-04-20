@@ -2394,34 +2394,70 @@ fn is_simple_column_ref(s: String) -> Bool {
   }
 }
 
-/// For UPDATE statements, parameters correspond to SET columns then WHERE columns
+/// For UPDATE statements, parameters correspond to SET columns then WHERE columns.
+/// set_params is a list of #(param_name, lookup_col) tuples — the param_name is
+/// used as the generated function argument label, and lookup_col is used to find
+/// the column type from the table schema (they differ when RHS is an expression
+/// like COALESCE(@gender, gender) or balance_cents + @amount_cents).
 fn extract_update_parameters(
   table_schemas: Dict(String, List(Column)),
   sql: String,
 ) -> List(Parameter) {
   let table_name = parse_update_table_name(sql)
-  let set_cols = parse_update_set_columns(sql)
+  let set_params = parse_update_set_columns(sql)
   let where_cols = parse_where_columns(sql)
-  let all_cols = list.append(set_cols, where_cols)
 
   case dict.get(table_schemas, table_name) {
-    Ok(table_cols) ->
-      list.map(all_cols, fn(col_name) {
-        case list.find(table_cols, fn(c) { c.name == col_name }) {
-          Ok(col) ->
-            Parameter(
-              name: col_name,
-              column_type: col.column_type,
-              nullable: col.nullable,
-            )
-          Error(_) ->
-            Parameter(name: col_name, column_type: StringType, nullable: False)
-        }
-      })
-    Error(_) ->
-      list.map(all_cols, fn(col_name) {
-        Parameter(name: col_name, column_type: StringType, nullable: False)
-      })
+    Ok(table_cols) -> {
+      let set_parameters =
+        list.map(set_params, fn(param) {
+          let #(param_name, lookup_col) = param
+          case list.find(table_cols, fn(c) { c.name == lookup_col }) {
+            Ok(col) ->
+              Parameter(
+                name: param_name,
+                column_type: col.column_type,
+                nullable: col.nullable,
+              )
+            Error(_) ->
+              Parameter(
+                name: param_name,
+                column_type: StringType,
+                nullable: False,
+              )
+          }
+        })
+      let where_parameters =
+        list.map(where_cols, fn(col_name) {
+          case list.find(table_cols, fn(c) { c.name == col_name }) {
+            Ok(col) ->
+              Parameter(
+                name: col_name,
+                column_type: col.column_type,
+                nullable: col.nullable,
+              )
+            Error(_) ->
+              Parameter(
+                name: col_name,
+                column_type: StringType,
+                nullable: False,
+              )
+          }
+        })
+      list.append(set_parameters, where_parameters)
+    }
+    Error(_) -> {
+      let set_parameters =
+        list.map(set_params, fn(param) {
+          let #(param_name, _lookup_col) = param
+          Parameter(name: param_name, column_type: StringType, nullable: False)
+        })
+      let where_parameters =
+        list.map(where_cols, fn(col_name) {
+          Parameter(name: col_name, column_type: StringType, nullable: False)
+        })
+      list.append(set_parameters, where_parameters)
+    }
   }
 }
 
@@ -2677,40 +2713,50 @@ fn parse_delete_table_name(sql: String) -> String {
 }
 
 /// Parse SET column names from UPDATE statement
-fn parse_update_set_columns(sql: String) -> List(String) {
+/// Parse SET assignments from an UPDATE statement.
+/// Returns a list of #(param_name, lookup_col) tuples where:
+/// - param_name: the generated function argument label (from @name if present, else col_name)
+/// - lookup_col: the table column used for type lookup (always the LHS col_name)
+///
+/// Handles simple assignments (`col = ?` or `col = @col`), expressions with named
+/// params (`col = COALESCE(@param, col)` or `col = col + @param`), and skips
+/// assignments with no bound parameter (`col = other_col`, `col = col + 1`).
+/// Uses split_top_level_commas to avoid breaking on commas inside COALESCE/subqueries.
+fn parse_update_set_columns(sql: String) -> List(#(String, String)) {
   let upper = string.uppercase(sql)
   case split_on_keyword(upper, " SET ") {
     Ok(#(_, rest_upper)) -> {
       let offset = string.length(sql) - string.length(rest_upper)
       let rest = string.drop_start(sql, offset)
-      // Get the part between SET and WHERE/RETURNING
-      let set_part = case split_on_keyword(string.uppercase(rest), " WHERE ") {
-        Ok(#(before, _)) -> string.slice(rest, 0, string.length(before))
-        Error(_) ->
-          case split_on_keyword(string.uppercase(rest), " RETURNING ") {
-            Ok(#(before, _)) -> string.slice(rest, 0, string.length(before))
-            Error(_) -> rest
+      // Get the part between SET and WHERE/RETURNING (top-level only)
+      let set_part = case find_top_level_keyword_offset(rest, " WHERE ") {
+        option.Some(idx) -> string.slice(rest, 0, idx)
+        option.None ->
+          case find_top_level_keyword_offset(rest, " RETURNING ") {
+            option.Some(idx) -> string.slice(rest, 0, idx)
+            option.None -> rest
           }
       }
-      // Parse "col1 = ?, col2 = ?" -> ["col1", "col2"]
-      // Also handles named params: "col1 = @col1, col2 = @col2" -> ["col1", "col2"]
-      // Also handles COALESCE: "col1 = COALESCE(@col1, col1)" -> ["col1"]
-      // Skip entries where the RHS isn't a `?` or `@name` (e.g., `col = other_col`
-      // or `col = col + 1` — these don't bind a parameter).
-      // Use split_top_level_commas so commas inside COALESCE(...) are not treated
-      // as assignment separators.
       set_part
       |> split_top_level_commas
       |> list.filter_map(fn(part) {
         case string.split_once(string.trim(part), "=") {
           Ok(#(col_name, rhs)) -> {
+            let col = string.trim(col_name)
             let rhs_trimmed = string.trim(rhs)
-            case
-              string.contains(rhs_trimmed, "?")
-              || string.contains(rhs_trimmed, "@")
-            {
-              True -> Ok(string.trim(col_name))
-              False -> Error(Nil)
+            case string.contains(rhs_trimmed, "?") {
+              True ->
+                // Positional param: use col name as both param name and lookup col
+                Ok(#(col, col))
+              False ->
+                case extract_named_param_from_rhs(rhs_trimmed) {
+                  Ok(param_name) ->
+                    // Named param: use extracted @name as param name, LHS col for type lookup
+                    Ok(#(param_name, col))
+                  Error(_) ->
+                    // No bound parameter — skip (e.g., `col = other_col + 1`)
+                    Error(Nil)
+                }
             }
           }
           Error(_) -> Error(Nil)
@@ -2718,6 +2764,33 @@ fn parse_update_set_columns(sql: String) -> List(String) {
       })
     }
     Error(_) -> []
+  }
+}
+
+/// Extract the first @name identifier from an RHS expression.
+/// E.g. "COALESCE(@gender, gender)" -> Ok("gender")
+///      "@updated_at" -> Ok("updated_at")
+///      "balance_cents + @amount_cents" -> Ok("amount_cents")
+///      "other_col" -> Error(Nil)
+fn extract_named_param_from_rhs(rhs: String) -> Result(String, Nil) {
+  case string.split_once(rhs, "@") {
+    Error(_) -> Error(Nil)
+    Ok(#(_, after_at)) -> {
+      // Collect chars until non-identifier character
+      Ok(take_identifier_chars(after_at, ""))
+    }
+  }
+}
+
+fn take_identifier_chars(s: String, acc: String) -> String {
+  case string.pop_grapheme(s) {
+    Error(_) -> acc
+    Ok(#(char, rest)) -> {
+      case is_identifier_char(char) {
+        True -> take_identifier_chars(rest, acc <> char)
+        False -> acc
+      }
+    }
   }
 }
 
