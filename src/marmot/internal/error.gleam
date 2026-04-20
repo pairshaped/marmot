@@ -41,10 +41,13 @@ pub fn to_string(error: MarmotError) -> String {
   \u{2502}
   \u{2502} " <> message
 
-    SqlError(path:, message:) -> "error: SQL error
+    SqlError(path:, message:) -> {
+      let hint = sql_error_hint(message)
+      "error: SQL error
   \u{250c}\u{2500} " <> path <> "
   \u{2502}
-  \u{2502} " <> message
+  \u{2502} " <> message <> hint
+    }
 
     UnknownColumn(path:, column:, table:, suggestion:) -> {
       let hint = case suggestion {
@@ -130,5 +133,33 @@ pub fn to_string(error: MarmotError) -> String {
   \u{2502}
   hint: Gleam compiles modules from src/, so generated code must live there.
         For example: output = \"src/generated/sql\""
+  }
+}
+
+fn sql_error_hint(message: String) -> String {
+  case string.contains(message, "row value misused") {
+    True ->
+      "
+  \u{2502}
+  hint: Did you accidentally parenthesize your SELECT columns?
+        Write: SELECT id, name FROM ...
+        Not:   SELECT (id, name) FROM ..."
+    False ->
+      case string.contains(message, "no such table") {
+        True ->
+          "
+  \u{2502}
+  hint: Make sure the database file contains your schema.
+        Marmot needs the tables to exist so it can infer types."
+        False ->
+          case string.contains(message, "no such column") {
+            True ->
+              "
+  \u{2502}
+  hint: Check that the column name matches your schema exactly.
+        Column names are case-sensitive in some contexts."
+            False -> ""
+          }
+      }
   }
 }

@@ -93,6 +93,24 @@ pub fn duplicate_columns_error_test() {
   |> birdie.snap(title: "duplicate columns error")
 }
 
+pub fn sql_error_row_value_hint_test() {
+  error.SqlError(
+    path: "src/app/sql/find_user.sql",
+    message: "row value misused",
+  )
+  |> error.to_string
+  |> birdie.snap(title: "sql error with row value hint")
+}
+
+pub fn sql_error_no_such_table_hint_test() {
+  error.SqlError(
+    path: "src/app/sql/find_user.sql",
+    message: "no such table: users",
+  )
+  |> error.to_string
+  |> birdie.snap(title: "sql error with no such table hint")
+}
+
 pub fn unknown_table_error_test() {
   error.UnknownTable(
     path: "src/app/sql/find_user.sql",

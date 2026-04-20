@@ -1,0 +1,13 @@
+---
+version: 1.5.5
+title: sql error with no such table hint
+file: ./test/marmot/internal/error_test.gleam
+test_name: sql_error_no_such_table_hint_test
+---
+error: SQL error
+  ┌─ src/app/sql/find_user.sql
+  │
+  │ no such table: users
+  │
+  hint: Make sure the database file contains your schema.
+        Marmot needs the tables to exist so it can infer types.

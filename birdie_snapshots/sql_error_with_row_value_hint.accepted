@@ -1,0 +1,14 @@
+---
+version: 1.5.5
+title: sql error with row value hint
+file: ./test/marmot/internal/error_test.gleam
+test_name: sql_error_row_value_hint_test
+---
+error: SQL error
+  ┌─ src/app/sql/find_user.sql
+  │
+  │ row value misused
+  │
+  hint: Did you accidentally parenthesize your SELECT columns?
+        Write: SELECT id, name FROM ...
+        Not:   SELECT (id, name) FROM ...
