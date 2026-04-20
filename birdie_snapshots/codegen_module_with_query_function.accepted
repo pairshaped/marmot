@@ -15,7 +15,7 @@ pub type FindUserRow {
   )
 }
 
-pub fn find_user(db db: sqlight.Connection, id id: Int) {
+pub fn find_user(db db: sqlight.Connection, id id: Int) -> Result(List(FindUserRow), sqlight.Error) {
   db.query(
     "SELECT id, username FROM users WHERE id = ?",
     on: db,
@@ -31,7 +31,7 @@ pub fn find_user(db db: sqlight.Connection, id id: Int) {
   )
 }
 
-pub fn delete_user(db db: sqlight.Connection, id id: Int) {
+pub fn delete_user(db db: sqlight.Connection, id id: Int) -> Result(List(Nil), sqlight.Error) {
   db.query(
     "DELETE FROM users WHERE id = ?",
     on: db,

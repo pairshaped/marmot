@@ -12,7 +12,7 @@ pub type FindUserBioRow {
   )
 }
 
-pub fn find_user_bio(db db: sqlight.Connection, id id: Int) {
+pub fn find_user_bio(db db: sqlight.Connection, id id: Int) -> Result(List(FindUserBioRow), sqlight.Error) {
   sqlight.query(
     "SELECT id, username, bio FROM users WHERE id = ?",
     on: db,

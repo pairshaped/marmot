@@ -11,7 +11,7 @@ pub type FindAvatarRow {
   )
 }
 
-pub fn find_avatar(db db: sqlight.Connection, id id: Int) {
+pub fn find_avatar(db db: sqlight.Connection, id id: Int) -> Result(List(FindAvatarRow), sqlight.Error) {
   sqlight.query(
     "SELECT id, avatar FROM users WHERE id = ?",
     on: db,

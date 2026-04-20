@@ -7,7 +7,7 @@ test_name: codegen_exec_only_module_test
 import gleam/dynamic/decode
 import sqlight
 
-pub fn delete_user(db db: sqlight.Connection, id id: Int) {
+pub fn delete_user(db db: sqlight.Connection, id id: Int) -> Result(List(Nil), sqlight.Error) {
   sqlight.query(
     "DELETE FROM users WHERE id = ?",
     on: db,
@@ -16,7 +16,7 @@ pub fn delete_user(db db: sqlight.Connection, id id: Int) {
   )
 }
 
-pub fn delete_all_posts(db db: sqlight.Connection) {
+pub fn delete_all_posts(db db: sqlight.Connection) -> Result(List(Nil), sqlight.Error) {
   sqlight.query(
     "DELETE FROM posts",
     on: db,

@@ -43,7 +43,7 @@ pub type FindEventRow {
   )
 }
 
-pub fn find_event(db db: sqlight.Connection, id id: Int) {
+pub fn find_event(db db: sqlight.Connection, id id: Int) -> Result(List(FindEventRow), sqlight.Error) {
   sqlight.query(
     "SELECT id, event_date FROM events WHERE id = ?",
     on: db,
@@ -59,7 +59,7 @@ pub fn find_event(db db: sqlight.Connection, id id: Int) {
   )
 }
 
-pub fn update_last_seen(db db: sqlight.Connection, last_seen last_seen: timestamp.Timestamp, id id: Int) {
+pub fn update_last_seen(db db: sqlight.Connection, last_seen last_seen: timestamp.Timestamp, id id: Int) -> Result(List(Nil), sqlight.Error) {
   sqlight.query(
     "UPDATE events SET last_seen = ? WHERE id = ?",
     on: db,

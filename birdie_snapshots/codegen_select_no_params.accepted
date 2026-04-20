@@ -11,7 +11,7 @@ pub type ListUsersRow {
   )
 }
 
-pub fn list_users(db db: sqlight.Connection) {
+pub fn list_users(db db: sqlight.Connection) -> Result(List(ListUsersRow), sqlight.Error) {
   sqlight.query(
     "SELECT id, username FROM users",
     on: db,

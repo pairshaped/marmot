@@ -227,11 +227,14 @@ fn generate_query_function(
   let params = generate_param_list(q.parameters)
   let with_args = generate_with_args(q.parameters)
   let decoder = generate_decoder(q)
+  let row_type = query.row_type_name(q.name)
   "pub fn "
   <> q.name
   <> "(db db: sqlight.Connection"
   <> params
-  <> ") {\n"
+  <> ") -> Result(List("
+  <> row_type
+  <> "), sqlight.Error) {\n"
   <> "  "
   <> query_call(query_function)
   <> "(\n"
@@ -260,7 +263,7 @@ fn generate_exec_function(
   <> q.name
   <> "(db db: sqlight.Connection"
   <> params
-  <> ") {\n"
+  <> ") -> Result(List(Nil), sqlight.Error) {\n"
   <> "  "
   <> query_call(query_function)
   <> "(\n"

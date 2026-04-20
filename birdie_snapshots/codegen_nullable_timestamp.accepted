@@ -11,7 +11,7 @@ pub type FindUserRow {
   )
 }
 
-pub fn find_user(db db: sqlight.Connection, id id: Int) {
+pub fn find_user(db db: sqlight.Connection, id id: Int) -> Result(List(FindUserRow), sqlight.Error) {
   sqlight.query(
     "SELECT id, deleted_at FROM users WHERE id = ?",
     on: db,

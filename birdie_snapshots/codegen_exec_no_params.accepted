@@ -4,7 +4,7 @@ title: codegen exec no params
 file: ./test/marmot/internal/codegen_test.gleam
 test_name: codegen_exec_no_params_test
 ---
-pub fn delete_all_users(db db: sqlight.Connection) {
+pub fn delete_all_users(db db: sqlight.Connection) -> Result(List(Nil), sqlight.Error) {
   sqlight.query(
     "DELETE FROM users",
     on: db,

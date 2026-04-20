@@ -1,0 +1,13 @@
+---
+version: 1.5.5
+title: duplicate columns error
+file: ./test/marmot/internal/error_test.gleam
+test_name: duplicate_columns_error_test
+---
+error: Duplicate column names
+  ┌─ src/app/sql/find_user.sql
+  │
+  │ Query returns duplicate column names: "id", "name"
+  │
+  hint: Use column aliases to give each column a unique name:
+        SELECT a.id AS a_id, b.id AS b_id ...
