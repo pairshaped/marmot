@@ -25,8 +25,7 @@ Write SQL in `src/**/sql/*.sql`, one query per file. Filename becomes the functi
 | Key | Default | Purpose |
 |---|---|---|
 | `database` | — | Path to the SQLite file used for introspection (also `DATABASE_URL` env, `--database` CLI) |
-| `output` | sibling of each `sql/` dir | Centralized output directory for generated modules |
-| `source_root` | unset | Strip this prefix from each `sql/` dir's parent, use remainder to namespace output (e.g. `src/app/users/sql/` -> `<output>/users.gleam`). Without it, `output` falls back to legacy mangled filenames (`src_app_users_sql.gleam`). |
+| `output` | sibling of each `sql/` dir | Centralized output directory for generated modules (must be under `src/`). Marmot infers the directory structure by finding the longest common path prefix between `output` and each `sql/` directory, then uses the remainder as the namespace (e.g. `output = "src/generated"` with `src/app/users/sql/` produces `src/generated/app/users.gleam`). |
 | `query_function` | `sqlight.query` | Fully-qualified function (`module/path.name`) that generated code calls instead of `sqlight.query`. Wrapper must match `sqlight.query`'s labelled signature (`sql: String, on connection, with parameters, expecting decoder`). Useful for logging, timing, instrumentation. |
 
 ## Project structure
@@ -61,7 +60,7 @@ src/
 - **Live SQLite introspection**: connects to real `.db` file, not static analysis
 - **EXPLAIN-based type inference**: traces opcodes to map result columns and `?` params back to source table columns
 - **No external tools**: no `sqlc`, no `sqlite3` CLI, just `sqlight` (Gleam NIF)
-- **Convention over configuration**: follows Squirrel's conventions (one query per file, `sql/` dirs, filename = function name). `output`, `source_root`, and `query_function` are opt-in knobs for larger projects.
+- **Convention over configuration**: follows Squirrel's conventions (one query per file, `sql/` dirs, filename = function name). `output` and `query_function` are opt-in knobs for larger projects.
 - **Generated code calls sqlight directly** (or a user-supplied wrapper via `query_function`): no tuples, no intermediate types
 
 ## Generated code patterns

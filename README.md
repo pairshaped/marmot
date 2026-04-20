@@ -191,31 +191,28 @@ directory. You can override this with an output directory:
 ```toml
 [marmot]
 database = "dev.sqlite"
-output = "src/my_app/generated"
+output = "src/generated/sql"
 ```
 
 Or via CLI flag:
 
 ```sh
-gleam run -m marmot -- --output src/my_app/generated
+gleam run -m marmot -- --output src/generated/sql
 ```
 
-### Structured output paths (`source_root`)
+The output directory must be under `src/` (Gleam compiles modules from there).
 
-If you keep `sql/` directories next to the entity they belong to (e.g.
-`src/app/users/sql/`, `src/app/orders/sql/`) but want the generated Gleam
-modules collected in one place, set `source_root` alongside `output`. Marmot
-will strip the `source_root` prefix from each `sql/` directory's parent path
-and use the remainder to namespace the generated file:
+When you have multiple `sql/` directories, Marmot automatically preserves the
+directory structure relative to the longest common path shared between `output`
+and each `sql/` directory. For example, given this config:
 
 ```toml
 [marmot]
 database = "dev.sqlite"
-output = "src/app/generated/sql"
-source_root = "src/app"
+output = "src/generated/sql"
 ```
 
-Given that config, a project like this:
+And this project structure:
 
 ```txt
 src/
@@ -230,24 +227,23 @@ src/
 │           └── list_orders.sql
 ```
 
-generates:
+Marmot generates:
 
 ```txt
 src/
-├── app/
-│   └── generated/
-│       └── sql/
-│           ├── users.gleam    -- from src/app/users/sql/
-│           └── orders.gleam   -- from src/app/orders/sql/
+├── generated/
+│   └── sql/
+│       ├── app/
+│       │   ├── users.gleam    -- from src/app/users/sql/
+│       │   └── orders.gleam   -- from src/app/orders/sql/
 ```
 
-Nested entity paths are preserved, so `src/app/admin/orders/sql/` would
-generate `src/app/generated/sql/admin/orders.gleam`.
+The common path between `src/generated/sql` and `src/app/users/sql` is `src/`,
+so the relative path `app/users/sql` is used, the trailing `sql` is stripped,
+and the result is `src/generated/sql/app/users.gleam`.
 
-> Without `source_root`, setting `output` falls back to a legacy
-> mangled-path mapping (`src_app_users_sql.gleam`) so multiple `sql/`
-> directories don't collide. It works but is ugly — prefer `source_root`
-> for new projects.
+Nested entity paths are preserved, so `src/app/admin/orders/sql/` would
+generate `src/generated/sql/app/admin/orders.gleam`.
 
 ### Custom query wrapper (`query_function`)
 
@@ -348,11 +344,11 @@ queries.
 
 Following Squirrel's lead, Marmot leans heavily on convention over
 configuration. Small projects should just work with zero config. The opt-in
-knobs Marmot does expose — `output`, `source_root`, and `query_function` —
-are there for larger codebases where the default conventions become awkward
-(scattered `sql/` directories, custom logging/instrumentation around every
-query). They don't change the generated code's shape, just where it lands and
-which function it calls.
+knobs Marmot does expose -- `output` and `query_function` -- are there for
+larger codebases where the default conventions become awkward (scattered
+`sql/` directories, custom logging/instrumentation around every query). They
+don't change the generated code's shape, just where it lands and which
+function it calls.
 
 ## Known Limitations
 
@@ -367,16 +363,11 @@ which function it calls.
   Sub-second precision (nanoseconds) is not preserved.
 - `DATE` columns are stored as ISO 8601 text (`YYYY-MM-DD`). Malformed date
   strings in the database will produce a decode error.
-- When `output` is set without `source_root`, multiple `sql/` directories
-  with the same name produce mangled filenames (`src_app_users_sql.gleam`).
-  Use `source_root` to get clean namespaced paths (e.g.
-  `src/app/generated/sql/users.gleam`) — see the "Structured output paths"
-  section above.
 - Repeated anonymous `?` placeholders that refer to the same value generate
   a separate function argument for each occurrence
-  (`WHERE org_id = ? AND ... WHERE org_id = ?` → `org_id` and `org_id_2`).
+  (`WHERE org_id = ? AND ... WHERE org_id = ?` produces `org_id` and `org_id_2`).
   This is a SQLite protocol limitation: anonymous `?` are always distinct
-  bind slots. **Use named parameters (`@name` or `:name`) instead** — SQLite
+  bind slots. **Use named parameters (`@name` or `:name`) instead** -- SQLite
   deduplicates them natively, so `WHERE org_id = @org_id AND ... WHERE
   org_id = @org_id` generates a single `org_id` argument. Named parameters
   are also self-documenting and generally preferable.

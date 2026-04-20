@@ -19,6 +19,7 @@ pub type MarmotError {
   InvalidFilename(path: String)
   MultipleQueries(path: String)
   StaleGeneratedCode(files: List(String))
+  OutputNotUnderSrc(output: String)
 }
 
 pub fn to_string(error: MarmotError) -> String {
@@ -106,5 +107,14 @@ pub fn to_string(error: MarmotError) -> String {
 
   Run `gleam run -m marmot` to update."
     }
+
+    OutputNotUnderSrc(output:) ->
+      "error: Output directory must be under src/
+  \u{250c}\u{2500} gleam.toml
+  \u{2502}
+  \u{2502} output = \"" <> output <> "\"
+  \u{2502}
+  hint: Gleam compiles modules from src/, so generated code must live there.
+        For example: output = \"src/generated/sql\""
   }
 }

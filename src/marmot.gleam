@@ -34,6 +34,14 @@ fn with_database(
     |> result.unwrap("")
   let config = project.parse_config(toml_content, args, env_database)
 
+  case project.validate_output(config) {
+    Error(output) -> {
+      io.println_error(error.to_string(error.OutputNotUnderSrc(output:)))
+      halt(1)
+    }
+    Ok(_) -> Nil
+  }
+
   case config.database {
     option.None -> {
       io.println_error(error.to_string(error.DatabaseNotConfigured))
@@ -71,7 +79,7 @@ fn generate_all(db: sqlight.Connection, config: project.Config) -> Nil {
       // Detect output path collisions when using configured output directory
       let outputs =
         list.map(dirs, fn(dir) {
-          project.output_path(dir, config.output, config.source_root)
+          project.output_path(dir, config.output)
         })
       case list.length(list.unique(outputs)) == list.length(outputs) {
         False -> {
@@ -121,7 +129,7 @@ fn generate_for_directory(
       list.is_empty(sql_files)
     _ -> {
       let output =
-        project.output_path(sql_dir, config.output, config.source_root)
+        project.output_path(sql_dir, config.output)
       let module_content =
         codegen.generate_module_with_config(queries, config.query_function)
       case ensure_parent_dir(output) {
@@ -338,7 +346,7 @@ fn check_all(db: sqlight.Connection, config: project.Config) -> List(String) {
     case queries {
       [] -> Error(Nil)
       _ -> {
-        let output = project.output_path(dir, config.output, config.source_root)
+        let output = project.output_path(dir, config.output)
         let expected =
           codegen.generate_module_with_config(queries, config.query_function)
         let current =

@@ -8,7 +8,6 @@ pub fn parse_config_empty_toml_test() {
   let assert Config(
     database: option.None,
     output: option.None,
-    source_root: option.None,
     query_function: option.None,
   ) = config
 }
@@ -23,7 +22,6 @@ output = \"src/app/generated\"
   let assert Config(
     database: option.Some("dev.sqlite"),
     output: option.Some("src/app/generated"),
-    source_root: option.None,
     query_function: option.None,
   ) = config
 }
@@ -38,7 +36,6 @@ query_function = \"server/db.query\"
   let assert Config(
     database: option.Some("dev.sqlite"),
     output: option.None,
-    source_root: option.None,
     query_function: option.Some("server/db.query"),
   ) = config
 }
@@ -50,24 +47,6 @@ database = \"dev.sqlite\"
 "
   let config = project.parse_config(toml, [], option.None)
   let assert Config(query_function: option.None, ..) = config
-}
-
-pub fn should_parse_source_root_from_toml_test() {
-  let toml =
-    "[marmot]
-source_root = \"src/server\"
-"
-  let config = project.parse_config(toml, [], option.None)
-  let assert Config(source_root: option.Some("src/server"), ..) = config
-}
-
-pub fn should_default_source_root_to_none_test() {
-  let toml =
-    "[marmot]
-database = \"dev.sqlite\"
-"
-  let config = project.parse_config(toml, [], option.None)
-  let assert Config(source_root: option.None, ..) = config
 }
 
 pub fn parse_config_cli_overrides_toml_test() {
@@ -85,7 +64,6 @@ output = \"src/app/generated\"
   let assert Config(
     database: option.Some("test.sqlite"),
     output: option.Some("src/other/"),
-    source_root: option.None,
     query_function: option.None,
   ) = config
 }
@@ -136,90 +114,105 @@ pub fn list_sql_files_test() {
 }
 
 pub fn parse_config_flag_without_value_test() {
-  // --database with no value followed by another flag should not consume the flag
   let config =
     project.parse_config("", ["--database", "--output", "src/gen"], option.None)
   let assert Config(
     database: option.None,
     output: option.Some("src/gen"),
-    source_root: option.None,
     query_function: option.None,
   ) = config
 }
 
-pub fn output_path_configured_multi_dir_test() {
-  // Different sql dirs should produce different output files
+pub fn output_path_default_test() {
+  let assert "src/app/sql.gleam" =
+    project.output_path("src/app/sql", option.None)
+}
+
+pub fn output_path_common_prefix_test() {
+  // output and sql_dir share "src/", so relative is "app/accounts/sql",
+  // strip trailing /sql -> "app/accounts"
+  let assert "src/generated/app/accounts.gleam" =
+    project.output_path(
+      "src/app/accounts/sql",
+      option.Some("src/generated"),
+    )
+}
+
+pub fn output_path_deeper_common_prefix_test() {
+  // output and sql_dir share "src/server/", so relative is "accounts/sql",
+  // strip trailing /sql -> "accounts"
+  let assert "src/server/generated/sql/accounts.gleam" =
+    project.output_path(
+      "src/server/accounts/sql",
+      option.Some("src/server/generated/sql"),
+    )
+}
+
+pub fn output_path_nested_entity_test() {
+  let assert "src/server/generated/sql/admin/orders.gleam" =
+    project.output_path(
+      "src/server/admin/orders/sql",
+      option.Some("src/server/generated/sql"),
+    )
+}
+
+pub fn output_path_trailing_slash_on_output_test() {
+  let assert "src/server/generated/sql/accounts.gleam" =
+    project.output_path(
+      "src/server/accounts/sql",
+      option.Some("src/server/generated/sql/"),
+    )
+}
+
+pub fn output_path_multi_dir_no_collision_test() {
   let path1 =
     project.output_path(
       "src/users/sql",
       option.Some("src/generated"),
-      option.None,
     )
   let path2 =
     project.output_path(
       "src/posts/sql",
       option.Some("src/generated"),
-      option.None,
     )
   let assert True = path1 != path2
+  let assert "src/generated/users.gleam" = path1
+  let assert "src/generated/posts.gleam" = path2
 }
 
-pub fn output_path_default_test() {
-  let assert "src/app/sql.gleam" =
-    project.output_path("src/app/sql", option.None, option.None)
+pub fn output_path_single_sql_dir_test() {
+  // When there's just src/sql and an output dir, the sql_dir relative to the
+  // common prefix is just "sql", which gets stripped, yielding no entity path.
+  let assert "src/generated.gleam" =
+    project.output_path("src/sql", option.Some("src/generated"))
 }
 
-pub fn output_path_configured_test() {
-  let assert "src/generated/src_app_sql.gleam" =
-    project.output_path(
-      "src/app/sql",
-      option.Some("src/generated"),
-      option.None,
+pub fn validate_output_under_src_test() {
+  let config =
+    Config(
+      database: option.None,
+      output: option.Some("src/generated"),
+      query_function: option.None,
     )
+  let assert Ok(Nil) = project.validate_output(config)
 }
 
-pub fn should_map_output_path_with_source_root_test() {
-  let assert "src/server/generated/sql/accounts.gleam" =
-    project.output_path(
-      "src/server/accounts/sql",
-      option.Some("src/server/generated/sql"),
-      option.Some("src/server"),
+pub fn validate_output_not_under_src_test() {
+  let config =
+    Config(
+      database: option.None,
+      output: option.Some("gen/output"),
+      query_function: option.None,
     )
+  let assert Error("gen/output") = project.validate_output(config)
 }
 
-pub fn should_map_nested_output_path_with_source_root_test() {
-  let assert "src/server/generated/sql/admin/orders.gleam" =
-    project.output_path(
-      "src/server/admin/orders/sql",
-      option.Some("src/server/generated/sql"),
-      option.Some("src/server"),
+pub fn validate_output_none_test() {
+  let config =
+    Config(
+      database: option.None,
+      output: option.None,
+      query_function: option.None,
     )
-}
-
-pub fn should_handle_trailing_slash_on_source_root_test() {
-  let assert "src/server/generated/sql/accounts.gleam" =
-    project.output_path(
-      "src/server/accounts/sql",
-      option.Some("src/server/generated/sql"),
-      option.Some("src/server/"),
-    )
-}
-
-pub fn should_handle_trailing_slash_on_output_with_source_root_test() {
-  let assert "src/server/generated/sql/accounts.gleam" =
-    project.output_path(
-      "src/server/accounts/sql",
-      option.Some("src/server/generated/sql/"),
-      option.Some("src/server"),
-    )
-}
-
-pub fn should_fall_back_to_mangled_when_sql_dir_not_under_source_root_test() {
-  // Sql dir outside configured source_root — should use legacy mangled path
-  let assert "src/server/generated/sql/src_other_sql.gleam" =
-    project.output_path(
-      "src/other/sql",
-      option.Some("src/server/generated/sql"),
-      option.Some("src/server"),
-    )
+  let assert Ok(Nil) = project.validate_output(config)
 }

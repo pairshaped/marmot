@@ -1822,10 +1822,7 @@ fn find_param_binders(sql: String, idx: Int, acc: List(Binder)) -> List(Binder) 
           // of the comparison — lets us infer the type even when the
           // param name doesn't match a schema column.
           let before =
-            string.slice(sql, 0, case found {
-              PlaceholderNamed(_, _) -> after - string.length(name) - 1
-              _ -> idx
-            })
+            string.slice(sql, 0, after - string.length(name) - 1)
           let column = extract_column_binder(before)
           find_param_binders(sql, after, [
             Binder(name: name, binder_column: column),
