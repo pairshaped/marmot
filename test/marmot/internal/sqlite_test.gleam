@@ -844,3 +844,136 @@ pub fn introspect_insert_select_with_named_params_in_select_list_test() {
     Parameter(name: "source_item_id", column_type: IntType, nullable: False),
   ] = result.parameters
 }
+
+// Note: CTEs currently lose type information because SQLite's EXPLAIN output
+// does not trace column types through CTE boundaries. Columns from CTEs are
+// inferred as StringType/nullable. This is a known limitation.
+pub fn introspect_cte_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE orders (id INTEGER NOT NULL PRIMARY KEY, user_id INTEGER NOT NULL, total REAL NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "WITH big_orders AS (
+        SELECT id, user_id, total FROM orders WHERE total > ?
+      )
+      SELECT id, user_id, total FROM big_orders WHERE user_id = ?",
+    )
+  // Types fall back to String/nullable because CTE columns can't be traced
+  let assert [
+    Column(name: "id", column_type: StringType, nullable: True),
+    Column(name: "user_id", column_type: StringType, nullable: True),
+    Column(name: "total", column_type: StringType, nullable: True),
+  ] = result.columns
+  let assert 2 = list.length(result.parameters)
+}
+
+pub fn introspect_recursive_cte_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE categories (id INTEGER NOT NULL PRIMARY KEY, parent_id INTEGER, name TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "WITH RECURSIVE tree AS (
+        SELECT id, parent_id, name, 0 AS depth FROM categories WHERE id = ?
+        UNION ALL
+        SELECT c.id, c.parent_id, c.name, t.depth + 1
+        FROM categories c JOIN tree t ON c.parent_id = t.id
+      )
+      SELECT id, name, depth FROM tree",
+    )
+  // Recursive CTEs also lose type info
+  let assert [
+    Column(name: "id", column_type: StringType, nullable: True),
+    Column(name: "name", column_type: StringType, nullable: True),
+    Column(name: "depth", column_type: StringType, nullable: True),
+  ] = result.columns
+  let assert 1 = list.length(result.parameters)
+}
+
+// Correlated subqueries in the SELECT list lose type info for the subquery column
+pub fn introspect_correlated_subquery_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL);
+       CREATE TABLE orders (id INTEGER NOT NULL PRIMARY KEY, user_id INTEGER NOT NULL, total REAL NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT u.id, u.name,
+        (SELECT COUNT(*) FROM orders o WHERE o.user_id = u.id) AS order_count
+      FROM users u
+      WHERE u.id = ?",
+    )
+  let assert [
+    Column(name: "id", column_type: IntType, nullable: False),
+    Column(name: "name", column_type: StringType, nullable: False),
+    // Subquery result type can't be traced through EXPLAIN
+    Column(name: "order_count", column_type: StringType, nullable: True),
+  ] = result.columns
+  let assert 1 = list.length(result.parameters)
+}
+
+pub fn introspect_multiple_joins_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL);
+       CREATE TABLE orders (id INTEGER NOT NULL PRIMARY KEY, user_id INTEGER NOT NULL, status TEXT NOT NULL);
+       CREATE TABLE order_items (id INTEGER NOT NULL PRIMARY KEY, order_id INTEGER NOT NULL, product_name TEXT NOT NULL, qty INTEGER NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT u.name AS user_name, o.status, oi.product_name, oi.qty
+      FROM users u
+      INNER JOIN orders o ON o.user_id = u.id
+      INNER JOIN order_items oi ON oi.order_id = o.id
+      WHERE u.id = ?",
+    )
+  let assert [
+    Column(name: "user_name", column_type: StringType, nullable: False),
+    Column(name: "status", column_type: StringType, nullable: False),
+    Column(name: "product_name", column_type: StringType, nullable: False),
+    Column(name: "qty", column_type: IntType, nullable: False),
+  ] = result.columns
+  let assert 1 = list.length(result.parameters)
+}
+
+pub fn introspect_mixed_left_inner_joins_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL);
+       CREATE TABLE profiles (id INTEGER NOT NULL PRIMARY KEY, user_id INTEGER NOT NULL, bio TEXT NOT NULL);
+       CREATE TABLE avatars (id INTEGER NOT NULL PRIMARY KEY, user_id INTEGER NOT NULL, url TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT u.name, p.bio, a.url AS avatar_url
+      FROM users u
+      INNER JOIN profiles p ON p.user_id = u.id
+      LEFT JOIN avatars a ON a.user_id = u.id
+      WHERE u.id = ?",
+    )
+  let assert [
+    Column(name: "name", column_type: StringType, nullable: False),
+    Column(name: "bio", column_type: StringType, nullable: False),
+    Column(name: "avatar_url", column_type: StringType, nullable: True),
+  ] = result.columns
+  let assert 1 = list.length(result.parameters)
+}
