@@ -118,19 +118,93 @@ type JoinNullability {
   )
 }
 
+/// Build a mapping from each autoindex/sorter cursor to its source table cursor.
+/// SQLite builds transient autoindexes when no suitable index exists for a JOIN.
+/// The pattern: `OpenAutoindex p1=auto_cursor` followed by a loop that reads
+/// from the source cursor via Column/Rowid opcodes and inserts into the autoindex
+/// via IdxInsert. By scanning for `IdxInsert p1=auto_cursor` and looking back at
+/// the nearest preceding `Column` or `Rowid` opcode that reads from a real-table
+/// cursor, we can map auto_cursor → source_cursor (and thus → table_name).
+fn build_autoindex_source(
+  opcodes: List(Opcode),
+  cursor_table: Dict(Int, String),
+) -> Dict(Int, Int) {
+  // Find all autoindex/sorter cursors from OpenAutoindex opcodes
+  let autoindex_cursors =
+    list.filter_map(opcodes, fn(op) {
+      case op.opcode {
+        "OpenAutoindex" -> Ok(#(op.p1, op.addr))
+        _ -> Error(Nil)
+      }
+    })
+
+  list.fold(autoindex_cursors, dict.new(), fn(acc, entry) {
+    let #(auto_cursor, open_addr) = entry
+    // Find IdxInsert targeting this autoindex cursor
+    let idx_insert =
+      list.find(opcodes, fn(op) {
+        op.opcode == "IdxInsert" && op.p1 == auto_cursor && op.addr > open_addr
+      })
+    case idx_insert {
+      Error(_) -> acc
+      Ok(insert_op) -> {
+        // Look back from IdxInsert to find the nearest Column/Rowid/IdxRowid
+        // opcode reading from a real-table cursor (in cursor_table)
+        let source =
+          list.find_map(
+            list.reverse(
+              list.filter(opcodes, fn(op) {
+                op.addr < insert_op.addr && op.addr > open_addr
+              }),
+            ),
+            fn(op) {
+              case op.opcode {
+                "Column" | "Rowid" | "IdxRowid" ->
+                  case dict.has_key(cursor_table, op.p1) {
+                    True -> Ok(op.p1)
+                    False -> Error(Nil)
+                  }
+                _ -> Error(Nil)
+              }
+            },
+          )
+        case source {
+          Ok(src_cursor) -> dict.insert(acc, auto_cursor, src_cursor)
+          Error(_) -> acc
+        }
+      }
+    }
+  })
+}
+
 fn compute_join_nullability(
   opcodes: List(Opcode),
   cursor_table: Dict(Int, String),
 ) -> JoinNullability {
   let nullable_cursors = find_nullable_cursors(opcodes)
+  let autoindex_source = build_autoindex_source(opcodes, cursor_table)
   let nullable_tables =
     dict.fold(nullable_cursors, dict.new(), fn(acc, cursor_id, _) {
+      // First try direct lookup in cursor_table (real-table cursor)
       case dict.get(cursor_table, cursor_id) {
         Ok(table_name) -> dict.insert(acc, table_name, Nil)
-        Error(_) -> acc
+        Error(_) ->
+          // Not a real-table cursor — check if it's an autoindex cursor
+          // whose source is a known real-table cursor
+          case dict.get(autoindex_source, cursor_id) {
+            Ok(source_cursor) ->
+              case dict.get(cursor_table, source_cursor) {
+                Ok(table_name) -> dict.insert(acc, table_name, Nil)
+                Error(_) -> acc
+              }
+            Error(_) -> acc
+          }
       }
     })
-  JoinNullability(nullable_cursors: nullable_cursors, nullable_tables: nullable_tables)
+  JoinNullability(
+    nullable_cursors: nullable_cursors,
+    nullable_tables: nullable_tables,
+  )
 }
 
 /// If the Column opcode that produced this result register reads from a
@@ -143,9 +217,7 @@ fn apply_cursor_nullability(
   join_nullability: JoinNullability,
 ) -> Column {
   let producer =
-    list.find(opcodes, fn(op) {
-      op.opcode == "Column" && op.p3 == dest_reg
-    })
+    list.find(opcodes, fn(op) { op.opcode == "Column" && op.p3 == dest_reg })
   case producer {
     Ok(op) ->
       case dict.has_key(join_nullability.nullable_cursors, op.p1) {
@@ -399,14 +471,24 @@ fn extract_result_columns(
                 {
                   Column(name: "unknown", ..) ->
                     Column(..opcode_column, name: item.alias)
-                  resolved ->
-                    // If opcode tracing found a nullable cursor (e.g. via
-                    // an autoindex cursor that NullRow targets), propagate
-                    // that nullability to the text-resolved column.
+                  resolved -> {
+                    // If opcode tracing resolved a real column (not the "unknown"
+                    // fallback), propagate its nullability — e.g. an autoindex
+                    // cursor that NullRow targets marks its column nullable.
+                    // When opcode_column is "unknown" it means the column was read
+                    // from a pseudo-cursor (sorter, ephemeral, window function
+                    // machinery) that isn't in cursor_table; its nullable=True is
+                    // just the safe fallback default, not a genuine signal, so we
+                    // don't propagate it.
+                    let opcode_nullable = case opcode_column.name {
+                      "unknown" -> False
+                      _ -> opcode_column.nullable
+                    }
                     Column(
                       ..resolved,
-                      nullable: resolved.nullable || opcode_column.nullable,
+                      nullable: resolved.nullable || opcode_nullable,
                     )
+                  }
                 }
               option.None ->
                 case opcode_column.name {
@@ -1842,8 +1924,7 @@ fn find_param_binders(sql: String, idx: Int, acc: List(Binder)) -> List(Binder) 
           // For named params, also look for a column binder on the LHS
           // of the comparison — lets us infer the type even when the
           // param name doesn't match a schema column.
-          let before =
-            string.slice(sql, 0, after - string.length(name) - 1)
+          let before = string.slice(sql, 0, after - string.length(name) - 1)
           let column = extract_column_binder(before)
           find_param_binders(sql, after, [
             Binder(name: name, binder_column: column),
