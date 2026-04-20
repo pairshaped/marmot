@@ -372,6 +372,14 @@ which function it calls.
   Use `source_root` to get clean namespaced paths (e.g.
   `src/app/generated/sql/users.gleam`) — see the "Structured output paths"
   section above.
+- Repeated anonymous `?` placeholders that refer to the same value generate
+  a separate function argument for each occurrence
+  (`WHERE org_id = ? AND ... WHERE org_id = ?` → `org_id` and `org_id_2`).
+  This is a SQLite protocol limitation: anonymous `?` are always distinct
+  bind slots. **Use named parameters (`@name` or `:name`) instead** — SQLite
+  deduplicates them natively, so `WHERE org_id = @org_id AND ... WHERE
+  org_id = @org_id` generates a single `org_id` argument. Named parameters
+  are also self-documenting and generally preferable.
 
 ## Credits
 
