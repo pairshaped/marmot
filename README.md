@@ -92,8 +92,7 @@ So now you get the best of both worlds:
 - You're not compromising on type safety either: Marmot connects to your
   SQLite database and uses `PRAGMA table_info` and `EXPLAIN` to understand the
   types of your queries.
-- You can stick to writing plain SQL in `*.sql` files. You'll have better
-  editor support, syntax highlighting and completions.
+- You can stick to writing plain SQL in `*.sql` files.
 - You can run each query on its own: need to `explain` a query?
   No big deal, it's just a plain old `*.sql` file.
 - No external tools required. No `sqlc` binary, no `sqlite3` CLI. Marmot uses
