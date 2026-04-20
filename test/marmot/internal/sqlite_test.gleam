@@ -567,3 +567,76 @@ pub fn introspect_inner_join_keeps_both_sides_non_nullable_test() {
     Column(name: "bio", column_type: StringType, nullable: False),
   ] = result.columns
 }
+
+pub fn introspect_chained_left_joins_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE a (id INTEGER NOT NULL PRIMARY KEY, a_val TEXT NOT NULL);
+       CREATE TABLE b (id INTEGER NOT NULL PRIMARY KEY, a_id INTEGER NOT NULL, b_val TEXT NOT NULL);
+       CREATE TABLE c (id INTEGER NOT NULL PRIMARY KEY, b_id INTEGER NOT NULL, c_val TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT a.a_val, b.b_val, c.c_val
+       FROM a
+       LEFT JOIN b ON b.a_id = a.id
+       LEFT JOIN c ON c.b_id = b.id",
+    )
+  // a is primary (non-nullable); b and c are LEFT JOINed (both nullable)
+  let assert [
+    Column(name: "a_val", column_type: StringType, nullable: False),
+    Column(name: "b_val", column_type: StringType, nullable: True),
+    Column(name: "c_val", column_type: StringType, nullable: True),
+  ] = result.columns
+}
+
+pub fn introspect_left_join_strength_reduced_by_where_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL);
+       CREATE TABLE profiles (id INTEGER NOT NULL PRIMARY KEY, user_id INTEGER NOT NULL, bio TEXT NOT NULL)",
+      on: db,
+    )
+  // WHERE p.bio = 'x' makes bio non-nullable in the result: SQLite rewrites
+  // this LEFT JOIN as an INNER JOIN, so no NullRow is emitted. Our inference
+  // should correctly report bio as non-nullable.
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT p.bio
+       FROM users u
+       LEFT JOIN profiles p ON p.user_id = u.id
+       WHERE p.bio = 'x'",
+    )
+  let assert [Column(name: "bio", column_type: StringType, nullable: False)] =
+    result.columns
+}
+
+pub fn introspect_mixed_inner_and_left_joins_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE a (id INTEGER NOT NULL PRIMARY KEY, a_val TEXT NOT NULL);
+       CREATE TABLE b (id INTEGER NOT NULL PRIMARY KEY, a_id INTEGER NOT NULL, b_val TEXT NOT NULL);
+       CREATE TABLE c (id INTEGER NOT NULL PRIMARY KEY, b_id INTEGER NOT NULL, c_val TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT a.a_val, b.b_val, c.c_val
+       FROM a
+       JOIN b ON b.a_id = a.id
+       LEFT JOIN c ON c.b_id = b.id",
+    )
+  // a and b are INNER JOINed (non-nullable); c is LEFT JOINed (nullable)
+  let assert [
+    Column(name: "a_val", column_type: StringType, nullable: False),
+    Column(name: "b_val", column_type: StringType, nullable: False),
+    Column(name: "c_val", column_type: StringType, nullable: True),
+  ] = result.columns
+}
