@@ -190,11 +190,17 @@ directory:
 
 ```txt
 src/
-├── my_app/
-│   ├── sql/
-│   │   ├── find_user.sql
-│   │   └── list_users.sql
-│   └── sql.gleam              -- generated
+├── app/
+│   ├── users/
+│   │   ├── sql/
+│   │   │   ├── find_user.sql
+│   │   │   └── list_users.sql
+│   │   └── sql.gleam          -- generated
+│   └── orders/
+│       ├── sql/
+│       │   ├── create_order.sql
+│       │   └── list_orders.sql
+│       └── sql.gleam          -- generated
 ```
 
 You can override this with an output directory:
@@ -223,7 +229,7 @@ database = "dev.sqlite"
 output = "src/generated/sql"
 ```
 
-And this project structure:
+Marmot generates:
 
 ```txt
 src/
@@ -236,17 +242,11 @@ src/
 │       └── sql/
 │           ├── create_order.sql
 │           └── list_orders.sql
-```
-
-Marmot generates:
-
-```txt
-src/
 ├── generated/
 │   └── sql/
-│       ├── app/
-│       │   ├── users.gleam    -- from src/app/users/sql/
-│       │   └── orders.gleam   -- from src/app/orders/sql/
+│       └── app/
+│           ├── users.gleam    -- generated
+│           └── orders.gleam   -- generated
 ```
 
 The common path between `src/generated/sql` and `src/app/users/sql` is `src/`,
