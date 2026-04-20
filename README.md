@@ -413,3 +413,7 @@ If you use Postgres, use Squirrel. If you use SQLite, use Marmot.
 If you think there's any way to improve this package, or if you spot a bug don't
 be afraid to open PRs, issues or requests of any kind! Any contribution is
 welcome.
+
+## License
+
+[MIT](https://github.com/pairshaped/marmot/blob/master/LICENSE)
