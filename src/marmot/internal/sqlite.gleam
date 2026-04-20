@@ -2,6 +2,7 @@ import gleam/dict.{type Dict}
 import gleam/dynamic/decode
 import gleam/int
 import gleam/list
+import gleam/option
 import gleam/result
 import gleam/string
 import marmot/internal/query.{
@@ -97,6 +98,12 @@ pub fn introspect_query(
   db: Connection,
   sql: String,
 ) -> Result(QueryInfo, sqlight.Error) {
+  // Normalize whitespace (newlines/tabs → spaces, collapse runs). All keyword
+  // detection and SQL parsing below relies on single-space separators.
+  // SQLite's EXPLAIN accepts the original SQL with newlines, so we keep the
+  // original for that and use the normalized form for everything else.
+  let normalized_sql = normalize_sql_whitespace(sql)
+
   // Get all table metadata in a single pass
   let #(table_schemas, pk_columns, rootpage_table) = get_table_metadata(db)
 
@@ -142,20 +149,20 @@ pub fn introspect_query(
     })
 
   // Check statement type
-  let stmt_type = classify_statement(sql)
+  let stmt_type = classify_statement(normalized_sql)
   let is_insert = stmt_type == Insert
-  let has_returning = contains_keyword(sql, "RETURNING")
+  let has_returning = contains_keyword(normalized_sql, "RETURNING")
 
   // Determine result columns
   let columns = case has_returning {
     True -> {
       let table_name = case stmt_type {
-        Insert -> parse_insert_table_name(sql)
-        Update -> parse_update_table_name(sql)
-        Delete -> parse_delete_table_name(sql)
+        Insert -> parse_insert_table_name(normalized_sql)
+        Update -> parse_update_table_name(normalized_sql)
+        Delete -> parse_delete_table_name(normalized_sql)
         _ -> ""
       }
-      extract_returning_columns(sql, table_name, table_schemas)
+      extract_returning_columns(normalized_sql, table_name, table_schemas)
     }
     False ->
       case is_insert {
@@ -166,43 +173,716 @@ pub fn introspect_query(
             cursor_table,
             table_schemas,
             pk_columns,
+            normalized_sql,
           )
       }
   }
 
   // Determine parameters
   let parameters =
-    extract_parameters(opcodes, cursor_table, table_schemas, pk_columns, sql)
+    extract_parameters(
+      opcodes,
+      cursor_table,
+      table_schemas,
+      pk_columns,
+      normalized_sql,
+    )
 
   let parameters = deduplicate_parameter_names(parameters)
   Ok(QueryInfo(columns: columns, parameters: parameters))
 }
 
-/// Extract result columns for regular (non-INSERT) queries
+/// Normalize SQL whitespace: strip line comments (-- ... up to newline),
+/// convert newlines and tabs to spaces, then collapse runs of spaces into
+/// single spaces. Trims leading/trailing whitespace. Safe on SQL because
+/// string literals aren't split across lines in our queries and whitespace
+/// inside identifiers isn't allowed.
+fn normalize_sql_whitespace(sql: String) -> String {
+  sql
+  |> strip_line_comments
+  |> string.replace("\r\n", " ")
+  |> string.replace("\r", " ")
+  |> string.replace("\n", " ")
+  |> string.replace("\t", " ")
+  |> collapse_spaces
+  |> string.trim
+}
+
+/// Remove `-- line comments` from SQL. A line comment starts with `--`
+/// outside of a string literal and extends to end of line. Preserves
+/// newlines so subsequent whitespace collapsing works naturally.
+fn strip_line_comments(sql: String) -> String {
+  do_strip_line_comments(sql, "", False, False, False)
+}
+
+fn do_strip_line_comments(
+  remaining: String,
+  acc: String,
+  in_single: Bool,
+  in_double: Bool,
+  in_comment: Bool,
+) -> String {
+  case string.pop_grapheme(remaining) {
+    Error(_) -> acc
+    Ok(#("\n", rest)) ->
+      // Newline ends comment and is kept as whitespace
+      do_strip_line_comments(rest, acc <> "\n", in_single, in_double, False)
+    Ok(#(_, rest)) if in_comment ->
+      do_strip_line_comments(rest, acc, in_single, in_double, True)
+    Ok(#("'", rest)) ->
+      case in_double {
+        True -> do_strip_line_comments(rest, acc <> "'", in_single, True, False)
+        False ->
+          do_strip_line_comments(rest, acc <> "'", !in_single, False, False)
+      }
+    Ok(#("\"", rest)) ->
+      case in_single {
+        True ->
+          do_strip_line_comments(rest, acc <> "\"", True, in_double, False)
+        False ->
+          do_strip_line_comments(rest, acc <> "\"", False, !in_double, False)
+      }
+    Ok(#("-", rest)) ->
+      case in_single || in_double {
+        True ->
+          do_strip_line_comments(rest, acc <> "-", in_single, in_double, False)
+        False ->
+          case string.pop_grapheme(rest) {
+            Ok(#("-", rest2)) ->
+              do_strip_line_comments(rest2, acc, False, False, True)
+            _ ->
+              do_strip_line_comments(
+                rest,
+                acc <> "-",
+                in_single,
+                in_double,
+                False,
+              )
+          }
+      }
+    Ok(#(char, rest)) ->
+      do_strip_line_comments(rest, acc <> char, in_single, in_double, False)
+  }
+}
+
+fn collapse_spaces(sql: String) -> String {
+  case string.contains(sql, "  ") {
+    True -> collapse_spaces(string.replace(sql, "  ", " "))
+    False -> sql
+  }
+}
+
+/// Extract result columns for regular (non-INSERT) queries.
+///
+/// Strategy: combine opcode-based resolution with text-based fallback.
+/// Opcode tracing gives authoritative types when the column maps to a real
+/// table column. Text parsing of the SELECT list gives names/types when
+/// opcode tracing can't resolve (sorter pseudo-cursors, complex expressions,
+/// aggregates).
 fn extract_result_columns(
   opcodes: List(Opcode),
   cursor_table: Dict(Int, String),
   table_schemas: Dict(String, List(Column)),
   pk_columns: Dict(String, String),
+  sql: String,
 ) -> List(Column) {
   let result_row = list.find(opcodes, fn(op) { op.opcode == "ResultRow" })
-
   case result_row {
     Error(_) -> []
     Ok(rr) -> {
       let base_reg = rr.p1
       let count = rr.p2
       let result_regs = make_range(base_reg, count)
+      let select_items = parse_select_items(sql)
+      let from_tables = parse_from_tables(sql)
 
-      list.map(result_regs, fn(reg) {
-        find_column_for_register(
-          reg,
-          opcodes,
-          cursor_table,
-          table_schemas,
-          pk_columns,
-        )
+      list.index_map(result_regs, fn(reg, idx) {
+        let opcode_column =
+          find_column_for_register(
+            reg,
+            opcodes,
+            cursor_table,
+            table_schemas,
+            pk_columns,
+          )
+        let select_item = list_at(select_items, idx)
+        case select_item {
+          // No SELECT list available: use opcode result as-is.
+          Error(_) -> opcode_column
+          Ok(item) -> {
+            // Prefer SELECT parsing when the item is a bare column reference:
+            // text-based schema lookup gives correct name + type + nullability
+            // without the opcode-tracing pitfalls (sorter pseudo-cursors,
+            // IdxRowid-returning-target-PK-name, etc.). For expressions
+            // (CAST, COALESCE, COUNT, etc.) or when the bare column can't be
+            // found, fall back to opcode-traced type with the SELECT alias.
+            case item.bare_column {
+              option.Some(_) ->
+                case
+                  resolve_select_item(
+                    idx,
+                    select_items,
+                    from_tables,
+                    table_schemas,
+                  )
+                {
+                  Column(name: "unknown", ..) ->
+                    Column(..opcode_column, name: item.alias)
+                  resolved -> resolved
+                }
+              option.None ->
+                case opcode_column.name {
+                  "unknown" ->
+                    resolve_select_item(
+                      idx,
+                      select_items,
+                      from_tables,
+                      table_schemas,
+                    )
+                  _ -> Column(..opcode_column, name: item.alias)
+                }
+            }
+          }
+        }
       })
+    }
+  }
+}
+
+/// Resolve a result column via SELECT-list text parsing.
+/// Returns (alias_name, StringType, nullable=True) as a safe default when
+/// the expression isn't a plain column reference.
+fn resolve_select_item(
+  idx: Int,
+  select_items: List(SelectItem),
+  from_tables: List(String),
+  table_schemas: Dict(String, List(Column)),
+) -> Column {
+  case list_at(select_items, idx) {
+    Error(_) -> Column(name: "unknown", column_type: StringType, nullable: True)
+    Ok(item) -> {
+      // Try each FROM table to find a matching column, use the alias/name.
+      let resolved =
+        list.find_map(from_tables, fn(table) {
+          case item.bare_column {
+            option.Some(col_name) ->
+              case dict.get(table_schemas, table) {
+                Ok(cols) -> {
+                  let lower = string.lowercase(col_name)
+                  case
+                    list.find(cols, fn(c) { string.lowercase(c.name) == lower })
+                  {
+                    Ok(col) -> Ok(Column(..col, name: item.alias))
+                    Error(_) -> Error(Nil)
+                  }
+                }
+                Error(_) -> Error(Nil)
+              }
+            option.None -> Error(Nil)
+          }
+        })
+      case resolved {
+        Ok(col) -> col
+        Error(_) ->
+          Column(name: item.alias, column_type: StringType, nullable: True)
+      }
+    }
+  }
+}
+
+type SelectItem {
+  SelectItem(
+    /// The display/field name (from AS alias or the expression itself)
+    alias: String,
+    /// If the expression is a bare column reference (possibly "table.col"),
+    /// this is the column name (without table prefix). None for expressions
+    /// like COUNT(*), COALESCE(...), subqueries, etc.
+    bare_column: option.Option(String),
+  )
+}
+
+/// Parse the SELECT list from a normalized SQL string.
+/// Returns one SelectItem per comma-separated top-level expression.
+/// Handles nested parentheses (COALESCE(...), CAST(... AS ...), etc) and
+/// CTEs (WITH ... AS (...), main SELECT).
+fn parse_select_items(sql: String) -> List(SelectItem) {
+  // Skip any WITH [RECURSIVE] cte AS (...) prefix to find the main SELECT
+  let main_sql = skip_with_prefix(sql)
+  let upper = string.uppercase(main_sql)
+  let start_prefix = case string.starts_with(upper, "SELECT DISTINCT ") {
+    True -> "SELECT DISTINCT "
+    False ->
+      case string.starts_with(upper, "SELECT ") {
+        True -> "SELECT "
+        False -> ""
+      }
+  }
+  case start_prefix {
+    "" -> []
+    prefix -> {
+      let after_select = string.drop_start(main_sql, string.length(prefix))
+      // Find end of SELECT list: FROM at top level, or end of string
+      // for queries without FROM (SELECT EXISTS(...), SELECT COALESCE(...),
+      // etc). Terminate at other top-level keywords too.
+      let end_idx = case find_top_level_from(after_select) {
+        option.Some(idx) -> idx
+        option.None -> {
+          let upper = string.uppercase(after_select)
+          [
+            find_keyword_idx(upper, "WHERE"),
+            find_keyword_idx(upper, "GROUP BY"),
+            find_keyword_idx(upper, "ORDER BY"),
+            find_keyword_idx(upper, "LIMIT"),
+          ]
+          |> list.filter_map(fn(x) {
+            case x {
+              option.Some(i) -> Ok(i)
+              option.None -> Error(Nil)
+            }
+          })
+          |> list.sort(int.compare)
+          |> list.first
+          |> result.unwrap(string.length(after_select))
+        }
+      }
+      let select_list = string.slice(after_select, 0, end_idx)
+      split_top_level_commas(select_list)
+      |> list.map(parse_select_item)
+    }
+  }
+}
+
+/// Skip a WITH [RECURSIVE] prefix: walk past `WITH` through matching
+/// parens for each named CTE, landing on the main SELECT.
+/// Input that doesn't start with WITH is returned unchanged.
+fn skip_with_prefix(sql: String) -> String {
+  let upper = string.uppercase(sql)
+  case
+    string.starts_with(upper, "WITH RECURSIVE "),
+    string.starts_with(upper, "WITH ")
+  {
+    True, _ -> skip_cte_definitions(string.drop_start(sql, 15))
+    _, True -> skip_cte_definitions(string.drop_start(sql, 5))
+    _, _ -> sql
+  }
+}
+
+/// Walk past `name [(cols)] AS ( ... ) [, another AS ( ... )]` until the
+/// next top-level SELECT.
+fn skip_cte_definitions(s: String) -> String {
+  let trimmed = string.trim_start(s)
+  // Find the first ( at depth 0 after any `AS `
+  case find_matching_paren_after_as(trimmed) {
+    option.None -> trimmed
+    option.Some(after_close) -> {
+      let rest = string.trim_start(after_close)
+      case string.starts_with(rest, ",") {
+        True -> skip_cte_definitions(string.drop_start(rest, 1))
+        False -> rest
+      }
+    }
+  }
+}
+
+/// Find the " AS (" top-level start, then walk through matching parens,
+/// returning the substring after the closing `)`.
+fn find_matching_paren_after_as(s: String) -> option.Option(String) {
+  let upper = string.uppercase(s)
+  case find_top_level_keyword_offset(upper, " AS ") {
+    option.None -> option.None
+    option.Some(idx) -> {
+      let after_as = string.drop_start(s, idx + 4) |> string.trim_start
+      case string.pop_grapheme(after_as) {
+        Ok(#("(", rest)) -> option.Some(walk_matching_paren(rest, 1))
+        _ -> option.None
+      }
+    }
+  }
+}
+
+fn find_top_level_keyword_offset(
+  s: String,
+  keyword: String,
+) -> option.Option(Int) {
+  do_find_top_level_keyword(s, keyword, 0, 0)
+}
+
+fn walk_matching_paren(s: String, depth: Int) -> String {
+  case depth {
+    0 -> s
+    _ ->
+      case string.pop_grapheme(s) {
+        Error(_) -> s
+        Ok(#("(", rest)) -> walk_matching_paren(rest, depth + 1)
+        Ok(#(")", rest)) -> walk_matching_paren(rest, depth - 1)
+        Ok(#(_, rest)) -> walk_matching_paren(rest, depth)
+      }
+  }
+}
+
+/// Parse the FROM clause to get the list of tables.
+/// Returns the primary table plus any JOINed tables. Handles "FROM table AS alias"
+/// and "FROM table JOIN other ON ...". Does not resolve aliases back to tables
+/// (we match against all tables, so aliases don't matter for lookup).
+fn parse_from_tables(sql: String) -> List(String) {
+  let main_sql = skip_with_prefix(sql)
+  let upper = string.uppercase(main_sql)
+  let after_select = case string.starts_with(upper, "SELECT DISTINCT ") {
+    True -> string.drop_start(main_sql, 16)
+    False ->
+      case string.starts_with(upper, "SELECT ") {
+        True -> string.drop_start(main_sql, 7)
+        False -> main_sql
+      }
+  }
+  case find_top_level_from(after_select) {
+    option.None -> []
+    option.Some(from_idx) -> {
+      let rest =
+        after_select
+        |> string.drop_start(from_idx + 5)
+        |> string.trim
+      // Terminate at WHERE/GROUP/HAVING/ORDER/LIMIT/RETURNING
+      let rest_upper = string.uppercase(rest)
+      let end_idx =
+        [
+          find_keyword_idx(rest_upper, "WHERE"),
+          find_keyword_idx(rest_upper, "GROUP BY"),
+          find_keyword_idx(rest_upper, "HAVING"),
+          find_keyword_idx(rest_upper, "ORDER BY"),
+          find_keyword_idx(rest_upper, "LIMIT"),
+          find_keyword_idx(rest_upper, "RETURNING"),
+        ]
+        |> list.filter_map(fn(x) {
+          case x {
+            option.Some(i) -> Ok(i)
+            option.None -> Error(Nil)
+          }
+        })
+        |> list.sort(int.compare)
+        |> list.first
+      let from_part = case end_idx {
+        Ok(i) -> string.slice(rest, 0, i)
+        Error(_) -> rest
+      }
+      // Split on JOIN keywords
+      extract_table_names_from_from(from_part)
+    }
+  }
+}
+
+/// Extract table names from a FROM clause text, handling JOINs.
+/// Input example: `accounts u JOIN account_emails ue ON ue.account_id = u.id`
+fn extract_table_names_from_from(from_part: String) -> List(String) {
+  // Replace all JOIN variants with a sentinel, then split on it
+  let normalized =
+    from_part
+    |> replace_ignore_case(" LEFT JOIN ", "|||")
+    |> replace_ignore_case(" LEFT OUTER JOIN ", "|||")
+    |> replace_ignore_case(" RIGHT JOIN ", "|||")
+    |> replace_ignore_case(" INNER JOIN ", "|||")
+    |> replace_ignore_case(" CROSS JOIN ", "|||")
+    |> replace_ignore_case(" JOIN ", "|||")
+  let parts = string.split(normalized, "|||")
+  list.filter_map(parts, fn(part) {
+    // Strip " ON ..." clause
+    let upper = string.uppercase(part)
+    let no_on = case string.split_once(upper, " ON ") {
+      Ok(_) -> {
+        let idx = case string.split_once(upper, " ON ") {
+          Ok(#(before, _)) -> string.length(before)
+          Error(_) -> string.length(part)
+        }
+        string.slice(part, 0, idx)
+      }
+      Error(_) -> part
+    }
+    // First word is the table name; optional second word is alias
+    case string.split(string.trim(no_on), " ") {
+      [table, ..] -> {
+        let cleaned = string.trim(table)
+        case cleaned {
+          "" -> Error(Nil)
+          _ -> Ok(cleaned)
+        }
+      }
+      [] -> Error(Nil)
+    }
+  })
+}
+
+fn replace_ignore_case(
+  haystack: String,
+  needle: String,
+  replacement: String,
+) -> String {
+  // Case-insensitive replace by walking through and finding uppercase matches
+  do_replace_ignore_case(haystack, needle, replacement, "")
+}
+
+fn do_replace_ignore_case(
+  remaining: String,
+  needle: String,
+  replacement: String,
+  acc: String,
+) -> String {
+  let needle_len = string.length(needle)
+  case string.length(remaining) < needle_len {
+    True -> acc <> remaining
+    False -> {
+      let head = string.slice(remaining, 0, needle_len)
+      case string.uppercase(head) == string.uppercase(needle) {
+        True ->
+          do_replace_ignore_case(
+            string.drop_start(remaining, needle_len),
+            needle,
+            replacement,
+            acc <> replacement,
+          )
+        False -> {
+          let first = string.slice(remaining, 0, 1)
+          do_replace_ignore_case(
+            string.drop_start(remaining, 1),
+            needle,
+            replacement,
+            acc <> first,
+          )
+        }
+      }
+    }
+  }
+}
+
+fn find_keyword_idx(upper: String, keyword: String) -> option.Option(Int) {
+  // Look for " KEYWORD " (with surrounding spaces) or keyword at end
+  let with_space = " " <> keyword <> " "
+  case string.split_once(upper, with_space) {
+    Ok(#(before, _)) -> option.Some(string.length(before))
+    Error(_) ->
+      case string.ends_with(upper, " " <> keyword) {
+        True -> option.Some(string.length(upper) - string.length(keyword) - 1)
+        False -> option.None
+      }
+  }
+}
+
+/// Find the index of the top-level `FROM` keyword in a SELECT's from-part.
+/// Respects nested parentheses (subqueries).
+fn find_top_level_from(s: String) -> option.Option(Int) {
+  do_find_top_level_keyword(s, " FROM ", 0, 0)
+}
+
+fn do_find_top_level_keyword(
+  s: String,
+  keyword: String,
+  idx: Int,
+  depth: Int,
+) -> option.Option(Int) {
+  let keyword_len = string.length(keyword)
+  case string.length(s) < keyword_len {
+    True -> option.None
+    False -> {
+      let head_char = string.slice(s, 0, 1)
+      case head_char {
+        "(" ->
+          do_find_top_level_keyword(
+            string.drop_start(s, 1),
+            keyword,
+            idx + 1,
+            depth + 1,
+          )
+        ")" ->
+          do_find_top_level_keyword(
+            string.drop_start(s, 1),
+            keyword,
+            idx + 1,
+            depth - 1,
+          )
+        _ ->
+          case depth == 0 {
+            True -> {
+              let head = string.slice(s, 0, keyword_len)
+              case string.uppercase(head) == string.uppercase(keyword) {
+                True -> option.Some(idx)
+                False ->
+                  do_find_top_level_keyword(
+                    string.drop_start(s, 1),
+                    keyword,
+                    idx + 1,
+                    depth,
+                  )
+              }
+            }
+            False ->
+              do_find_top_level_keyword(
+                string.drop_start(s, 1),
+                keyword,
+                idx + 1,
+                depth,
+              )
+          }
+      }
+    }
+  }
+}
+
+/// Split a string on top-level commas (ignoring commas inside parens).
+fn split_top_level_commas(s: String) -> List(String) {
+  do_split_top_level_commas(s, "", [], 0)
+}
+
+fn do_split_top_level_commas(
+  remaining: String,
+  current: String,
+  acc: List(String),
+  depth: Int,
+) -> List(String) {
+  case string.pop_grapheme(remaining) {
+    Error(_) ->
+      case current {
+        "" -> list.reverse(acc)
+        _ -> list.reverse([string.trim(current), ..acc])
+      }
+    Ok(#("(", rest)) ->
+      do_split_top_level_commas(rest, current <> "(", acc, depth + 1)
+    Ok(#(")", rest)) ->
+      do_split_top_level_commas(rest, current <> ")", acc, depth - 1)
+    Ok(#(",", rest)) ->
+      case depth {
+        0 ->
+          do_split_top_level_commas(rest, "", [string.trim(current), ..acc], 0)
+        _ -> do_split_top_level_commas(rest, current <> ",", acc, depth)
+      }
+    Ok(#(char, rest)) ->
+      do_split_top_level_commas(rest, current <> char, acc, depth)
+  }
+}
+
+/// Parse a single SELECT-list item: `expr [AS alias]`.
+/// Extracts the alias (or expression if no alias) and detects whether the
+/// expression is a bare column reference (possibly with a table prefix).
+fn parse_select_item(raw: String) -> SelectItem {
+  let trimmed = string.trim(raw)
+  // Split on last " AS " (case-insensitive, top-level)
+  let #(expr, alias) = case rsplit_on_as(trimmed) {
+    option.Some(#(e, a)) -> #(string.trim(e), string.trim(a))
+    option.None -> #(trimmed, trimmed)
+  }
+  // For the alias, if it's the full expression (no explicit AS), derive a
+  // clean name from it: strip table prefix, strip parens content.
+  let clean_alias = case alias == expr {
+    True -> {
+      // Strip "table." prefix for aliased column refs
+      case string.split_once(alias, ".") {
+        Ok(#(_, after)) ->
+          case is_simple_identifier(after) {
+            True -> after
+            False -> alias
+          }
+        Error(_) -> alias
+      }
+    }
+    False -> alias
+  }
+  let bare_column = case is_simple_identifier(expr) {
+    True -> option.Some(expr)
+    False ->
+      case string.split_once(expr, ".") {
+        Ok(#(_, after)) ->
+          case is_simple_identifier(after) {
+            True -> option.Some(after)
+            False -> option.None
+          }
+        Error(_) -> option.None
+      }
+  }
+  SelectItem(alias: clean_alias, bare_column: bare_column)
+}
+
+/// Split on the LAST top-level " AS " (case-insensitive).
+fn rsplit_on_as(s: String) -> option.Option(#(String, String)) {
+  // Find all " AS " positions at depth 0, take the last.
+  let upper = string.uppercase(s)
+  let positions = find_all_top_level_as(upper, 0, 0, [])
+  case list.last(positions) {
+    Error(_) -> option.None
+    Ok(pos) -> {
+      let before = string.slice(s, 0, pos)
+      let after = string.drop_start(s, pos + 4)
+      option.Some(#(before, after))
+    }
+  }
+}
+
+fn find_all_top_level_as(
+  s: String,
+  idx: Int,
+  depth: Int,
+  acc: List(Int),
+) -> List(Int) {
+  case string.length(s) < 4 {
+    True -> list.reverse(acc)
+    False -> {
+      let head = string.slice(s, 0, 1)
+      case head {
+        "(" ->
+          find_all_top_level_as(
+            string.drop_start(s, 1),
+            idx + 1,
+            depth + 1,
+            acc,
+          )
+        ")" ->
+          find_all_top_level_as(
+            string.drop_start(s, 1),
+            idx + 1,
+            depth - 1,
+            acc,
+          )
+        _ ->
+          case depth == 0 && string.starts_with(s, " AS ") {
+            True ->
+              find_all_top_level_as(string.drop_start(s, 4), idx + 4, depth, [
+                idx,
+                ..acc
+              ])
+            False ->
+              find_all_top_level_as(
+                string.drop_start(s, 1),
+                idx + 1,
+                depth,
+                acc,
+              )
+          }
+      }
+    }
+  }
+}
+
+/// A "simple identifier" is an alpha/underscore-start followed by word chars.
+fn is_simple_identifier(s: String) -> Bool {
+  let trimmed = string.trim(s)
+  case string.length(trimmed) {
+    0 -> False
+    _ -> {
+      let graphemes = string.to_graphemes(trimmed)
+      list.all(graphemes, is_identifier_char)
+    }
+  }
+}
+
+fn is_identifier_char(c: String) -> Bool {
+  case c {
+    "_" -> True
+    _ -> {
+      let code = case string.to_utf_codepoints(c) {
+        [cp] -> string.utf_codepoint_to_int(cp)
+        _ -> 0
+      }
+      // 0-9, A-Z, a-z
+      { code >= 48 && code <= 57 }
+      || { code >= 65 && code <= 90 }
+      || { code >= 97 && code <= 122 }
     }
   }
 }
@@ -282,9 +962,17 @@ fn find_column_for_register(
   table_schemas: Dict(String, List(Column)),
   pk_columns: Dict(String, String),
 ) -> Column {
-  // Check for Rowid opcode first (p2=dest_register)
+  // Rowid-like opcodes write the rowid (PK) of cursor p1 into register p2.
+  //   Rowid       — direct table cursor
+  //   IdxRowid    — index cursor (resolves via parent table)
+  //   SeekRowid   — seeks by rowid, writes result to p2
   let rowid_op =
-    list.find(opcodes, fn(op) { op.opcode == "Rowid" && op.p2 == reg })
+    list.find(opcodes, fn(op) {
+      case op.opcode {
+        "Rowid" | "IdxRowid" | "SeekRowid" -> op.p2 == reg
+        _ -> False
+      }
+    })
 
   case rowid_op {
     Ok(op) ->
@@ -920,6 +1608,24 @@ fn get_table_metadata(
     )
     |> result.unwrap([])
 
+  // Also map index rootpages to their parent table. When queries use
+  // indexed lookups, SQLite emits OpenRead/IdxRowid against the index
+  // cursor; resolving that back to the parent table lets us infer the
+  // rowid/PK column correctly.
+  let index_parent_decoder = {
+    use rootpage <- decode.field(0, decode.int)
+    use tbl_name <- decode.field(1, decode.string)
+    decode.success(#(rootpage, tbl_name))
+  }
+  let indexes =
+    sqlight.query(
+      "SELECT rootpage, tbl_name FROM sqlite_master WHERE type='index'",
+      on: db,
+      with: [],
+      expecting: index_parent_decoder,
+    )
+    |> result.unwrap([])
+
   // Decode all fields we need from PRAGMA table_info in one pass per table
   let pragma_decoder = {
     use col_name <- decode.field(1, decode.string)
@@ -963,6 +1669,20 @@ fn get_table_metadata(
       Error(_) -> #(schemas, pks, rootpages)
     }
   })
+  |> add_index_rootpages(indexes)
+}
+
+fn add_index_rootpages(
+  acc: #(Dict(String, List(Column)), Dict(String, String), Dict(Int, String)),
+  indexes: List(#(Int, String)),
+) -> #(Dict(String, List(Column)), Dict(String, String), Dict(Int, String)) {
+  let #(schemas, pks, rootpages) = acc
+  let rootpages =
+    list.fold(indexes, rootpages, fn(acc, entry) {
+      let #(rootpage, tbl_name) = entry
+      dict.insert(acc, rootpage, tbl_name)
+    })
+  #(schemas, pks, rootpages)
 }
 
 /// Ensure parameter names are unique by appending _2, _3, etc. for duplicates.

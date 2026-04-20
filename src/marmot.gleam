@@ -242,46 +242,69 @@ fn validate_sql(trimmed: String, file_path: String) -> Result(String, Nil) {
   }
 }
 
-/// Check for semicolons outside of quoted SQL contexts.
-/// Handles single-quoted strings (with '' escapes) and double-quoted identifiers.
+/// Check for semicolons outside of quoted SQL contexts and line comments.
+/// Handles single-quoted strings (with '' escapes), double-quoted identifiers,
+/// and `-- line comments` (which extend to end of line).
 fn contains_semicolon_outside_strings(sql: String) -> Bool {
-  do_check_semicolon(sql, False, False)
+  do_check_semicolon(sql, False, False, False)
 }
 
 fn do_check_semicolon(
   s: String,
   in_single_quote: Bool,
   in_double_quote: Bool,
+  in_line_comment: Bool,
 ) -> Bool {
   case string.pop_grapheme(s) {
     Error(_) -> False
+    // Newline ends any active line comment
+    Ok(#("\n", rest)) ->
+      do_check_semicolon(rest, in_single_quote, in_double_quote, False)
+    // Everything else inside a line comment is ignored
+    Ok(#(_, rest)) if in_line_comment ->
+      do_check_semicolon(rest, in_single_quote, in_double_quote, True)
     Ok(#("'", rest)) ->
       case in_double_quote {
-        True -> do_check_semicolon(rest, in_single_quote, True)
+        True -> do_check_semicolon(rest, in_single_quote, True, False)
         False ->
           case in_single_quote {
             True ->
               // Check for escaped quote ''
               case string.pop_grapheme(rest) {
-                Ok(#("'", rest2)) -> do_check_semicolon(rest2, True, False)
-                _ -> do_check_semicolon(rest, False, False)
+                Ok(#("'", rest2)) ->
+                  do_check_semicolon(rest2, True, False, False)
+                _ -> do_check_semicolon(rest, False, False, False)
               }
-            False -> do_check_semicolon(rest, True, False)
+            False -> do_check_semicolon(rest, True, False, False)
           }
       }
     Ok(#("\"", rest)) ->
       case in_single_quote {
-        True -> do_check_semicolon(rest, True, in_double_quote)
+        True -> do_check_semicolon(rest, True, in_double_quote, False)
         // No explicit "" escape handling needed: toggling twice is a no-op
         // that leaves in_double_quote in the correct state.
-        False -> do_check_semicolon(rest, False, !in_double_quote)
+        False -> do_check_semicolon(rest, False, !in_double_quote, False)
+      }
+    // `--` starts a line comment, but only outside quoted contexts
+    Ok(#("-", rest)) ->
+      case in_single_quote || in_double_quote {
+        True ->
+          do_check_semicolon(rest, in_single_quote, in_double_quote, False)
+        False ->
+          case string.pop_grapheme(rest) {
+            Ok(#("-", rest2)) -> do_check_semicolon(rest2, False, False, True)
+            _ ->
+              do_check_semicolon(rest, in_single_quote, in_double_quote, False)
+          }
       }
     Ok(#(";", rest)) ->
       case in_single_quote || in_double_quote {
-        True -> do_check_semicolon(rest, in_single_quote, in_double_quote)
+        True ->
+          do_check_semicolon(rest, in_single_quote, in_double_quote, False)
         False -> True
       }
-    Ok(#(_, rest)) -> do_check_semicolon(rest, in_single_quote, in_double_quote)
+    Ok(#(_, rest)) ->
+      do_check_semicolon(rest, in_single_quote, in_double_quote, False)
   }
 }
 
@@ -344,13 +367,27 @@ fn init_stop(code: Int) -> Nil
 @external(erlang, "timer", "sleep")
 fn timer_sleep(ms: Int) -> Nil
 
+// Uses os:getenv/0 + linear scan rather than os:getenv/1, because on OTP 27
+// the /1 variant requires a charlist argument and crashes with badarg when
+// passed a Gleam String (binary).
 @external(erlang, "os", "getenv")
-fn getenv_ffi(name: String) -> Dynamic
+fn getenv_list_ffi() -> Dynamic
 
 fn get_env(name: String) -> Option(String) {
-  let raw = getenv_ffi(name)
-  case decode.run(raw, decode.string) {
-    Ok(value) -> option.Some(value)
+  let raw = getenv_list_ffi()
+  case decode.run(raw, decode.list(decode.string)) {
+    Ok(entries) -> find_env(entries, name <> "=")
     Error(_) -> option.None
+  }
+}
+
+fn find_env(entries: List(String), prefix: String) -> Option(String) {
+  case entries {
+    [] -> option.None
+    [entry, ..rest] ->
+      case string.starts_with(entry, prefix) {
+        True -> option.Some(string.drop_start(entry, string.length(prefix)))
+        False -> find_env(rest, prefix)
+      }
   }
 }
