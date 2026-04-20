@@ -77,8 +77,9 @@ pub fn e2e_generate_module_test() {
   let assert True = string.contains(output, "import sqlight")
 
   // Write to output path
-  let output_path = project.output_path(sql_dir, option.None)
-  let assert True = string.ends_with(output_path, "sql.gleam")
+  let output_dir = option.Some(base <> "/src/generated/sql")
+  let output_path = project.output_path(sql_dir, output_dir)
+  let assert True = string.ends_with(output_path, "_sql.gleam")
 
   // Cleanup
   let assert Ok(_) = simplifile.delete(base)
@@ -211,7 +212,8 @@ pub fn e2e_check_stale_detection_test() {
       }
     })
 
-  let output_path = project.output_path(sql_dir, option.None)
+  let output_dir = option.Some(base <> "/src/generated/sql")
+  let output_path = project.output_path(sql_dir, output_dir)
   let expected = codegen.generate_module(queries)
 
   // Before writing: output file doesn't exist, should be stale
@@ -221,7 +223,14 @@ pub fn e2e_check_stale_detection_test() {
   let assert True = expected != current_before
 
   // Write the generated output
-  let parent = base <> "/src/app"
+  let parent =
+    output_path
+    |> string.split("/")
+    |> list.reverse
+    |> list.rest
+    |> result.unwrap([])
+    |> list.reverse
+    |> string.join("/")
   let assert Ok(_) = simplifile.create_directory_all(parent)
   let assert Ok(_) = simplifile.write(output_path, expected)
 
@@ -284,7 +293,7 @@ pub fn e2e_configured_output_dir_test() {
   let output_path = project.output_path(sql_dir, option.Some(output_dir))
   // Common prefix is "test_e2e_tmp2/src/", relative is "app/sql",
   // strip trailing /sql -> "app"
-  let expected = output_dir <> "/" <> "app.gleam"
+  let expected = output_dir <> "/" <> "app_sql.gleam"
   let assert True = output_path == expected
 
   // Cleanup

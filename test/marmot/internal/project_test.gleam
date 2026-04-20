@@ -124,21 +124,26 @@ pub fn parse_config_flag_without_value_test() {
 }
 
 pub fn output_path_default_test() {
-  let assert "src/app/sql.gleam" =
+  let assert "src/generated/sql/app_sql.gleam" =
     project.output_path("src/app/sql", option.None)
+}
+
+pub fn output_path_default_nested_test() {
+  let assert "src/generated/sql/app/users_sql.gleam" =
+    project.output_path("src/app/users/sql", option.None)
 }
 
 pub fn output_path_common_prefix_test() {
   // output and sql_dir share "src/", so relative is "app/accounts/sql",
   // strip trailing /sql -> "app/accounts"
-  let assert "src/generated/app/accounts.gleam" =
+  let assert "src/generated/app/accounts_sql.gleam" =
     project.output_path("src/app/accounts/sql", option.Some("src/generated"))
 }
 
 pub fn output_path_deeper_common_prefix_test() {
   // output and sql_dir share "src/server/", so relative is "accounts/sql",
   // strip trailing /sql -> "accounts"
-  let assert "src/server/generated/sql/accounts.gleam" =
+  let assert "src/server/generated/sql/accounts_sql.gleam" =
     project.output_path(
       "src/server/accounts/sql",
       option.Some("src/server/generated/sql"),
@@ -146,7 +151,7 @@ pub fn output_path_deeper_common_prefix_test() {
 }
 
 pub fn output_path_nested_entity_test() {
-  let assert "src/server/generated/sql/admin/orders.gleam" =
+  let assert "src/server/generated/sql/admin/orders_sql.gleam" =
     project.output_path(
       "src/server/admin/orders/sql",
       option.Some("src/server/generated/sql"),
@@ -154,7 +159,7 @@ pub fn output_path_nested_entity_test() {
 }
 
 pub fn output_path_trailing_slash_on_output_test() {
-  let assert "src/server/generated/sql/accounts.gleam" =
+  let assert "src/server/generated/sql/accounts_sql.gleam" =
     project.output_path(
       "src/server/accounts/sql",
       option.Some("src/server/generated/sql/"),
@@ -165,14 +170,14 @@ pub fn output_path_multi_dir_no_collision_test() {
   let path1 = project.output_path("src/users/sql", option.Some("src/generated"))
   let path2 = project.output_path("src/posts/sql", option.Some("src/generated"))
   let assert True = path1 != path2
-  let assert "src/generated/users.gleam" = path1
-  let assert "src/generated/posts.gleam" = path2
+  let assert "src/generated/users_sql.gleam" = path1
+  let assert "src/generated/posts_sql.gleam" = path2
 }
 
 pub fn output_path_single_sql_dir_test() {
   // When there's just src/sql and an output dir, the sql_dir relative to the
   // common prefix is just "sql", which gets stripped, yielding no entity path.
-  let assert "src/generated.gleam" =
+  let assert "src/generated_sql.gleam" =
     project.output_path("src/sql", option.Some("src/generated"))
 }
 

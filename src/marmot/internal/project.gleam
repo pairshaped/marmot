@@ -130,34 +130,36 @@ pub fn list_sql_files(dir: String) -> List(String) {
 
 /// Determine the output path for a sql/ directory.
 ///
-/// - No `output`: sibling of the sql/ directory
-///   (e.g., `src/app/sql` -> `src/app/sql.gleam`).
-/// - With `output`: find the longest common directory prefix between `output`
-///   and `sql_dir`, strip it from `sql_dir`, strip trailing `/sql`, then join
-///   with `output` (e.g., `src/app/accounts/sql` with output `src/generated`
-///   -> `src/generated/app/accounts.gleam`).
+/// Defaults to `src/generated/sql` when no output is configured.
+/// Finds the longest common directory prefix between the output dir and
+/// `sql_dir`, strips it from `sql_dir`, strips trailing `/sql`, then joins
+/// with the output dir and appends `_sql.gleam`.
+///
+/// Examples:
+///   - `src/app/users/sql` -> `src/generated/sql/users_sql.gleam`
+///   - `src/server/accounts/sql` with output `src/server/generated/sql`
+///     -> `src/server/generated/sql/accounts_sql.gleam`
 pub fn output_path(sql_dir: String, configured_output: Option(String)) -> String {
-  case configured_output {
-    option.None -> sql_dir <> ".gleam"
-    option.Some(output) -> {
-      let trimmed = case string.ends_with(output, "/") {
-        True -> string.drop_end(output, 1)
-        False -> output
-      }
-      let output_parts = string.split(trimmed, "/")
-      let sql_parts = string.split(sql_dir, "/")
-      let common_len = common_prefix_length(output_parts, sql_parts, 0)
-      let relative = list.drop(sql_parts, common_len)
-      let entity_parts = case list.last(relative) {
-        Ok("sql") -> list.take(relative, list.length(relative) - 1)
-        _ -> relative
-      }
-      let entity_path = string.join(entity_parts, "/")
-      case entity_path {
-        "" -> trimmed <> ".gleam"
-        path -> trimmed <> "/" <> path <> ".gleam"
-      }
-    }
+  let output = case configured_output {
+    option.Some(o) -> o
+    option.None -> "src/generated/sql"
+  }
+  let trimmed = case string.ends_with(output, "/") {
+    True -> string.drop_end(output, 1)
+    False -> output
+  }
+  let output_parts = string.split(trimmed, "/")
+  let sql_parts = string.split(sql_dir, "/")
+  let common_len = common_prefix_length(output_parts, sql_parts, 0)
+  let relative = list.drop(sql_parts, common_len)
+  let entity_parts = case list.last(relative) {
+    Ok("sql") -> list.take(relative, list.length(relative) - 1)
+    _ -> relative
+  }
+  let entity_path = string.join(entity_parts, "/")
+  case entity_path {
+    "" -> trimmed <> "_sql.gleam"
+    path -> trimmed <> "/" <> path <> "_sql.gleam"
   }
 }
 
