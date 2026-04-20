@@ -676,3 +676,31 @@ pub fn introspect_rank_returns_int_test() {
     Column(name: "rk", column_type: IntType, nullable: False),
   ] = result.columns
 }
+
+pub fn introspect_order_by_with_sorter_resolves_columns_correctly_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE items (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name_en TEXT NOT NULL,
+        name_fr TEXT NOT NULL
+      )",
+      on: db,
+    )
+  // ORDER BY on a non-indexed text column forces SQLite to use a sorter.
+  // The sorter-fill phase writes to result registers, then the output phase
+  // re-reads into the same/different registers. Before the fix,
+  // find_column_for_register picked the wrong producer (the SorterInsert
+  // write), causing column types and nullability to resolve incorrectly.
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id, name_en, name_fr FROM items ORDER BY name_fr",
+    )
+  let assert [
+    Column(name: "id", column_type: IntType, nullable: False),
+    Column(name: "name_en", column_type: StringType, nullable: False),
+    Column(name: "name_fr", column_type: StringType, nullable: False),
+  ] = result.columns
+}
