@@ -148,7 +148,10 @@ fn generate_imports(
   query_function: Option(QueryFunctionConfig),
 ) -> String {
   let needs_option =
-    list.any(queries, fn(q) { list.any(q.columns, fn(c) { c.nullable }) })
+    list.any(queries, fn(q) {
+      list.any(q.columns, fn(c) { c.nullable })
+      || list.any(q.parameters, fn(p) { p.nullable })
+    })
   let needs_timestamp =
     list.any(queries, fn(q) {
       list.any(q.columns, fn(c) { c.column_type == TimestampType })
@@ -280,7 +283,12 @@ fn generate_param_list(params: List(Parameter)) -> String {
       params
       |> list.map(fn(p) {
         let name = sanitize_name(p.name)
-        ", " <> name <> " " <> name <> ": " <> query.gleam_type(p.column_type)
+        let base_type = query.gleam_type(p.column_type)
+        let type_str = case p.nullable {
+          True -> "Option(" <> base_type <> ")"
+          False -> base_type
+        }
+        ", " <> name <> " " <> name <> ": " <> type_str
       })
       |> string.join("")
   }
@@ -288,25 +296,49 @@ fn generate_param_list(params: List(Parameter)) -> String {
 
 fn generate_with_args(params: List(Parameter)) -> String {
   params
-  |> list.map(fn(p) { sqlight_encoder(sanitize_name(p.name), p.column_type) })
+  |> list.map(fn(p) {
+    sqlight_encoder(sanitize_name(p.name), p.column_type, p.nullable)
+  })
   |> string.join(", ")
 }
 
-fn sqlight_encoder(name: String, col_type: ColumnType) -> String {
-  case col_type {
-    IntType -> "sqlight.int(" <> name <> ")"
-    FloatType -> "sqlight.float(" <> name <> ")"
-    StringType -> "sqlight.text(" <> name <> ")"
-    BitArrayType -> "sqlight.blob(" <> name <> ")"
-    BoolType -> "sqlight.bool(" <> name <> ")"
-    TimestampType -> {
-      "sqlight.int(timestamp_to_int(" <> name <> "))"
-    }
-    DateType -> {
-      // Convert Date to ISO 8601 text for storage
-      // Generated code will need a date_to_string helper
-      "sqlight.text(date_to_string(" <> name <> "))"
-    }
+fn sqlight_encoder(name: String, col_type: ColumnType, nullable: Bool) -> String {
+  let base_fn = case col_type {
+    IntType -> "sqlight.int"
+    FloatType -> "sqlight.float"
+    StringType -> "sqlight.text"
+    BitArrayType -> "sqlight.blob"
+    BoolType -> "sqlight.bool"
+    TimestampType -> "sqlight.int"
+    DateType -> "sqlight.text"
+  }
+  let value_expr = case col_type {
+    TimestampType -> "timestamp_to_int(" <> name <> ")"
+    DateType -> "date_to_string(" <> name <> ")"
+    _ -> name
+  }
+  case nullable {
+    True ->
+      // sqlight.nullable(encoder, Option(T)) — but the encoder takes T,
+      // not the timestamp/date-converted value. For nullable Timestamp/Date
+      // we need to map before passing: option.map(ts, timestamp_to_int)
+      // then sqlight.nullable(sqlight.int, ...).
+      case col_type {
+        TimestampType ->
+          "sqlight.nullable(sqlight.int, option.map("
+          <> name
+          <> ", timestamp_to_int))"
+        DateType ->
+          "sqlight.nullable(sqlight.text, option.map("
+          <> name
+          <> ", date_to_string))"
+        _ -> "sqlight.nullable(" <> base_fn <> ", " <> name <> ")"
+      }
+    False ->
+      case col_type {
+        TimestampType | DateType -> base_fn <> "(" <> value_expr <> ")"
+        _ -> base_fn <> "(" <> name <> ")"
+      }
   }
 }
 

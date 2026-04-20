@@ -12,7 +12,9 @@ pub fn codegen_select_single_param_test() {
       name: "find_user",
       sql: "SELECT id, username, email FROM users WHERE username = ?",
       path: "src/app/sql/find_user.sql",
-      parameters: [Parameter(name: "username", column_type: StringType)],
+      parameters: [
+        Parameter(name: "username", column_type: StringType, nullable: False),
+      ],
       columns: [
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "username", column_type: StringType, nullable: False),
@@ -45,7 +47,7 @@ pub fn codegen_select_nullable_test() {
       name: "find_user_bio",
       sql: "SELECT id, username, bio FROM users WHERE id = ?",
       path: "src/app/sql/find_user_bio.sql",
-      parameters: [Parameter(name: "id", column_type: IntType)],
+      parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "username", column_type: StringType, nullable: False),
@@ -62,7 +64,7 @@ pub fn codegen_select_timestamp_test() {
       name: "find_user",
       sql: "SELECT id, created_at FROM users WHERE id = ?",
       path: "src/app/sql/find_user.sql",
-      parameters: [Parameter(name: "id", column_type: IntType)],
+      parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "created_at", column_type: TimestampType, nullable: False),
@@ -78,7 +80,7 @@ pub fn codegen_select_date_test() {
       name: "find_event",
       sql: "SELECT id, event_date FROM events WHERE id = ?",
       path: "src/app/sql/find_event.sql",
-      parameters: [Parameter(name: "id", column_type: IntType)],
+      parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "event_date", column_type: DateType, nullable: False),
@@ -110,7 +112,7 @@ pub fn codegen_select_float_test() {
       name: "find_product",
       sql: "SELECT id, price FROM products WHERE id = ?",
       path: "src/app/sql/find_product.sql",
-      parameters: [Parameter(name: "id", column_type: IntType)],
+      parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "price", column_type: FloatType, nullable: False),
@@ -126,7 +128,7 @@ pub fn codegen_select_blob_test() {
       name: "find_avatar",
       sql: "SELECT id, avatar FROM users WHERE id = ?",
       path: "src/app/sql/find_avatar.sql",
-      parameters: [Parameter(name: "id", column_type: IntType)],
+      parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "avatar", column_type: BitArrayType, nullable: False),
@@ -143,8 +145,8 @@ pub fn codegen_insert_returning_test() {
       sql: "INSERT INTO users (username, email) VALUES (?, ?) RETURNING id, created_at",
       path: "src/app/sql/create_user.sql",
       parameters: [
-        Parameter(name: "username", column_type: StringType),
-        Parameter(name: "email", column_type: StringType),
+        Parameter(name: "username", column_type: StringType, nullable: False),
+        Parameter(name: "email", column_type: StringType, nullable: False),
       ],
       columns: [
         Column(name: "id", column_type: IntType, nullable: False),
@@ -161,7 +163,7 @@ pub fn codegen_exec_no_return_test() {
       name: "delete_user",
       sql: "DELETE FROM users WHERE id = ?",
       path: "src/app/sql/delete_user.sql",
-      parameters: [Parameter(name: "id", column_type: IntType)],
+      parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [],
     )
   codegen.generate_function(q)
@@ -188,8 +190,8 @@ pub fn codegen_multiple_params_test() {
       sql: "SELECT id, name FROM users WHERE age > ? AND age < ?",
       path: "src/app/sql/find_users_by_age.sql",
       parameters: [
-        Parameter(name: "age_min", column_type: IntType),
-        Parameter(name: "age_max", column_type: IntType),
+        Parameter(name: "age_min", column_type: IntType, nullable: False),
+        Parameter(name: "age_max", column_type: IntType, nullable: False),
       ],
       columns: [
         Column(name: "id", column_type: IntType, nullable: False),
@@ -206,7 +208,7 @@ pub fn codegen_nullable_timestamp_test() {
       name: "find_user",
       sql: "SELECT id, deleted_at FROM users WHERE id = ?",
       path: "src/app/sql/find_user.sql",
-      parameters: [Parameter(name: "id", column_type: IntType)],
+      parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "deleted_at", column_type: TimestampType, nullable: True),
@@ -223,8 +225,12 @@ pub fn codegen_timestamp_param_test() {
       sql: "UPDATE users SET last_seen = ? WHERE id = ?",
       path: "src/app/sql/update_last_seen.sql",
       parameters: [
-        Parameter(name: "last_seen", column_type: TimestampType),
-        Parameter(name: "id", column_type: IntType),
+        Parameter(
+          name: "last_seen",
+          column_type: TimestampType,
+          nullable: False,
+        ),
+        Parameter(name: "id", column_type: IntType, nullable: False),
       ],
       columns: [],
     )
@@ -238,7 +244,7 @@ pub fn codegen_full_module_test() {
       name: "find_user",
       sql: "SELECT id, username FROM users WHERE id = ?",
       path: "src/app/sql/find_user.sql",
-      parameters: [Parameter(name: "id", column_type: IntType)],
+      parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "username", column_type: StringType, nullable: False),
@@ -248,7 +254,7 @@ pub fn codegen_full_module_test() {
       name: "delete_user",
       sql: "DELETE FROM users WHERE id = ?",
       path: "src/app/sql/delete_user.sql",
-      parameters: [Parameter(name: "id", column_type: IntType)],
+      parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [],
     ),
   ]
@@ -262,7 +268,7 @@ pub fn codegen_exec_only_module_test() {
       name: "delete_user",
       sql: "DELETE FROM users WHERE id = ?",
       path: "src/app/sql/delete_user.sql",
-      parameters: [Parameter(name: "id", column_type: IntType)],
+      parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [],
     ),
     Query(
@@ -283,7 +289,9 @@ pub fn codegen_reserved_word_column_test() {
       name: "find_by_type",
       sql: "SELECT id, type FROM items WHERE type = ?",
       path: "src/app/sql/find_by_type.sql",
-      parameters: [Parameter(name: "type", column_type: StringType)],
+      parameters: [
+        Parameter(name: "type", column_type: StringType, nullable: False),
+      ],
       columns: [
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "type", column_type: StringType, nullable: False),
@@ -300,8 +308,12 @@ pub fn codegen_timestamp_param_module_test() {
       sql: "UPDATE users SET last_seen = ? WHERE id = ?",
       path: "src/app/sql/update_last_seen.sql",
       parameters: [
-        Parameter(name: "last_seen", column_type: TimestampType),
-        Parameter(name: "id", column_type: IntType),
+        Parameter(
+          name: "last_seen",
+          column_type: TimestampType,
+          nullable: False,
+        ),
+        Parameter(name: "id", column_type: IntType, nullable: False),
       ],
       columns: [],
     ),
@@ -317,8 +329,8 @@ pub fn codegen_date_param_module_test() {
       sql: "INSERT INTO events (name, event_date) VALUES (?, ?)",
       path: "src/app/sql/create_event.sql",
       parameters: [
-        Parameter(name: "name", column_type: StringType),
-        Parameter(name: "event_date", column_type: DateType),
+        Parameter(name: "name", column_type: StringType, nullable: False),
+        Parameter(name: "event_date", column_type: DateType, nullable: False),
       ],
       columns: [],
     ),
@@ -333,7 +345,7 @@ pub fn codegen_date_and_timestamp_module_test() {
       name: "find_event",
       sql: "SELECT id, event_date FROM events WHERE id = ?",
       path: "src/app/sql/find_event.sql",
-      parameters: [Parameter(name: "id", column_type: IntType)],
+      parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "event_date", column_type: DateType, nullable: False),
@@ -344,8 +356,12 @@ pub fn codegen_date_and_timestamp_module_test() {
       sql: "UPDATE events SET last_seen = ? WHERE id = ?",
       path: "src/app/sql/update_last_seen.sql",
       parameters: [
-        Parameter(name: "last_seen", column_type: TimestampType),
-        Parameter(name: "id", column_type: IntType),
+        Parameter(
+          name: "last_seen",
+          column_type: TimestampType,
+          nullable: False,
+        ),
+        Parameter(name: "id", column_type: IntType, nullable: False),
       ],
       columns: [],
     ),
@@ -360,7 +376,7 @@ pub fn codegen_nullable_date_test() {
       name: "find_event",
       sql: "SELECT id, event_date FROM events WHERE id = ?",
       path: "src/app/sql/find_event.sql",
-      parameters: [Parameter(name: "id", column_type: IntType)],
+      parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "event_date", column_type: DateType, nullable: True),
@@ -376,7 +392,7 @@ pub fn codegen_date_module_test() {
       name: "find_event",
       sql: "SELECT id, event_date FROM events WHERE id = ?",
       path: "src/app/sql/find_event.sql",
-      parameters: [Parameter(name: "id", column_type: IntType)],
+      parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "event_date", column_type: DateType, nullable: False),
@@ -395,7 +411,7 @@ pub fn codegen_module_without_query_function_test() {
       name: "find_user",
       sql: "SELECT id, username FROM users WHERE id = ?",
       path: "src/app/sql/find_user.sql",
-      parameters: [Parameter(name: "id", column_type: IntType)],
+      parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "username", column_type: StringType, nullable: False),
@@ -405,7 +421,7 @@ pub fn codegen_module_without_query_function_test() {
       name: "delete_user",
       sql: "DELETE FROM users WHERE id = ?",
       path: "src/app/sql/delete_user.sql",
-      parameters: [Parameter(name: "id", column_type: IntType)],
+      parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [],
     ),
   ]
@@ -424,7 +440,7 @@ pub fn codegen_module_with_query_function_test() {
       name: "find_user",
       sql: "SELECT id, username FROM users WHERE id = ?",
       path: "src/app/sql/find_user.sql",
-      parameters: [Parameter(name: "id", column_type: IntType)],
+      parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "username", column_type: StringType, nullable: False),
@@ -434,7 +450,7 @@ pub fn codegen_module_with_query_function_test() {
       name: "delete_user",
       sql: "DELETE FROM users WHERE id = ?",
       path: "src/app/sql/delete_user.sql",
-      parameters: [Parameter(name: "id", column_type: IntType)],
+      parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [],
     ),
   ]

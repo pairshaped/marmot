@@ -1197,15 +1197,20 @@ fn extract_insert_parameters(
   case dict.get(table_schemas, table) {
     Ok(table_cols) ->
       list.map(columns, fn(col_name) {
-        let col_type =
-          list.find(table_cols, fn(c) { c.name == col_name })
-          |> result.map(fn(c: Column) { c.column_type })
-          |> result.unwrap(StringType)
-        Parameter(name: col_name, column_type: col_type)
+        case list.find(table_cols, fn(c) { c.name == col_name }) {
+          Ok(col) ->
+            Parameter(
+              name: col_name,
+              column_type: col.column_type,
+              nullable: col.nullable,
+            )
+          Error(_) ->
+            Parameter(name: col_name, column_type: StringType, nullable: False)
+        }
       })
     Error(_) ->
       list.map(columns, fn(col_name) {
-        Parameter(name: col_name, column_type: StringType)
+        Parameter(name: col_name, column_type: StringType, nullable: False)
       })
   }
 }
@@ -1223,15 +1228,20 @@ fn extract_update_parameters(
   case dict.get(table_schemas, table_name) {
     Ok(table_cols) ->
       list.map(all_cols, fn(col_name) {
-        let col_type =
-          list.find(table_cols, fn(c) { c.name == col_name })
-          |> result.map(fn(c: Column) { c.column_type })
-          |> result.unwrap(StringType)
-        Parameter(name: col_name, column_type: col_type)
+        case list.find(table_cols, fn(c) { c.name == col_name }) {
+          Ok(col) ->
+            Parameter(
+              name: col_name,
+              column_type: col.column_type,
+              nullable: col.nullable,
+            )
+          Error(_) ->
+            Parameter(name: col_name, column_type: StringType, nullable: False)
+        }
       })
     Error(_) ->
       list.map(all_cols, fn(col_name) {
-        Parameter(name: col_name, column_type: StringType)
+        Parameter(name: col_name, column_type: StringType, nullable: False)
       })
   }
 }
@@ -1286,12 +1296,23 @@ fn infer_parameter_type(
             Ok(table) ->
               case dict.get(pk_columns, table) {
                 Ok(pk_name) ->
-                  Parameter(name: pk_name, column_type: query.IntType)
-                Error(_) -> Parameter(name: "id", column_type: query.IntType)
+                  Parameter(
+                    name: pk_name,
+                    column_type: query.IntType,
+                    nullable: False,
+                  )
+                Error(_) ->
+                  Parameter(
+                    name: "id",
+                    column_type: query.IntType,
+                    nullable: False,
+                  )
               }
-            Error(_) -> Parameter(name: "id", column_type: query.IntType)
+            Error(_) ->
+              Parameter(name: "id", column_type: query.IntType, nullable: False)
           }
-        Error(_) -> Parameter(name: "param", column_type: StringType)
+        Error(_) ->
+          Parameter(name: "param", column_type: StringType, nullable: False)
       }
     }
   }
@@ -1327,7 +1348,8 @@ fn find_nearest_column_source(
   case best {
     Ok(cop) ->
       resolve_column_to_parameter(cop.p1, cop.p2, cursor_table, table_schemas)
-    Error(_) -> Parameter(name: "param", column_type: StringType)
+    Error(_) ->
+      Parameter(name: "param", column_type: StringType, nullable: False)
   }
 }
 
@@ -1343,12 +1365,20 @@ fn resolve_column_to_parameter(
       case dict.get(table_schemas, table_name) {
         Ok(table_cols) ->
           case list_at(table_cols, col_idx) {
-            Ok(col) -> Parameter(name: col.name, column_type: col.column_type)
-            Error(_) -> Parameter(name: "param", column_type: StringType)
+            Ok(col) ->
+              Parameter(
+                name: col.name,
+                column_type: col.column_type,
+                nullable: col.nullable,
+              )
+            Error(_) ->
+              Parameter(name: "param", column_type: StringType, nullable: False)
           }
-        Error(_) -> Parameter(name: "param", column_type: StringType)
+        Error(_) ->
+          Parameter(name: "param", column_type: StringType, nullable: False)
       }
-    Error(_) -> Parameter(name: "param", column_type: StringType)
+    Error(_) ->
+      Parameter(name: "param", column_type: StringType, nullable: False)
   }
 }
 
@@ -1648,16 +1678,20 @@ fn get_table_metadata(
       Ok(rows) -> {
         let columns =
           list.map(rows, fn(row) {
-            let #(col_name, type_str, notnull, _) = row
+            let #(col_name, type_str, notnull, pk) = row
             let column_type = case query.parse_sqlite_type(type_str) {
               Ok(t) -> t
               Error(_) -> StringType
             }
-            Column(
-              name: col_name,
-              column_type: column_type,
-              nullable: notnull == 0,
-            )
+            // SQLite quirk: INTEGER PRIMARY KEY columns have notnull=0 in
+            // PRAGMA output because they're rowid aliases (which auto-assign
+            // on INSERT), but they're always NOT NULL at read time. Force
+            // nullable=False for single-column integer primary keys.
+            let nullable = case pk > 0, column_type {
+              True, query.IntType -> False
+              _, _ -> notnull == 0
+            }
+            Column(name: col_name, column_type: column_type, nullable: nullable)
           })
         let schemas = dict.insert(schemas, table_name, columns)
         let pks = case list.find(rows, fn(row) { row.3 > 0 }) {

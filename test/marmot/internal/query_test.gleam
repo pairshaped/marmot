@@ -84,7 +84,7 @@ pub fn query_has_return_columns_test() {
       name: "find_user",
       sql: "SELECT id FROM users WHERE id = ?",
       path: "src/app/sql/find_user.sql",
-      parameters: [Parameter(name: "id", column_type: IntType)],
+      parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [Column(name: "id", column_type: IntType, nullable: False)],
     )
   let assert True = query.has_return_columns(q)
@@ -128,7 +128,7 @@ pub fn query_has_no_return_columns_test() {
       name: "delete_user",
       sql: "DELETE FROM users WHERE id = ?",
       path: "src/app/sql/delete_user.sql",
-      parameters: [Parameter(name: "id", column_type: IntType)],
+      parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [],
     )
   let assert False = query.has_return_columns(q)

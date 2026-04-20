@@ -16,7 +16,7 @@ pub type Column {
 }
 
 pub type Parameter {
-  Parameter(name: String, column_type: ColumnType)
+  Parameter(name: String, column_type: ColumnType, nullable: Bool)
 }
 
 pub type Query {

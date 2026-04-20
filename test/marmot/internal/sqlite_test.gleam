@@ -80,8 +80,9 @@ pub fn introspect_query_select_test() {
     Column(name: "id", column_type: IntType, nullable: False),
     Column(name: "username", column_type: StringType, nullable: False),
   ] = result.columns
-  let assert [Parameter(name: "email", column_type: StringType)] =
-    result.parameters
+  let assert [
+    Parameter(name: "email", column_type: StringType, nullable: False),
+  ] = result.parameters
 }
 
 pub fn introspect_query_insert_returning_test() {
@@ -105,8 +106,8 @@ pub fn introspect_query_insert_returning_test() {
     Column(name: "created_at", column_type: TimestampType, nullable: False),
   ] = result.columns
   let assert [
-    Parameter(name: "username", column_type: StringType),
-    Parameter(name: "created_at", column_type: TimestampType),
+    Parameter(name: "username", column_type: StringType, nullable: False),
+    Parameter(name: "created_at", column_type: TimestampType, nullable: False),
   ] = result.parameters
 }
 
@@ -120,7 +121,8 @@ pub fn introspect_query_no_return_test() {
   let assert Ok(result) =
     sqlite.introspect_query(db, "DELETE FROM users WHERE id = ?")
   let assert [] = result.columns
-  let assert [Parameter(name: "id", column_type: IntType)] = result.parameters
+  let assert [Parameter(name: "id", column_type: IntType, nullable: False)] =
+    result.parameters
 }
 
 pub fn introspect_query_no_params_test() {
@@ -156,8 +158,8 @@ pub fn introspect_query_multiple_params_test() {
       "SELECT id FROM users WHERE name = ? AND age > ?",
     )
   let assert [
-    Parameter(name: "name", column_type: StringType),
-    Parameter(name: "age", column_type: IntType),
+    Parameter(name: "name", column_type: StringType, nullable: False),
+    Parameter(name: "age", column_type: IntType, nullable: False),
   ] = result.parameters
 }
 
@@ -194,8 +196,8 @@ pub fn introspect_query_update_no_return_test() {
     sqlite.introspect_query(db, "UPDATE users SET name = ? WHERE id = ?")
   let assert [] = result.columns
   let assert [
-    Parameter(name: "name", column_type: StringType),
-    Parameter(name: "id", column_type: IntType),
+    Parameter(name: "name", column_type: StringType, nullable: False),
+    Parameter(name: "id", column_type: IntType, nullable: False),
   ] = result.parameters
 }
 
@@ -223,8 +225,9 @@ pub fn introspect_subquery_in_where_test() {
     )
   // EXPLAIN-based inference works: finds the comparison context
   let assert [Column(name: "id", ..), Column(name: "name", ..)] = result.columns
-  let assert [Parameter(name: "reason", column_type: StringType)] =
-    result.parameters
+  let assert [
+    Parameter(name: "reason", column_type: StringType, nullable: False),
+  ] = result.parameters
 }
 
 // This demonstrates the string-parsing limitation:
@@ -276,8 +279,8 @@ pub fn introspect_query_mixed_case_where_test() {
     )
   let assert 2 = list.length(result.parameters)
   let assert [
-    Parameter(name: "name", column_type: StringType),
-    Parameter(name: "age", column_type: IntType),
+    Parameter(name: "name", column_type: StringType, nullable: False),
+    Parameter(name: "age", column_type: IntType, nullable: False),
   ] = result.parameters
 }
 
@@ -381,8 +384,8 @@ pub fn introspect_where_no_spaces_test() {
   let assert Ok(result) =
     sqlite.introspect_query(db, "UPDATE users SET name=? WHERE id=?")
   let assert [
-    Parameter(name: "name", column_type: StringType),
-    Parameter(name: "id", column_type: IntType),
+    Parameter(name: "name", column_type: StringType, nullable: False),
+    Parameter(name: "id", column_type: IntType, nullable: False),
   ] = result.parameters
 }
 
@@ -417,8 +420,8 @@ pub fn introspect_table_named_asset_test() {
   let assert Ok(result) =
     sqlite.introspect_query(db, "UPDATE asset SET value = ? WHERE id = ?")
   let assert [
-    Parameter(name: "value", column_type: FloatType),
-    Parameter(name: "id", column_type: IntType),
+    Parameter(name: "value", column_type: FloatType, nullable: False),
+    Parameter(name: "id", column_type: IntType, nullable: False),
   ] = result.parameters
 }
 
