@@ -379,9 +379,10 @@ Not Marmot's to fix.
 
 ## Differences from Squirrel
 
-Marmot is inspired by [Squirrel](https://github.com/giacomocavalieri/squirrel)
+Marmot is heavily inspired by [Squirrel](https://github.com/giacomocavalieri/squirrel)
 but has diverged in several ways:
 
+- **Target**: SQLite instead of Postgres.
 - **Output directory**: Marmot defaults to `src/generated/sql/` with a `_sql`
   filename suffix (e.g., `users_sql.gleam`). Squirrel places `sql.gleam` as a
   sibling of the `sql/` directory.
@@ -392,7 +393,9 @@ but has diverged in several ways:
   `-> Result(List(RowType), sqlight.Error)` return types.
 - **Formatting**: Generated code is run through `gleam format` automatically,
   so it never causes diffs when users run the formatter.
-- **Target**: SQLite instead of Postgres.
+- **Shared return types**: Queries in the same `sql/` directory can share a
+  single Row type and decoder via a `-- returns: EntityRow` annotation.
+  Eliminates adapter boilerplate when multiple queries return the same shape.
 
 ## Credits
 
@@ -400,7 +403,7 @@ Marmot's design, conventions, and approach are directly inspired by
 [Squirrel](https://github.com/giacomocavalieri/squirrel) by
 [Giacomo Cavalieri](https://github.com/giacomocavalieri).
 Squirrel targets Postgres with beautiful ergonomics. Marmot brings that same
-experience to SQLite. In fact, Marmot aims to be a 1:1 mirror of Squirrel's
+experience to SQLite. In fact, Marmot aims to be a near 1:1 mirror of Squirrel's
 syntax and conventions, so switching between the two should feel seamless.
 
 If you use Postgres, use Squirrel. If you use SQLite, use Marmot.
