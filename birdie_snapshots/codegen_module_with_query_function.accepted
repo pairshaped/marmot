@@ -1,0 +1,42 @@
+---
+version: 1.5.5
+title: codegen module with query_function
+file: ./test/marmot/internal/codegen_test.gleam
+test_name: codegen_module_with_query_function_test
+---
+import gleam/dynamic/decode
+import server/db
+import sqlight
+
+pub type FindUserRow {
+  FindUserRow(
+    id: Int,
+    username: String,
+  )
+}
+
+pub fn find_user(db db: sqlight.Connection, id id: Int) {
+  db.query(
+    "SELECT id, username FROM users WHERE id = ?",
+    on: db,
+    with: [sqlight.int(id)],
+    expecting: {
+      use id <- decode.field(0, decode.int)
+      use username <- decode.field(1, decode.string)
+      decode.success(FindUserRow(
+        id:,
+        username:,
+      ))
+    },
+  )
+}
+
+pub fn delete_user(db db: sqlight.Connection, id id: Int) {
+  db.query(
+    "DELETE FROM users WHERE id = ?",
+    on: db,
+    with: [sqlight.int(id)],
+    expecting: decode.success(Nil),
+  )
+}
+

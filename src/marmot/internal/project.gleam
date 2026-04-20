@@ -6,19 +6,26 @@ import simplifile
 import tom
 
 pub type Config {
-  Config(database: Option(String), output: Option(String))
+  Config(
+    database: Option(String),
+    output: Option(String),
+    query_function: Option(String),
+  )
 }
 
 /// Parse configuration from gleam.toml content, CLI args, and env var.
 /// Database precedence: env_database > CLI flags > gleam.toml > None
 /// Output precedence: CLI flags > gleam.toml > None
+/// Query function: gleam.toml only (no CLI flag — structural config)
 pub fn parse_config(
   toml_content: String,
   args: List(String),
   env_database: Option(String),
 ) -> Config {
   // Parse toml values
-  let #(toml_database, toml_output) = case tom.parse(toml_content) {
+  let #(toml_database, toml_output, toml_query_function) = case
+    tom.parse(toml_content)
+  {
     Ok(parsed) -> #(
       tom.get_string(parsed, ["marmot", "database"])
         |> result.map(option.Some)
@@ -26,8 +33,11 @@ pub fn parse_config(
       tom.get_string(parsed, ["marmot", "output"])
         |> result.map(option.Some)
         |> result.unwrap(option.None),
+      tom.get_string(parsed, ["marmot", "query_function"])
+        |> result.map(option.Some)
+        |> result.unwrap(option.None),
     )
-    Error(_) -> #(option.None, option.None)
+    Error(_) -> #(option.None, option.None, option.None)
   }
 
   // Parse CLI args
@@ -48,7 +58,7 @@ pub fn parse_config(
     option.None -> toml_output
   }
 
-  Config(database:, output:)
+  Config(database:, output:, query_function: toml_query_function)
 }
 
 type CliArgs {
@@ -65,7 +75,10 @@ fn parse_cli_args_loop(args: List(String), acc: CliArgs) -> CliArgs {
       case string.starts_with(value, "--") {
         True -> parse_cli_args_loop([value, ..rest], acc)
         False ->
-          parse_cli_args_loop(rest, CliArgs(..acc, database: option.Some(value)))
+          parse_cli_args_loop(
+            rest,
+            CliArgs(..acc, database: option.Some(value)),
+          )
       }
     ["--output", value, ..rest] ->
       case string.starts_with(value, "--") {

@@ -51,7 +51,8 @@ pub fn parse_sqlite_type(raw: String) -> Result(ColumnType, Nil) {
     "INTEGER" | "INT" | "BIGINT" | "SMALLINT" | "TINYINT" | "MEDIUMINT" ->
       Ok(IntType)
     "REAL" | "FLOAT" | "DOUBLE" | "DECIMAL" | "NUMERIC" -> Ok(FloatType)
-    "TEXT" | "VARCHAR" | "CHAR" | "NVARCHAR" | "NCHAR" | "CLOB" -> Ok(StringType)
+    "TEXT" | "VARCHAR" | "CHAR" | "NVARCHAR" | "NCHAR" | "CLOB" ->
+      Ok(StringType)
     "BLOB" -> Ok(BitArrayType)
     "BOOLEAN" | "BOOL" -> Ok(BoolType)
     "TIMESTAMP" | "DATETIME" -> Ok(TimestampType)
@@ -96,24 +97,55 @@ pub fn sanitize_identifier(name: String) -> String {
 }
 
 fn is_identifier_char(c: String) -> Bool {
-  c == "_" || c == "a" || c == "b" || c == "c" || c == "d" || c == "e"
-  || c == "f" || c == "g" || c == "h" || c == "i" || c == "j" || c == "k"
-  || c == "l" || c == "m" || c == "n" || c == "o" || c == "p" || c == "q"
-  || c == "r" || c == "s" || c == "t" || c == "u" || c == "v" || c == "w"
-  || c == "x" || c == "y" || c == "z" || is_digit(c)
+  c == "_"
+  || c == "a"
+  || c == "b"
+  || c == "c"
+  || c == "d"
+  || c == "e"
+  || c == "f"
+  || c == "g"
+  || c == "h"
+  || c == "i"
+  || c == "j"
+  || c == "k"
+  || c == "l"
+  || c == "m"
+  || c == "n"
+  || c == "o"
+  || c == "p"
+  || c == "q"
+  || c == "r"
+  || c == "s"
+  || c == "t"
+  || c == "u"
+  || c == "v"
+  || c == "w"
+  || c == "x"
+  || c == "y"
+  || c == "z"
+  || is_digit(c)
 }
 
 fn is_digit(c: String) -> Bool {
-  c == "0" || c == "1" || c == "2" || c == "3" || c == "4"
-  || c == "5" || c == "6" || c == "7" || c == "8" || c == "9"
+  c == "0"
+  || c == "1"
+  || c == "2"
+  || c == "3"
+  || c == "4"
+  || c == "5"
+  || c == "6"
+  || c == "7"
+  || c == "8"
+  || c == "9"
 }
 
 /// Gleam reserved words that cannot be used as identifiers.
 /// See https://gleam.run/book/tour/reserved-words/
 const reserved_words = [
-  "as", "assert", "auto", "case", "const", "delegate", "derive", "echo",
-  "else", "external", "fn", "if", "implement", "import", "let", "macro",
-  "opaque", "panic", "pub", "test", "todo", "type", "use",
+  "as", "assert", "auto", "case", "const", "delegate", "derive", "echo", "else",
+  "external", "fn", "if", "implement", "import", "let", "macro", "opaque",
+  "panic", "pub", "test", "todo", "type", "use",
 ]
 
 pub fn safe_name(name: String) -> String {

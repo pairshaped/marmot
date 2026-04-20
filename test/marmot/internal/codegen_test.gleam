@@ -1,4 +1,5 @@
 import birdie
+import gleam/option
 import marmot/internal/codegen
 import marmot/internal/query.{
   BitArrayType, BoolType, Column, DateType, FloatType, IntType, Parameter, Query,
@@ -384,4 +385,59 @@ pub fn codegen_date_module_test() {
   ]
   codegen.generate_module(queries)
   |> birdie.snap(title: "codegen date module with helpers")
+}
+
+pub fn codegen_module_without_query_function_test() {
+  // Sanity: generate_module_with_config(queries, None) matches the default
+  // behaviour produced by generate_module — uses sqlight.query directly.
+  let queries = [
+    Query(
+      name: "find_user",
+      sql: "SELECT id, username FROM users WHERE id = ?",
+      path: "src/app/sql/find_user.sql",
+      parameters: [Parameter(name: "id", column_type: IntType)],
+      columns: [
+        Column(name: "id", column_type: IntType, nullable: False),
+        Column(name: "username", column_type: StringType, nullable: False),
+      ],
+    ),
+    Query(
+      name: "delete_user",
+      sql: "DELETE FROM users WHERE id = ?",
+      path: "src/app/sql/delete_user.sql",
+      parameters: [Parameter(name: "id", column_type: IntType)],
+      columns: [],
+    ),
+  ]
+  codegen.generate_module_with_config(queries, option.None)
+  |> birdie.snap(title: "codegen module without query_function")
+}
+
+pub fn codegen_module_with_query_function_test() {
+  // When query_function is set, generated code imports the wrapper module
+  // and routes calls through it (e.g., `db.query(...)` instead of
+  // `sqlight.query(...)`). `sqlight` is still imported for value encoders
+  // (`sqlight.int`, `sqlight.text`, etc.) and for the `sqlight.Connection`
+  // type on the `db` parameter.
+  let queries = [
+    Query(
+      name: "find_user",
+      sql: "SELECT id, username FROM users WHERE id = ?",
+      path: "src/app/sql/find_user.sql",
+      parameters: [Parameter(name: "id", column_type: IntType)],
+      columns: [
+        Column(name: "id", column_type: IntType, nullable: False),
+        Column(name: "username", column_type: StringType, nullable: False),
+      ],
+    ),
+    Query(
+      name: "delete_user",
+      sql: "DELETE FROM users WHERE id = ?",
+      path: "src/app/sql/delete_user.sql",
+      parameters: [Parameter(name: "id", column_type: IntType)],
+      columns: [],
+    ),
+  ]
+  codegen.generate_module_with_config(queries, option.Some("server/db.query"))
+  |> birdie.snap(title: "codegen module with query_function")
 }

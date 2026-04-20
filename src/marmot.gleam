@@ -60,9 +60,7 @@ fn with_database(
 }
 
 fn run_generate(args: List(String)) -> Nil {
-  with_database(args, fn(db, config) {
-    generate_all(db, config)
-  })
+  with_database(args, fn(db, config) { generate_all(db, config) })
 }
 
 fn generate_all(db: sqlight.Connection, config: project.Config) -> Nil {
@@ -92,9 +90,7 @@ fn generate_all(db: sqlight.Connection, config: project.Config) -> Nil {
           case success_count == list.length(dirs) {
             True ->
               io.println(
-                "Generated "
-                <> int.to_string(list.length(dirs))
-                <> " module(s)",
+                "Generated " <> int.to_string(list.length(dirs)) <> " module(s)",
               )
             False -> {
               io.println_error("error: Some files could not be written")
@@ -123,7 +119,8 @@ fn generate_for_directory(
       list.is_empty(sql_files)
     _ -> {
       let output = project.output_path(sql_dir, config.output)
-      let module_content = codegen.generate_module(queries)
+      let module_content =
+        codegen.generate_module_with_config(queries, config.query_function)
       case ensure_parent_dir(output) {
         Error(msg) -> {
           io.println_error("error: " <> msg)
@@ -190,9 +187,7 @@ fn process_sql_file(
   use name <- result.try(
     query.function_name(filename)
     |> result.map_error(fn(_) {
-      io.println_error(
-        error.to_string(error.InvalidFilename(path: file_path)),
-      )
+      io.println_error(error.to_string(error.InvalidFilename(path: file_path)))
       Nil
     }),
   )
@@ -265,8 +260,7 @@ fn do_check_semicolon(
             True ->
               // Check for escaped quote ''
               case string.pop_grapheme(rest) {
-                Ok(#("'", rest2)) ->
-                  do_check_semicolon(rest2, True, False)
+                Ok(#("'", rest2)) -> do_check_semicolon(rest2, True, False)
                 _ -> do_check_semicolon(rest, False, False)
               }
             False -> do_check_semicolon(rest, True, False)
@@ -284,8 +278,7 @@ fn do_check_semicolon(
         True -> do_check_semicolon(rest, in_single_quote, in_double_quote)
         False -> True
       }
-    Ok(#(_, rest)) ->
-      do_check_semicolon(rest, in_single_quote, in_double_quote)
+    Ok(#(_, rest)) -> do_check_semicolon(rest, in_single_quote, in_double_quote)
   }
 }
 
@@ -320,7 +313,8 @@ fn check_all(db: sqlight.Connection, config: project.Config) -> List(String) {
       [] -> Error(Nil)
       _ -> {
         let output = project.output_path(dir, config.output)
-        let expected = codegen.generate_module(queries)
+        let expected =
+          codegen.generate_module_with_config(queries, config.query_function)
         let current =
           simplifile.read(output)
           |> result.unwrap("")

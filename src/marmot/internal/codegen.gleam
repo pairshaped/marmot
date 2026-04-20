@@ -1,9 +1,67 @@
 import gleam/int
 import gleam/list
+import gleam/option.{type Option}
+import gleam/result
 import gleam/string
 import marmot/internal/query.{
   type Column, type ColumnType, type Parameter, type Query, BitArrayType,
   BoolType, DateType, FloatType, IntType, StringType, TimestampType,
+}
+
+/// Parsed `query_function` config, split into parts needed for codegen.
+///
+/// `module_path` is the full dotless import path (e.g., "server/db").
+/// `module_alias` is the last "/"-segment of the module path (e.g., "db").
+/// Gleam's default import brings a module into scope under that alias.
+/// `function` is the function name inside the module (e.g., "query").
+///
+/// Note on parameter naming: the generated query function has a labelled
+/// parameter named `db` (the sqlight connection). If `module_alias` is also
+/// "db" the generated code looks like `db.query(..., on: db, ...)`. Gleam's
+/// resolver disambiguates this correctly: `db.query` is a module-qualified
+/// call, while `on: db` references the parameter value. Verified by compile
+/// test at codegen design time.
+pub type QueryFunctionConfig {
+  QueryFunctionConfig(
+    module_path: String,
+    module_alias: String,
+    function: String,
+  )
+}
+
+/// Parse a `query_function` config string of the form "module/path.function".
+/// Returns `None` if input is `None` or malformed (no dot, empty parts).
+pub fn parse_query_function(raw: Option(String)) -> Option(QueryFunctionConfig) {
+  use value <- option_then(raw)
+  // Split on the LAST "." so module paths can't contain dots anyway, but be
+  // safe: "server/db.query" → #("server/db", "query").
+  case string.split(value, ".") {
+    [module_path, function] ->
+      case module_path, function {
+        "", _ -> option.None
+        _, "" -> option.None
+        _, _ -> {
+          let alias =
+            module_path
+            |> string.split("/")
+            |> list.last
+            |> result.unwrap(module_path)
+          option.Some(QueryFunctionConfig(
+            module_path: module_path,
+            module_alias: alias,
+            function: function,
+          ))
+        }
+      }
+    _ -> option.None
+  }
+}
+
+fn option_then(opt: Option(a), next: fn(a) -> Option(b)) -> Option(b) {
+  case opt {
+    option.Some(value) -> next(value)
+    option.None -> option.None
+  }
 }
 
 /// Sanitize a database column or parameter name for use in generated Gleam code.
@@ -12,17 +70,43 @@ fn sanitize_name(name: String) -> String {
 }
 
 /// Generate the complete Gleam source for a single query function,
-/// including its Row type if it has return columns.
+/// including its Row type if it has return columns. Uses `sqlight.query`
+/// directly.
 pub fn generate_function(q: Query) -> String {
+  generate_function_with_config(q, option.None)
+}
+
+/// Generate a complete module from a list of queries. Uses `sqlight.query`
+/// directly.
+pub fn generate_module(queries: List(Query)) -> String {
+  generate_module_with_config(queries, option.None)
+}
+
+/// Generate the complete Gleam source for a single query function.
+/// When `query_function` is set (e.g., `Some("server/db.query")`) the
+/// generated code calls through the configured wrapper function instead of
+/// `sqlight.query`.
+pub fn generate_function_with_config(
+  q: Query,
+  query_function: Option(String),
+) -> String {
+  let config = parse_query_function(query_function)
   case query.has_return_columns(q) {
-    True -> generate_row_type(q) <> "\n\n" <> generate_query_function(q)
-    False -> generate_exec_function(q)
+    True -> generate_row_type(q) <> "\n\n" <> generate_query_function(q, config)
+    False -> generate_exec_function(q, config)
   }
 }
 
 /// Generate a complete module from a list of queries.
-pub fn generate_module(queries: List(Query)) -> String {
-  let imports = generate_imports(queries)
+/// When `query_function` is set (e.g., `Some("server/db.query")`) the
+/// generated code calls through the configured wrapper function and adds the
+/// wrapper's `import` line.
+pub fn generate_module_with_config(
+  queries: List(Query),
+  query_function: Option(String),
+) -> String {
+  let config = parse_query_function(query_function)
+  let imports = generate_imports(queries, config)
   let needs_date_decoder =
     list.any(queries, fn(q) {
       list.any(q.columns, fn(c) { c.column_type == DateType })
@@ -54,12 +138,15 @@ pub fn generate_module(queries: List(Query)) -> String {
   }
   let functions =
     queries
-    |> list.map(generate_function)
+    |> list.map(fn(q) { generate_function_with_config(q, query_function) })
     |> string.join("\n\n")
   imports <> helpers <> "\n\n" <> functions <> "\n"
 }
 
-fn generate_imports(queries: List(Query)) -> String {
+fn generate_imports(
+  queries: List(Query),
+  query_function: Option(QueryFunctionConfig),
+) -> String {
   let needs_option =
     list.any(queries, fn(q) { list.any(q.columns, fn(c) { c.nullable }) })
   let needs_timestamp =
@@ -73,18 +160,27 @@ fn generate_imports(queries: List(Query)) -> String {
       || list.any(q.parameters, fn(p) { p.column_type == DateType })
     })
 
-  let imports = [
-    #(True, "import sqlight"),
-    #(True, "import gleam/dynamic/decode"),
-    #(needs_date, "import gleam/int"),
-    #(needs_option, "import gleam/option.{type Option}"),
-    #(needs_date, "import gleam/string"),
-    #(needs_timestamp, "import gleam/time/timestamp.{type Timestamp}"),
-    #(
-      needs_date,
-      "import gleam/time/calendar.{type Date, January, month_from_int, month_to_int}",
-    ),
-  ]
+  let wrapper_import = case query_function {
+    option.Some(cfg) -> [
+      #(True, "import " <> cfg.module_path),
+    ]
+    option.None -> []
+  }
+
+  let imports =
+    [
+      #(True, "import sqlight"),
+      #(True, "import gleam/dynamic/decode"),
+      #(needs_date, "import gleam/int"),
+      #(needs_option, "import gleam/option.{type Option}"),
+      #(needs_date, "import gleam/string"),
+      #(needs_timestamp, "import gleam/time/timestamp.{type Timestamp}"),
+      #(
+        needs_date,
+        "import gleam/time/calendar.{type Date, January, month_from_int, month_to_int}",
+      ),
+    ]
+    |> list.append(wrapper_import)
 
   imports
   |> list.filter(fn(i) { i.0 })
@@ -114,7 +210,17 @@ fn generate_row_type(q: Query) -> String {
   <> "\n  )\n}"
 }
 
-fn generate_query_function(q: Query) -> String {
+fn query_call(query_function: Option(QueryFunctionConfig)) -> String {
+  case query_function {
+    option.Some(cfg) -> cfg.module_alias <> "." <> cfg.function
+    option.None -> "sqlight.query"
+  }
+}
+
+fn generate_query_function(
+  q: Query,
+  query_function: Option(QueryFunctionConfig),
+) -> String {
   let params = generate_param_list(q.parameters)
   let with_args = generate_with_args(q.parameters)
   let decoder = generate_decoder(q)
@@ -123,7 +229,9 @@ fn generate_query_function(q: Query) -> String {
   <> "(db db: sqlight.Connection"
   <> params
   <> ") {\n"
-  <> "  sqlight.query(\n"
+  <> "  "
+  <> query_call(query_function)
+  <> "(\n"
   <> "    \""
   <> escape_sql(q.sql)
   <> "\",\n"
@@ -138,7 +246,10 @@ fn generate_query_function(q: Query) -> String {
   <> "}"
 }
 
-fn generate_exec_function(q: Query) -> String {
+fn generate_exec_function(
+  q: Query,
+  query_function: Option(QueryFunctionConfig),
+) -> String {
   let params = generate_param_list(q.parameters)
   let with_args = generate_with_args(q.parameters)
 
@@ -147,7 +258,9 @@ fn generate_exec_function(q: Query) -> String {
   <> "(db db: sqlight.Connection"
   <> params
   <> ") {\n"
-  <> "  sqlight.query(\n"
+  <> "  "
+  <> query_call(query_function)
+  <> "(\n"
   <> "    \""
   <> escape_sql(q.sql)
   <> "\",\n"

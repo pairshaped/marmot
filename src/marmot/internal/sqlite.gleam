@@ -599,8 +599,7 @@ fn infer_parameter_type(
               case dict.get(pk_columns, table) {
                 Ok(pk_name) ->
                   Parameter(name: pk_name, column_type: query.IntType)
-                Error(_) ->
-                  Parameter(name: "id", column_type: query.IntType)
+                Error(_) -> Parameter(name: "id", column_type: query.IntType)
               }
             Error(_) -> Parameter(name: "id", column_type: query.IntType)
           }
@@ -830,7 +829,11 @@ fn split_where_conditions(where_part: String) -> List(String) {
 }
 
 /// Case-insensitive keyword replacement
-fn replace_keyword_ci(input: String, keyword: String, replacement: String) -> String {
+fn replace_keyword_ci(
+  input: String,
+  keyword: String,
+  replacement: String,
+) -> String {
   let upper_input = string.uppercase(input)
   let upper_keyword = string.uppercase(keyword)
   replace_keyword_ci_loop(input, upper_input, upper_keyword, replacement, "")
@@ -848,8 +851,7 @@ fn replace_keyword_ci_loop(
       let before_len = string.length(before)
       let keyword_len = string.length(keyword)
       let original_before = string.slice(original, 0, before_len)
-      let original_after =
-        string.drop_start(original, before_len + keyword_len)
+      let original_after = string.drop_start(original, before_len + keyword_len)
       replace_keyword_ci_loop(
         original_after,
         after,
@@ -888,8 +890,7 @@ fn find_matching_close_paren(
 ) -> Result(String, Nil) {
   case string.pop_grapheme(s) {
     Error(_) -> Error(Nil)
-    Ok(#("(", rest)) ->
-      find_matching_close_paren(rest, depth + 1, acc <> "(")
+    Ok(#("(", rest)) -> find_matching_close_paren(rest, depth + 1, acc <> "(")
     Ok(#(")", rest)) ->
       case depth == 1 {
         True -> Ok(acc)
@@ -935,7 +936,9 @@ fn get_table_metadata(
 
     let pragma_sql =
       "PRAGMA table_info(\"" <> quote_identifier(table_name) <> "\")"
-    case sqlight.query(pragma_sql, on: db, with: [], expecting: pragma_decoder) {
+    case
+      sqlight.query(pragma_sql, on: db, with: [], expecting: pragma_decoder)
+    {
       Ok(rows) -> {
         let columns =
           list.map(rows, fn(row) {
@@ -979,18 +982,13 @@ fn deduplicate_params_loop(
       case dict.get(seen, p.name) {
         Ok(count) -> {
           let new_name = p.name <> "_" <> int.to_string(count + 1)
-          deduplicate_params_loop(
-            rest,
-            dict.insert(seen, p.name, count + 1),
-            [Parameter(..p, name: new_name), ..acc],
-          )
+          deduplicate_params_loop(rest, dict.insert(seen, p.name, count + 1), [
+            Parameter(..p, name: new_name),
+            ..acc
+          ])
         }
         Error(_) ->
-          deduplicate_params_loop(
-            rest,
-            dict.insert(seen, p.name, 1),
-            [p, ..acc],
-          )
+          deduplicate_params_loop(rest, dict.insert(seen, p.name, 1), [p, ..acc])
       }
   }
 }

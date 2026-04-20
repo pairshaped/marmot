@@ -222,8 +222,7 @@ pub fn introspect_subquery_in_where_test() {
       "SELECT id, name FROM users WHERE id IN (SELECT user_id FROM bans WHERE reason = ?)",
     )
   // EXPLAIN-based inference works: finds the comparison context
-  let assert [Column(name: "id", ..), Column(name: "name", ..)] =
-    result.columns
+  let assert [Column(name: "id", ..), Column(name: "name", ..)] = result.columns
   let assert [Parameter(name: "reason", column_type: StringType)] =
     result.parameters
 }
@@ -403,10 +402,8 @@ pub fn introspect_returning_alias_preserves_case_test() {
       "INSERT INTO users (name) VALUES (?) RETURNING id AS userId, name AS userName",
     )
   // Aliases should preserve original case, not be uppercased
-  let assert [
-    Column(name: "userId", ..),
-    Column(name: "userName", ..),
-  ] = result.columns
+  let assert [Column(name: "userId", ..), Column(name: "userName", ..)] =
+    result.columns
 }
 
 pub fn introspect_table_named_asset_test() {
