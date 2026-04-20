@@ -448,3 +448,28 @@ pub fn introspect_join_query_test() {
     Column(name: "title", column_type: StringType, nullable: False),
   ] = result.columns
 }
+
+pub fn debug_exists_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE item_features (
+        id INTEGER PRIMARY KEY,
+        item_id INTEGER NOT NULL,
+        field_key TEXT NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT EXISTS(SELECT 1 FROM item_features WHERE item_id = ? AND field_key = ?) AS has_feature",
+    )
+  let assert [
+    Column(name: "has_feature", column_type: IntType, nullable: False),
+  ] = result.columns
+  let assert [
+    Parameter(name: "item_id", column_type: IntType, nullable: False),
+    Parameter(name: "field_key", column_type: StringType, nullable: False),
+  ] = result.parameters
+}

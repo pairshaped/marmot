@@ -394,26 +394,86 @@ fn resolve_select_item(
 /// explicit CASTs. Falls back to StringType nullable.
 fn infer_expression_type(item: SelectItem) -> Column {
   let upper = string.uppercase(item.expression)
-  // COUNT(...) — always non-null Int
   case string.starts_with(upper, "COUNT(") {
     True ->
       Column(name: item.alias, column_type: query.IntType, nullable: False)
     False ->
-      // EXISTS(...) — always non-null Int (0 or 1)
       case string.starts_with(upper, "EXISTS(") {
         True ->
           Column(name: item.alias, column_type: query.IntType, nullable: False)
         False ->
-          // CAST(expr AS type) — type from target
           case string.starts_with(upper, "CAST(") {
             True -> infer_cast_type(item.alias, upper)
             False ->
-              // COALESCE(expr, literal) — recurse on first arg; if recursion
-              // can't infer, inspect for a numeric-literal default to decide
-              // type.
-              Column(name: item.alias, column_type: StringType, nullable: True)
+              case string.starts_with(upper, "COALESCE(") {
+                True -> infer_coalesce_type(item.alias, item.expression)
+                False ->
+                  case string.starts_with(upper, "SUM(") {
+                    True ->
+                      // SUM() can be NULL with no rows
+                      Column(
+                        name: item.alias,
+                        column_type: query.IntType,
+                        nullable: True,
+                      )
+                    False ->
+                      Column(
+                        name: item.alias,
+                        column_type: StringType,
+                        nullable: True,
+                      )
+                  }
+              }
           }
       }
+  }
+}
+
+/// When COALESCE's last argument is a literal, the result is non-null with
+/// that literal's inferred type. E.g., `COALESCE(SUM(x), 0)` → Int non-null.
+fn infer_coalesce_type(alias: String, expr: String) -> Column {
+  let inner = case string.split_once(expr, "(") {
+    Ok(#(_, after)) -> after
+    Error(_) -> expr
+  }
+  let inner = case string.ends_with(inner, ")") {
+    True -> string.drop_end(inner, 1)
+    False -> inner
+  }
+  let args = split_top_level_commas(inner)
+  case list.last(args) {
+    Error(_) -> Column(name: alias, column_type: StringType, nullable: True)
+    Ok(last_arg) -> {
+      let trimmed = string.trim(last_arg)
+      case infer_literal_type(trimmed) {
+        option.Some(t) -> Column(name: alias, column_type: t, nullable: False)
+        option.None ->
+          Column(name: alias, column_type: StringType, nullable: True)
+      }
+    }
+  }
+}
+
+fn infer_literal_type(s: String) -> option.Option(query.ColumnType) {
+  case string.first(s) {
+    Error(_) -> option.None
+    Ok("'") -> option.Some(StringType)
+    Ok(c) ->
+      case is_digit_char(c) || c == "-" {
+        True ->
+          case string.contains(s, ".") {
+            True -> option.Some(query.FloatType)
+            False -> option.Some(query.IntType)
+          }
+        False -> option.None
+      }
+  }
+}
+
+fn is_digit_char(c: String) -> Bool {
+  case c {
+    "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" -> True
+    _ -> False
   }
 }
 
@@ -484,12 +544,15 @@ fn parse_select_items(sql: String) -> List(SelectItem) {
       let end_idx = case find_top_level_from(after_select) {
         option.Some(idx) -> idx
         option.None -> {
-          let upper = string.uppercase(after_select)
+          // No top-level FROM (e.g. `SELECT EXISTS(...) AS alias`). The
+          // SELECT list ends at the next top-level WHERE/GROUP/ORDER/LIMIT,
+          // or at end of string. Use the same paren-aware scan so we don't
+          // truncate at a keyword that's inside a subquery.
           [
-            find_keyword_idx(upper, "WHERE"),
-            find_keyword_idx(upper, "GROUP BY"),
-            find_keyword_idx(upper, "ORDER BY"),
-            find_keyword_idx(upper, "LIMIT"),
+            do_find_top_level_keyword(after_select, " WHERE ", 0, 0),
+            do_find_top_level_keyword(after_select, " GROUP BY ", 0, 0),
+            do_find_top_level_keyword(after_select, " ORDER BY ", 0, 0),
+            do_find_top_level_keyword(after_select, " LIMIT ", 0, 0),
           ]
           |> list.filter_map(fn(x) {
             case x {
@@ -1272,10 +1335,30 @@ fn extract_insert_parameters(
 ) -> List(Parameter) {
   let columns = parse_insert_columns(sql)
   let table = parse_insert_table_name(sql)
+  // Parse the VALUES clause to find which positions have `?` placeholders
+  // vs literals. The INSERT column at position i corresponds to the i-th
+  // entry in VALUES(...); only the `?` entries become parameters.
+  let values_positions = parse_values_placeholder_positions(sql)
+  // Align column list with VALUES positions; keep only the ones bound
+  // to a `?`. If positions list is empty (no VALUES or parse failed),
+  // fall through with all columns and let the caller's count check
+  // trigger opcode fallback.
+  let bound_columns = case values_positions {
+    [] -> columns
+    _ ->
+      list.index_map(columns, fn(col_name, idx) { #(col_name, idx) })
+      |> list.filter_map(fn(pair) {
+        let #(col_name, idx) = pair
+        case list.contains(values_positions, idx) {
+          True -> Ok(col_name)
+          False -> Error(Nil)
+        }
+      })
+  }
 
   case dict.get(table_schemas, table) {
     Ok(table_cols) ->
-      list.map(columns, fn(col_name) {
+      list.map(bound_columns, fn(col_name) {
         case list.find(table_cols, fn(c) { c.name == col_name }) {
           Ok(col) ->
             Parameter(
@@ -1288,9 +1371,49 @@ fn extract_insert_parameters(
         }
       })
     Error(_) ->
-      list.map(columns, fn(col_name) {
+      list.map(bound_columns, fn(col_name) {
         Parameter(name: col_name, column_type: StringType, nullable: False)
       })
+  }
+}
+
+/// Parse the VALUES(...) clause and return the 0-based positions where
+/// a `?` placeholder appears. Used to align INSERT column names with
+/// the subset that's bound by a parameter.
+///
+/// For `VALUES (?, 0, 0, ?, ?)` returns `[0, 3, 4]`.
+fn parse_values_placeholder_positions(sql: String) -> List(Int) {
+  let upper = string.uppercase(sql)
+  case string.split_once(upper, " VALUES ") {
+    Error(_) -> []
+    Ok(#(before, _)) -> {
+      let offset = string.length(before) + 8
+      let rest = string.drop_start(sql, offset) |> string.trim_start
+      // Take content inside the outermost parens
+      case string.starts_with(rest, "(") {
+        False -> []
+        True -> {
+          let inner_and_rest = string.drop_start(rest, 1)
+          let inner = walk_matching_paren(inner_and_rest, 1)
+          // inner is now everything AFTER the matching ) — we want BEFORE
+          let inner_part =
+            string.slice(
+              inner_and_rest,
+              0,
+              string.length(inner_and_rest) - string.length(inner) - 1,
+            )
+          let parts = split_top_level_commas(inner_part)
+          list.index_map(parts, fn(part, idx) { #(part, idx) })
+          |> list.filter_map(fn(pair) {
+            let #(part, idx) = pair
+            case string.trim(part) {
+              "?" -> Ok(idx)
+              _ -> Error(Nil)
+            }
+          })
+        }
+      }
+    }
   }
 }
 
