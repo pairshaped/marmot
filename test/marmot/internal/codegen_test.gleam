@@ -20,6 +20,7 @@ pub fn codegen_select_single_param_test() {
         Column(name: "username", column_type: StringType, nullable: False),
         Column(name: "email", column_type: StringType, nullable: False),
       ],
+      custom_type_name: option.None,
     )
   codegen.generate_function(q)
   |> birdie.snap(title: "codegen select single param")
@@ -36,6 +37,7 @@ pub fn codegen_select_no_params_test() {
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "username", column_type: StringType, nullable: False),
       ],
+      custom_type_name: option.None,
     )
   codegen.generate_function(q)
   |> birdie.snap(title: "codegen select no params")
@@ -53,6 +55,7 @@ pub fn codegen_select_nullable_test() {
         Column(name: "username", column_type: StringType, nullable: False),
         Column(name: "bio", column_type: StringType, nullable: True),
       ],
+      custom_type_name: option.None,
     )
   codegen.generate_function(q)
   |> birdie.snap(title: "codegen select nullable column")
@@ -69,6 +72,7 @@ pub fn codegen_select_timestamp_test() {
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "created_at", column_type: TimestampType, nullable: False),
       ],
+      custom_type_name: option.None,
     )
   codegen.generate_function(q)
   |> birdie.snap(title: "codegen select with timestamp")
@@ -85,6 +89,7 @@ pub fn codegen_select_date_test() {
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "event_date", column_type: DateType, nullable: False),
       ],
+      custom_type_name: option.None,
     )
   codegen.generate_function(q)
   |> birdie.snap(title: "codegen select with date")
@@ -101,6 +106,7 @@ pub fn codegen_select_boolean_test() {
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "is_active", column_type: BoolType, nullable: False),
       ],
+      custom_type_name: option.None,
     )
   codegen.generate_function(q)
   |> birdie.snap(title: "codegen select with boolean")
@@ -117,6 +123,7 @@ pub fn codegen_select_float_test() {
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "price", column_type: FloatType, nullable: False),
       ],
+      custom_type_name: option.None,
     )
   codegen.generate_function(q)
   |> birdie.snap(title: "codegen select with float")
@@ -133,6 +140,7 @@ pub fn codegen_select_blob_test() {
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "avatar", column_type: BitArrayType, nullable: False),
       ],
+      custom_type_name: option.None,
     )
   codegen.generate_function(q)
   |> birdie.snap(title: "codegen select with blob")
@@ -152,6 +160,7 @@ pub fn codegen_insert_returning_test() {
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "created_at", column_type: TimestampType, nullable: False),
       ],
+      custom_type_name: option.None,
     )
   codegen.generate_function(q)
   |> birdie.snap(title: "codegen insert returning")
@@ -165,6 +174,7 @@ pub fn codegen_exec_no_return_test() {
       path: "src/app/sql/delete_user.sql",
       parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [],
+      custom_type_name: option.None,
     )
   codegen.generate_function(q)
   |> birdie.snap(title: "codegen exec no return")
@@ -178,6 +188,7 @@ pub fn codegen_exec_no_params_test() {
       path: "src/app/sql/delete_all_users.sql",
       parameters: [],
       columns: [],
+      custom_type_name: option.None,
     )
   codegen.generate_function(q)
   |> birdie.snap(title: "codegen exec no params")
@@ -197,6 +208,7 @@ pub fn codegen_multiple_params_test() {
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "name", column_type: StringType, nullable: False),
       ],
+      custom_type_name: option.None,
     )
   codegen.generate_function(q)
   |> birdie.snap(title: "codegen multiple params")
@@ -213,6 +225,7 @@ pub fn codegen_nullable_timestamp_test() {
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "deleted_at", column_type: TimestampType, nullable: True),
       ],
+      custom_type_name: option.None,
     )
   codegen.generate_function(q)
   |> birdie.snap(title: "codegen nullable timestamp")
@@ -233,6 +246,7 @@ pub fn codegen_timestamp_param_test() {
         Parameter(name: "id", column_type: IntType, nullable: False),
       ],
       columns: [],
+      custom_type_name: option.None,
     )
   codegen.generate_function(q)
   |> birdie.snap(title: "codegen timestamp parameter")
@@ -249,6 +263,7 @@ pub fn codegen_full_module_test() {
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "username", column_type: StringType, nullable: False),
       ],
+      custom_type_name: option.None,
     ),
     Query(
       name: "delete_user",
@@ -256,6 +271,7 @@ pub fn codegen_full_module_test() {
       path: "src/app/sql/delete_user.sql",
       parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [],
+      custom_type_name: option.None,
     ),
   ]
   codegen.generate_module(queries)
@@ -270,6 +286,7 @@ pub fn codegen_exec_only_module_test() {
       path: "src/app/sql/delete_user.sql",
       parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [],
+      custom_type_name: option.None,
     ),
     Query(
       name: "delete_all_posts",
@@ -277,6 +294,7 @@ pub fn codegen_exec_only_module_test() {
       path: "src/app/sql/delete_all_posts.sql",
       parameters: [],
       columns: [],
+      custom_type_name: option.None,
     ),
   ]
   codegen.generate_module(queries)
@@ -296,6 +314,7 @@ pub fn codegen_reserved_word_column_test() {
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "type", column_type: StringType, nullable: False),
       ],
+      custom_type_name: option.None,
     )
   codegen.generate_function(q)
   |> birdie.snap(title: "codegen reserved word column")
@@ -316,6 +335,7 @@ pub fn codegen_timestamp_param_module_test() {
         Parameter(name: "id", column_type: IntType, nullable: False),
       ],
       columns: [],
+      custom_type_name: option.None,
     ),
   ]
   codegen.generate_module(queries)
@@ -333,6 +353,7 @@ pub fn codegen_date_param_module_test() {
         Parameter(name: "event_date", column_type: DateType, nullable: False),
       ],
       columns: [],
+      custom_type_name: option.None,
     ),
   ]
   codegen.generate_module(queries)
@@ -350,6 +371,7 @@ pub fn codegen_date_and_timestamp_module_test() {
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "event_date", column_type: DateType, nullable: False),
       ],
+      custom_type_name: option.None,
     ),
     Query(
       name: "update_last_seen",
@@ -364,6 +386,7 @@ pub fn codegen_date_and_timestamp_module_test() {
         Parameter(name: "id", column_type: IntType, nullable: False),
       ],
       columns: [],
+      custom_type_name: option.None,
     ),
   ]
   codegen.generate_module(queries)
@@ -381,6 +404,7 @@ pub fn codegen_nullable_date_test() {
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "event_date", column_type: DateType, nullable: True),
       ],
+      custom_type_name: option.None,
     )
   codegen.generate_function(q)
   |> birdie.snap(title: "codegen nullable date column")
@@ -397,6 +421,7 @@ pub fn codegen_date_module_test() {
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "event_date", column_type: DateType, nullable: False),
       ],
+      custom_type_name: option.None,
     ),
   ]
   codegen.generate_module(queries)
@@ -416,6 +441,7 @@ pub fn codegen_module_without_query_function_test() {
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "username", column_type: StringType, nullable: False),
       ],
+      custom_type_name: option.None,
     ),
     Query(
       name: "delete_user",
@@ -423,6 +449,7 @@ pub fn codegen_module_without_query_function_test() {
       path: "src/app/sql/delete_user.sql",
       parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [],
+      custom_type_name: option.None,
     ),
   ]
   codegen.generate_module_with_config(queries, option.None)
@@ -445,6 +472,7 @@ pub fn codegen_module_with_query_function_test() {
         Column(name: "id", column_type: IntType, nullable: False),
         Column(name: "username", column_type: StringType, nullable: False),
       ],
+      custom_type_name: option.None,
     ),
     Query(
       name: "delete_user",
@@ -452,6 +480,7 @@ pub fn codegen_module_with_query_function_test() {
       path: "src/app/sql/delete_user.sql",
       parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [],
+      custom_type_name: option.None,
     ),
   ]
   codegen.generate_module_with_config(queries, option.Some("server/db.query"))

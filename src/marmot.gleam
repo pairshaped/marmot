@@ -219,6 +219,7 @@ fn process_sql_file(
     path: file_path,
     parameters: query_info.parameters,
     columns: query_info.columns,
+    custom_type_name: option.None,
   ))
 }
 

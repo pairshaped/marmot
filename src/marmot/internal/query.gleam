@@ -1,4 +1,5 @@
 import gleam/list
+import gleam/option.{type Option}
 import gleam/string
 
 pub type ColumnType {
@@ -26,6 +27,7 @@ pub type Query {
     path: String,
     parameters: List(Parameter),
     columns: List(Column),
+    custom_type_name: Option(String),
   )
 }
 

@@ -1,3 +1,4 @@
+import gleam/option
 import marmot/internal/query.{
   BitArrayType, BoolType, Column, DateType, FloatType, IntType, Parameter, Query,
   StringType, TimestampType,
@@ -86,6 +87,7 @@ pub fn query_has_return_columns_test() {
       path: "src/app/sql/find_user.sql",
       parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [Column(name: "id", column_type: IntType, nullable: False)],
+      custom_type_name: option.None,
     )
   let assert True = query.has_return_columns(q)
 }
@@ -130,6 +132,7 @@ pub fn query_has_no_return_columns_test() {
       path: "src/app/sql/delete_user.sql",
       parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
       columns: [],
+      custom_type_name: option.None,
     )
   let assert False = query.has_return_columns(q)
 }

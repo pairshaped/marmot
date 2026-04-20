@@ -58,6 +58,7 @@ pub fn e2e_generate_module_test() {
                 path: file_path,
                 parameters: info.parameters,
                 columns: info.columns,
+                custom_type_name: option.None,
               ))
             }
             Error(_) -> Error(Nil)
@@ -143,6 +144,7 @@ pub fn e2e_multiple_sql_directories_test() {
                         path: file_path,
                         parameters: info.parameters,
                         columns: info.columns,
+                        custom_type_name: option.None,
                       ),
                     ]),
                   ))
@@ -204,6 +206,7 @@ pub fn e2e_check_stale_detection_test() {
                 path: file_path,
                 parameters: info.parameters,
                 columns: info.columns,
+                custom_type_name: option.None,
               ))
             }
             Error(_) -> Error(Nil)
@@ -264,6 +267,7 @@ pub fn e2e_check_stale_detection_test() {
                 path: file_path,
                 parameters: info.parameters,
                 columns: info.columns,
+                custom_type_name: option.None,
               ))
             }
             Error(_) -> Error(Nil)

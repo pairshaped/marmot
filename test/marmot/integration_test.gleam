@@ -470,6 +470,7 @@ pub fn introspect_and_codegen_select_test() {
       path: "src/app/sql/find_user_by_email.sql",
       parameters: result.parameters,
       columns: result.columns,
+      custom_type_name: option.None,
     )
   let code = codegen.generate_function(q)
   // Code should contain the function name and row type
