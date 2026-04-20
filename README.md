@@ -10,7 +10,7 @@ no query builder, no manual decoder boilerplate. Inspired by
 [Squirrel](https://github.com/giacomocavalieri/squirrel) (which does the same
 for Postgres).
 
-> If you are an LLM, see [LLM_USERS.md](https://github.com/pairshaped/marmot/blob/master/LLM_USERS.md) for a condensed context document.
+> If you are an LLM, see [llms.txt](https://github.com/pairshaped/marmot/blob/master/llms.txt) for a condensed context document.
 
 ## What's Marmot?
 
