@@ -77,7 +77,7 @@ pub fn e2e_generate_module_test() {
   let assert True = string.contains(output, "import sqlight")
 
   // Write to output path
-  let output_path = project.output_path(sql_dir, option.None)
+  let output_path = project.output_path(sql_dir, option.None, option.None)
   let assert True = string.ends_with(output_path, "sql.gleam")
 
   // Cleanup
@@ -211,7 +211,7 @@ pub fn e2e_check_stale_detection_test() {
       }
     })
 
-  let output_path = project.output_path(sql_dir, option.None)
+  let output_path = project.output_path(sql_dir, option.None, option.None)
   let expected = codegen.generate_module(queries)
 
   // Before writing: output file doesn't exist, should be stale
@@ -281,7 +281,8 @@ pub fn e2e_configured_output_dir_test() {
       "SELECT id FROM users WHERE id = ?",
     )
 
-  let output_path = project.output_path(sql_dir, option.Some(output_dir))
+  let output_path =
+    project.output_path(sql_dir, option.Some(output_dir), option.None)
   // Output filename is derived from the sql_dir path to avoid collisions
   let expected = output_dir <> "/" <> "test_e2e_tmp2_src_app_sql.gleam"
   let assert True = output_path == expected
