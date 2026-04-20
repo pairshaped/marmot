@@ -526,6 +526,20 @@ fn date_decoder() -> decode.Decoder(Date) {
 }"
 }
 
+/// Check whether two column lists match exactly: names, types, nullability,
+/// and order.
+pub fn columns_equal(a: List(Column), b: List(Column)) -> Bool {
+  case a, b {
+    [], [] -> True
+    [col_a, ..rest_a], [col_b, ..rest_b] ->
+      col_a.name == col_b.name
+      && col_a.column_type == col_b.column_type
+      && col_a.nullable == col_b.nullable
+      && columns_equal(rest_a, rest_b)
+    _, _ -> False
+  }
+}
+
 fn date_to_string_helper() -> String {
   "fn date_to_string(date: Date) -> String {
   let year_str = int.to_string(date.year) |> string.pad_start(4, \"0\")

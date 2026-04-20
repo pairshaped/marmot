@@ -486,3 +486,54 @@ pub fn codegen_module_with_query_function_test() {
   codegen.generate_module_with_config(queries, option.Some("server/db.query"))
   |> birdie.snap(title: "codegen module with query_function")
 }
+
+pub fn columns_equal_identical_test() {
+  let a = [
+    Column(name: "id", column_type: IntType, nullable: False),
+    Column(name: "name", column_type: StringType, nullable: False),
+  ]
+  let b = [
+    Column(name: "id", column_type: IntType, nullable: False),
+    Column(name: "name", column_type: StringType, nullable: False),
+  ]
+  let assert True = codegen.columns_equal(a, b)
+}
+
+pub fn columns_equal_different_name_test() {
+  let a = [Column(name: "id", column_type: IntType, nullable: False)]
+  let b = [Column(name: "pk", column_type: IntType, nullable: False)]
+  let assert False = codegen.columns_equal(a, b)
+}
+
+pub fn columns_equal_different_type_test() {
+  let a = [Column(name: "id", column_type: IntType, nullable: False)]
+  let b = [Column(name: "id", column_type: StringType, nullable: False)]
+  let assert False = codegen.columns_equal(a, b)
+}
+
+pub fn columns_equal_different_nullability_test() {
+  let a = [Column(name: "id", column_type: IntType, nullable: False)]
+  let b = [Column(name: "id", column_type: IntType, nullable: True)]
+  let assert False = codegen.columns_equal(a, b)
+}
+
+pub fn columns_equal_different_order_test() {
+  let a = [
+    Column(name: "id", column_type: IntType, nullable: False),
+    Column(name: "name", column_type: StringType, nullable: False),
+  ]
+  let b = [
+    Column(name: "name", column_type: StringType, nullable: False),
+    Column(name: "id", column_type: IntType, nullable: False),
+  ]
+  let assert False = codegen.columns_equal(a, b)
+}
+
+pub fn columns_equal_different_lengths_test() {
+  let a = [
+    Column(name: "id", column_type: IntType, nullable: False),
+    Column(name: "name", column_type: StringType, nullable: False),
+  ]
+  let b = [Column(name: "id", column_type: IntType, nullable: False)]
+  let assert False = codegen.columns_equal(a, b)
+}
