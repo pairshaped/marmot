@@ -44,7 +44,9 @@ fn classify_statement(sql: String) -> StatementType {
   }
 }
 
-/// Introspect columns of a table using PRAGMA table_info
+/// Introspect columns of a table using PRAGMA table_info.
+/// Note: get_table_metadata below has similar PRAGMA decoding but also extracts
+/// primary key info and builds multiple dicts in a single pass.
 pub fn introspect_columns(
   db: Connection,
   table: String,
@@ -95,12 +97,8 @@ pub fn introspect_query(
   db: Connection,
   sql: String,
 ) -> Result(QueryInfo, sqlight.Error) {
-  // Get all table schemas and primary key info
-  let table_schemas = get_table_schemas(db)
-  let pk_columns = get_pk_columns(db)
-
-  // Get root page -> table name mapping
-  let rootpage_table = get_rootpage_mapping(db)
+  // Get all table metadata in a single pass
+  let #(table_schemas, pk_columns, rootpage_table) = get_table_metadata(db)
 
   // Get EXPLAIN output
   let explain_sql = "EXPLAIN " <> sql
@@ -901,84 +899,66 @@ fn find_matching_close_paren(
   }
 }
 
-/// Get all table schemas from the database
-fn get_table_schemas(db: Connection) -> Dict(String, List(Column)) {
-  let tables_decoder = {
-    use name <- decode.field(0, decode.string)
-    decode.success(name)
-  }
-
-  let tables =
-    sqlight.query(
-      "SELECT name FROM sqlite_master WHERE type='table'",
-      on: db,
-      with: [],
-      expecting: tables_decoder,
-    )
-    |> result.unwrap([])
-
-  list.fold(tables, dict.new(), fn(acc, table_name) {
-    case introspect_columns(db, table_name) {
-      Ok(columns) -> dict.insert(acc, table_name, columns)
-      Error(_) -> acc
-    }
-  })
-}
-
-/// Get primary key column name for each table using PRAGMA table_info pk field.
-/// Returns a dict mapping table name to the PK column name.
-fn get_pk_columns(db: Connection) -> Dict(String, String) {
-  let tables =
-    sqlight.query(
-      "SELECT name FROM sqlite_master WHERE type='table'",
-      on: db,
-      with: [],
-      expecting: {
-        use name <- decode.field(0, decode.string)
-        decode.success(name)
-      },
-    )
-    |> result.unwrap([])
-
-  let pk_decoder = {
-    use name <- decode.field(1, decode.string)
-    use pk <- decode.field(5, decode.int)
-    decode.success(#(name, pk))
-  }
-
-  list.fold(tables, dict.new(), fn(acc, table_name) {
-    let sql = "PRAGMA table_info(\"" <> quote_identifier(table_name) <> "\")"
-    case sqlight.query(sql, on: db, with: [], expecting: pk_decoder) {
-      Ok(rows) ->
-        case list.find(rows, fn(row) { row.1 > 0 }) {
-          Ok(#(col_name, _)) -> dict.insert(acc, table_name, col_name)
-          Error(_) -> acc
-        }
-      Error(_) -> acc
-    }
-  })
-}
-
-/// Get rootpage -> table name mapping from sqlite_master
-fn get_rootpage_mapping(db: Connection) -> Dict(Int, String) {
-  let decoder = {
+/// Get all table metadata in a single pass: schemas, primary keys, and rootpage
+/// mappings. Issues one sqlite_master query and one PRAGMA table_info per table.
+fn get_table_metadata(
+  db: Connection,
+) -> #(Dict(String, List(Column)), Dict(String, String), Dict(Int, String)) {
+  let master_decoder = {
     use name <- decode.field(0, decode.string)
     use rootpage <- decode.field(1, decode.int)
     decode.success(#(name, rootpage))
   }
 
-  let rows =
+  let tables =
     sqlight.query(
       "SELECT name, rootpage FROM sqlite_master WHERE type='table'",
       on: db,
       with: [],
-      expecting: decoder,
+      expecting: master_decoder,
     )
     |> result.unwrap([])
 
-  list.fold(rows, dict.new(), fn(acc, row) {
-    let #(name, rootpage) = row
-    dict.insert(acc, rootpage, name)
+  // Decode all fields we need from PRAGMA table_info in one pass per table
+  let pragma_decoder = {
+    use col_name <- decode.field(1, decode.string)
+    use type_str <- decode.field(2, decode.string)
+    use notnull <- decode.field(3, decode.int)
+    use pk <- decode.field(5, decode.int)
+    decode.success(#(col_name, type_str, notnull, pk))
+  }
+
+  list.fold(tables, #(dict.new(), dict.new(), dict.new()), fn(acc, table) {
+    let #(schemas, pks, rootpages) = acc
+    let #(table_name, rootpage) = table
+    let rootpages = dict.insert(rootpages, rootpage, table_name)
+
+    let pragma_sql =
+      "PRAGMA table_info(\"" <> quote_identifier(table_name) <> "\")"
+    case sqlight.query(pragma_sql, on: db, with: [], expecting: pragma_decoder) {
+      Ok(rows) -> {
+        let columns =
+          list.map(rows, fn(row) {
+            let #(col_name, type_str, notnull, _) = row
+            let column_type = case query.parse_sqlite_type(type_str) {
+              Ok(t) -> t
+              Error(_) -> StringType
+            }
+            Column(
+              name: col_name,
+              column_type: column_type,
+              nullable: notnull == 0,
+            )
+          })
+        let schemas = dict.insert(schemas, table_name, columns)
+        let pks = case list.find(rows, fn(row) { row.3 > 0 }) {
+          Ok(#(pk_name, _, _, _)) -> dict.insert(pks, table_name, pk_name)
+          Error(_) -> pks
+        }
+        #(schemas, pks, rootpages)
+      }
+      Error(_) -> #(schemas, pks, rootpages)
+    }
   })
 }
 

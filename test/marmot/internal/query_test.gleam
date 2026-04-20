@@ -61,20 +61,21 @@ pub fn safe_name_non_reserved_test() {
 }
 
 pub fn function_name_from_filename_test() {
-  let assert "find_user" = query.function_name("find_user.sql")
-  let assert "list_all_posts" = query.function_name("list_all_posts.sql")
-  let assert "delete_user" = query.function_name("delete_user.sql")
+  let assert Ok("find_user") = query.function_name("find_user.sql")
+  let assert Ok("list_all_posts") = query.function_name("list_all_posts.sql")
+  let assert Ok("delete_user") = query.function_name("delete_user.sql")
 }
 
 pub fn function_name_preserves_sql_in_name_test() {
-  let assert "fix_sql_injection" = query.function_name("fix_sql_injection.sql")
-  let assert "sql_backup" = query.function_name("sql_backup.sql")
+  let assert Ok("fix_sql_injection") =
+    query.function_name("fix_sql_injection.sql")
+  let assert Ok("sql_backup") = query.function_name("sql_backup.sql")
 }
 
-pub fn row_type_name_from_filename_test() {
-  let assert "FindUserRow" = query.row_type_name("find_user.sql")
-  let assert "ListAllPostsRow" = query.row_type_name("list_all_posts.sql")
-  let assert "DeleteUserRow" = query.row_type_name("delete_user.sql")
+pub fn row_type_name_from_name_test() {
+  let assert "FindUserRow" = query.row_type_name("find_user")
+  let assert "ListAllPostsRow" = query.row_type_name("list_all_posts")
+  let assert "DeleteUserRow" = query.row_type_name("delete_user")
 }
 
 pub fn query_has_return_columns_test() {
@@ -90,23 +91,28 @@ pub fn query_has_return_columns_test() {
 }
 
 pub fn function_name_sanitizes_hyphens_test() {
-  let assert "get_users" = query.function_name("get-users.sql")
+  let assert Ok("get_users") = query.function_name("get-users.sql")
 }
 
 pub fn function_name_sanitizes_leading_digit_test() {
-  let assert "_1_get_users" = query.function_name("1-get-users.sql")
+  let assert Ok("_1_get_users") = query.function_name("1-get-users.sql")
 }
 
 pub fn function_name_sanitizes_spaces_test() {
-  let assert "my_query" = query.function_name("my query.sql")
+  let assert Ok("my_query") = query.function_name("my query.sql")
 }
 
 pub fn function_name_sanitizes_uppercase_test() {
-  let assert "find_user" = query.function_name("Find_User.sql")
+  let assert Ok("find_user") = query.function_name("Find_User.sql")
 }
 
 pub fn function_name_strips_special_chars_test() {
-  let assert "finduser" = query.function_name("find@user!.sql")
+  let assert Ok("finduser") = query.function_name("find@user!.sql")
+}
+
+pub fn function_name_rejects_empty_identifier_test() {
+  let assert Error(Nil) = query.function_name("@#$.sql")
+  let assert Error(Nil) = query.function_name(".sql")
 }
 
 pub fn sqlite_type_integer_aliases_test() {

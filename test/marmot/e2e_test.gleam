@@ -51,7 +51,7 @@ pub fn e2e_generate_module_test() {
                 |> string.split("/")
                 |> list.last
                 |> result.unwrap("query.sql")
-              let name = query.function_name(filename)
+              let assert Ok(name) = query.function_name(filename)
               Ok(query.Query(
                 name: name,
                 sql: string.trim(sql),
@@ -132,7 +132,7 @@ pub fn e2e_multiple_sql_directories_test() {
                     |> string.split("/")
                     |> list.last
                     |> result.unwrap("query.sql")
-                  let name = query.function_name(filename)
+                  let assert Ok(name) = query.function_name(filename)
                   Ok(#(
                     dir,
                     codegen.generate_module([
@@ -196,7 +196,7 @@ pub fn e2e_check_stale_detection_test() {
                 |> string.split("/")
                 |> list.last
                 |> result.unwrap("query.sql")
-              let name = query.function_name(filename)
+              let assert Ok(name) = query.function_name(filename)
               Ok(query.Query(
                 name: name,
                 sql: string.trim(sql),
@@ -248,7 +248,7 @@ pub fn e2e_check_stale_detection_test() {
                 |> string.split("/")
                 |> list.last
                 |> result.unwrap("query.sql")
-              let name = query.function_name(filename)
+              let assert Ok(name) = query.function_name(filename)
               Ok(query.Query(
                 name: name,
                 sql: string.trim(sql),

@@ -4,7 +4,11 @@ import gleam/string
 import marmot/internal/query.{
   type Column, type ColumnType, type Parameter, type Query, BitArrayType,
   BoolType, DateType, FloatType, IntType, StringType, TimestampType,
-  safe_name,
+}
+
+/// Sanitize a database column or parameter name for use in generated Gleam code.
+fn sanitize_name(name: String) -> String {
+  name |> query.sanitize_identifier |> query.safe_name
 }
 
 /// Generate the complete Gleam source for a single query function,
@@ -56,8 +60,6 @@ pub fn generate_module(queries: List(Query)) -> String {
 }
 
 fn generate_imports(queries: List(Query)) -> String {
-  // Always needed: exec functions use decode.success(Nil)
-  let needs_decode = True
   let needs_option =
     list.any(queries, fn(q) { list.any(q.columns, fn(c) { c.nullable }) })
   let needs_timestamp =
@@ -73,7 +75,7 @@ fn generate_imports(queries: List(Query)) -> String {
 
   let imports = [
     #(True, "import sqlight"),
-    #(needs_decode, "import gleam/dynamic/decode"),
+    #(True, "import gleam/dynamic/decode"),
     #(needs_date, "import gleam/int"),
     #(needs_option, "import gleam/option.{type Option}"),
     #(needs_date, "import gleam/string"),
@@ -92,7 +94,7 @@ fn generate_imports(queries: List(Query)) -> String {
 }
 
 fn generate_row_type(q: Query) -> String {
-  let type_name = query.row_type_name(q.name <> ".sql")
+  let type_name = query.row_type_name(q.name)
   let fields =
     q.columns
     |> list.map(fn(col) {
@@ -100,7 +102,7 @@ fn generate_row_type(q: Query) -> String {
         True -> "Option(" <> query.gleam_type(col.column_type) <> ")"
         False -> query.gleam_type(col.column_type)
       }
-      "    " <> safe_name(col.name) <> ": " <> type_str <> ","
+      "    " <> sanitize_name(col.name) <> ": " <> type_str <> ","
     })
     |> string.join("\n")
   "pub type "
@@ -164,7 +166,7 @@ fn generate_param_list(params: List(Parameter)) -> String {
     _ ->
       params
       |> list.map(fn(p) {
-        ", " <> safe_name(p.name) <> ": " <> query.gleam_type(p.column_type)
+        ", " <> sanitize_name(p.name) <> ": " <> query.gleam_type(p.column_type)
       })
       |> string.join("")
   }
@@ -172,7 +174,7 @@ fn generate_param_list(params: List(Parameter)) -> String {
 
 fn generate_with_args(params: List(Parameter)) -> String {
   params
-  |> list.map(fn(p) { sqlight_encoder(safe_name(p.name), p.column_type) })
+  |> list.map(fn(p) { sqlight_encoder(sanitize_name(p.name), p.column_type) })
   |> string.join(", ")
 }
 
@@ -195,7 +197,7 @@ fn sqlight_encoder(name: String, col_type: ColumnType) -> String {
 }
 
 fn generate_decoder(q: Query) -> String {
-  let type_name = query.row_type_name(q.name <> ".sql")
+  let type_name = query.row_type_name(q.name)
   let fields =
     q.columns
     |> list.index_map(fn(col, idx) {
@@ -215,7 +217,7 @@ fn generate_decoder(q: Query) -> String {
   let constructor_args =
     q.columns
     |> list.map(fn(col) {
-      let name = safe_name(col.name)
+      let name = sanitize_name(col.name)
       case col.column_type {
         TimestampType ->
           case col.nullable {
@@ -248,7 +250,7 @@ fn generate_decoder(q: Query) -> String {
 }
 
 fn decoder_var_name(col: Column) -> String {
-  let name = safe_name(col.name)
+  let name = sanitize_name(col.name)
   case col.column_type {
     TimestampType -> name <> "_raw"
     _ -> name

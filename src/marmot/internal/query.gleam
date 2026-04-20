@@ -60,12 +60,15 @@ pub fn parse_sqlite_type(raw: String) -> Result(ColumnType, Nil) {
   }
 }
 
-pub fn function_name(filename: String) -> String {
+pub fn function_name(filename: String) -> Result(String, Nil) {
   let base = case string.ends_with(filename, ".sql") {
     True -> string.drop_end(filename, 4)
     False -> filename
   }
-  sanitize_identifier(base)
+  case sanitize_identifier(base) {
+    "" -> Error(Nil)
+    name -> Ok(name)
+  }
 }
 
 /// Sanitize a string to be a valid Gleam identifier:
@@ -73,7 +76,7 @@ pub fn function_name(filename: String) -> String {
 /// - Strip any characters that aren't alphanumeric or underscore
 /// - Prepend underscore if it starts with a digit
 /// - Lowercase the result
-fn sanitize_identifier(name: String) -> String {
+pub fn sanitize_identifier(name: String) -> String {
   let cleaned =
     name
     |> string.lowercase
@@ -105,11 +108,12 @@ fn is_digit(c: String) -> Bool {
   || c == "5" || c == "6" || c == "7" || c == "8" || c == "9"
 }
 
-/// Gleam reserved words that cannot be used as identifiers
+/// Gleam reserved words that cannot be used as identifiers.
+/// See https://gleam.run/book/tour/reserved-words/
 const reserved_words = [
-  "as", "assert", "auto", "case", "const", "echo", "external", "fn", "if",
-  "import", "let", "macro", "opaque", "panic", "pub", "test", "todo", "type",
-  "use",
+  "as", "assert", "auto", "case", "const", "delegate", "derive", "echo",
+  "else", "external", "fn", "if", "implement", "import", "let", "macro",
+  "opaque", "panic", "pub", "test", "todo", "type", "use",
 ]
 
 pub fn safe_name(name: String) -> String {
@@ -119,9 +123,8 @@ pub fn safe_name(name: String) -> String {
   }
 }
 
-pub fn row_type_name(filename: String) -> String {
-  filename
-  |> function_name
+pub fn row_type_name(name: String) -> String {
+  name
   |> to_pascal_case
   |> string.append("Row")
 }

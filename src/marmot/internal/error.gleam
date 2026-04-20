@@ -16,6 +16,7 @@ pub type MarmotError {
   UnknownTable(path: String, table: String, suggestion: Option(String))
   TypeInferenceError(path: String, expression: String)
   EmptySqlFile(path: String)
+  InvalidFilename(path: String)
   MultipleQueries(path: String)
   StaleGeneratedCode(files: List(String))
 }
@@ -73,6 +74,13 @@ pub fn to_string(error: MarmotError) -> String {
   \u{2502} Could not determine the type of: " <> expression <> "
   \u{2502}
   hint: Consider using a CAST expression: CAST(... AS TEXT)"
+
+    InvalidFilename(path:) -> "error: Invalid filename
+  \u{250c}\u{2500} " <> path <> "
+  \u{2502}
+  \u{2502} Filename produces no valid Gleam identifier
+  \u{2502}
+  hint: Rename the file to use letters, digits, or underscores"
 
     EmptySqlFile(path:) -> "error: Empty SQL file
   \u{250c}\u{2500} " <> path <> "

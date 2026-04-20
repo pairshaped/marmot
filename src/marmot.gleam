@@ -117,7 +117,10 @@ fn generate_for_directory(
     list.filter_map(sql_files, fn(file_path) { process_sql_file(db, file_path) })
 
   case queries {
-    [] -> True
+    [] ->
+      // If there were SQL files but none produced queries, that means they all
+      // had errors. Only return True (success) when the directory was empty.
+      list.is_empty(sql_files)
     _ -> {
       let output = project.output_path(sql_dir, config.output)
       let module_content = codegen.generate_module(queries)
@@ -179,6 +182,21 @@ fn process_sql_file(
     }),
   )
 
+  let filename =
+    file_path
+    |> string.split("/")
+    |> list.last
+    |> result.unwrap("query.sql")
+  use name <- result.try(
+    query.function_name(filename)
+    |> result.map_error(fn(_) {
+      io.println_error(
+        error.to_string(error.InvalidFilename(path: file_path)),
+      )
+      Nil
+    }),
+  )
+
   let trimmed = string.trim(content)
   use sql <- result.try(validate_sql(trimmed, file_path))
   use query_info <- result.try(
@@ -190,13 +208,6 @@ fn process_sql_file(
       Nil
     }),
   )
-
-  let filename =
-    file_path
-    |> string.split("/")
-    |> list.last
-    |> result.unwrap("query.sql")
-  let name = query.function_name(filename)
   Ok(query.Query(
     name: name,
     sql: sql,
@@ -233,31 +244,48 @@ fn validate_sql(trimmed: String, file_path: String) -> Result(String, Nil) {
   }
 }
 
-/// Check for semicolons outside of single-quoted SQL string literals.
-/// Handles escaped quotes ('') inside strings.
+/// Check for semicolons outside of quoted SQL contexts.
+/// Handles single-quoted strings (with '' escapes) and double-quoted identifiers.
 fn contains_semicolon_outside_strings(sql: String) -> Bool {
-  do_check_semicolon(sql, False)
+  do_check_semicolon(sql, False, False)
 }
 
-fn do_check_semicolon(s: String, in_string: Bool) -> Bool {
+fn do_check_semicolon(
+  s: String,
+  in_single_quote: Bool,
+  in_double_quote: Bool,
+) -> Bool {
   case string.pop_grapheme(s) {
     Error(_) -> False
     Ok(#("'", rest)) ->
-      case in_string {
-        True ->
-          // Check for escaped quote ''
-          case string.pop_grapheme(rest) {
-            Ok(#("'", rest2)) -> do_check_semicolon(rest2, True)
-            _ -> do_check_semicolon(rest, False)
+      case in_double_quote {
+        True -> do_check_semicolon(rest, in_single_quote, True)
+        False ->
+          case in_single_quote {
+            True ->
+              // Check for escaped quote ''
+              case string.pop_grapheme(rest) {
+                Ok(#("'", rest2)) ->
+                  do_check_semicolon(rest2, True, False)
+                _ -> do_check_semicolon(rest, False, False)
+              }
+            False -> do_check_semicolon(rest, True, False)
           }
-        False -> do_check_semicolon(rest, True)
+      }
+    Ok(#("\"", rest)) ->
+      case in_single_quote {
+        True -> do_check_semicolon(rest, True, in_double_quote)
+        // No explicit "" escape handling needed: toggling twice is a no-op
+        // that leaves in_double_quote in the correct state.
+        False -> do_check_semicolon(rest, False, !in_double_quote)
       }
     Ok(#(";", rest)) ->
-      case in_string {
-        True -> do_check_semicolon(rest, True)
+      case in_single_quote || in_double_quote {
+        True -> do_check_semicolon(rest, in_single_quote, in_double_quote)
         False -> True
       }
-    Ok(#(_, rest)) -> do_check_semicolon(rest, in_string)
+    Ok(#(_, rest)) ->
+      do_check_semicolon(rest, in_single_quote, in_double_quote)
   }
 }
 
