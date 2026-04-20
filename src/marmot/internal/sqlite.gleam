@@ -242,8 +242,10 @@ pub fn introspect_query(
   // Get all table metadata in a single pass
   let #(table_schemas, pk_columns, rootpage_table) = get_table_metadata(db)
 
-  // Get EXPLAIN output
-  let explain_sql = "EXPLAIN " <> sql
+  // Get EXPLAIN output (strip Marmot-specific `!`/`?` suffixes from aliases
+  // before handing to SQLite — they're valid Marmot syntax but not valid SQL)
+  let sanitized_sql = strip_nullability_suffixes(sql)
+  let explain_sql = "EXPLAIN " <> sanitized_sql
   let decoder = {
     use addr <- decode.field(0, decode.int)
     use opcode <- decode.field(1, decode.string)
@@ -335,6 +337,137 @@ pub fn introspect_query(
 /// single spaces. Trims leading/trailing whitespace. Safe on SQL because
 /// string literals aren't split across lines in our queries and whitespace
 /// inside identifiers isn't allowed.
+/// Strip the Marmot-specific nullability suffixes `!` / `?` from alias names
+/// before sending SQL to SQLite's EXPLAIN. We only strip when the suffix
+/// appears directly after an identifier character and is followed by
+/// whitespace, comma, end-of-string, or closing paren. This avoids
+/// mangling legitimate SQL like `WHERE x != y` or `?` placeholders.
+fn strip_nullability_suffixes(sql: String) -> String {
+  do_strip_nullability_suffixes(sql, "", False, False)
+}
+
+fn do_strip_nullability_suffixes(
+  remaining: String,
+  acc: String,
+  in_single: Bool,
+  in_double: Bool,
+) -> String {
+  case string.pop_grapheme(remaining) {
+    Error(_) -> acc
+    Ok(#("'", rest)) ->
+      do_strip_nullability_suffixes(rest, acc <> "'", !in_single, in_double)
+    Ok(#("\"", rest)) ->
+      do_strip_nullability_suffixes(rest, acc <> "\"", in_single, !in_double)
+    Ok(#(ch, rest)) ->
+      case in_single || in_double {
+        True ->
+          do_strip_nullability_suffixes(rest, acc <> ch, in_single, in_double)
+        False ->
+          case ch == "!" || ch == "?" {
+            True -> {
+              let prev_ok = case string_last(acc) {
+                Ok(p) -> is_ident_char(p)
+                Error(_) -> False
+              }
+              let next_char = case string.pop_grapheme(rest) {
+                Ok(#(c, _)) -> c
+                Error(_) -> " "
+              }
+              let next_ok = case next_char {
+                " " | "," | ")" | "\t" | "\n" -> True
+                _ -> False
+              }
+              case prev_ok && next_ok {
+                True ->
+                  do_strip_nullability_suffixes(rest, acc, in_single, in_double)
+                False ->
+                  do_strip_nullability_suffixes(
+                    rest,
+                    acc <> ch,
+                    in_single,
+                    in_double,
+                  )
+              }
+            }
+            False ->
+              do_strip_nullability_suffixes(
+                rest,
+                acc <> ch,
+                in_single,
+                in_double,
+              )
+          }
+      }
+  }
+}
+
+fn is_ident_char(c: String) -> Bool {
+  case c {
+    "a"
+    | "b"
+    | "c"
+    | "d"
+    | "e"
+    | "f"
+    | "g"
+    | "h"
+    | "i"
+    | "j"
+    | "k"
+    | "l"
+    | "m"
+    | "n"
+    | "o"
+    | "p"
+    | "q"
+    | "r"
+    | "s"
+    | "t"
+    | "u"
+    | "v"
+    | "w"
+    | "x"
+    | "y"
+    | "z" -> True
+    "A"
+    | "B"
+    | "C"
+    | "D"
+    | "E"
+    | "F"
+    | "G"
+    | "H"
+    | "I"
+    | "J"
+    | "K"
+    | "L"
+    | "M"
+    | "N"
+    | "O"
+    | "P"
+    | "Q"
+    | "R"
+    | "S"
+    | "T"
+    | "U"
+    | "V"
+    | "W"
+    | "X"
+    | "Y"
+    | "Z" -> True
+    "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" -> True
+    "_" -> True
+    _ -> False
+  }
+}
+
+fn string_last(s: String) -> Result(String, Nil) {
+  case string.length(s) {
+    0 -> Error(Nil)
+    n -> Ok(string.slice(s, n - 1, 1))
+  }
+}
+
 fn normalize_sql_whitespace(sql: String) -> String {
   sql
   |> strip_line_comments
@@ -458,7 +591,7 @@ fn extract_result_columns(
             // IdxRowid-returning-target-PK-name, etc.). For expressions
             // (CAST, COALESCE, COUNT, etc.) or when the bare column can't be
             // found, fall back to opcode-traced type with the SELECT alias.
-            case item.bare_column {
+            let resolved_col = case item.bare_column {
               option.Some(_) ->
                 case
                   resolve_select_item(
@@ -503,6 +636,7 @@ fn extract_result_columns(
                   _ -> Column(..opcode_column, name: item.alias)
                 }
             }
+            apply_override(resolved_col, item.override)
           }
         }
       })
@@ -553,11 +687,20 @@ fn resolve_select_item(
             option.None -> Error(Nil)
           }
         })
-      case resolved {
-        Ok(col) -> col
+      let col = case resolved {
+        Ok(c) -> c
         Error(_) -> infer_expression_type(item)
       }
+      apply_override(col, item.override)
     }
+  }
+}
+
+fn apply_override(col: Column, override: NullabilityOverride) -> Column {
+  case override {
+    OverrideNonNull -> Column(..col, nullable: False)
+    OverrideNullable -> Column(..col, nullable: True)
+    OverrideNone -> col
   }
 }
 
@@ -706,6 +849,12 @@ fn infer_cast_type(name: String, upper_expr: String) -> Column {
   }
 }
 
+type NullabilityOverride {
+  OverrideNonNull
+  OverrideNullable
+  OverrideNone
+}
+
 type SelectItem {
   SelectItem(
     /// The display/field name (from AS alias or the expression itself)
@@ -716,6 +865,8 @@ type SelectItem {
     /// this is the column name (without table prefix). None for expressions
     /// like COUNT(*), COALESCE(...), subqueries, etc.
     bare_column: option.Option(String),
+    /// Nullability override from alias suffix (`name!` / `name?`).
+    override: NullabilityOverride,
   )
 }
 
@@ -1117,7 +1268,24 @@ fn parse_select_item(raw: String) -> SelectItem {
         Error(_) -> option.None
       }
   }
-  SelectItem(alias: clean_alias, expression: expr, bare_column: bare_column)
+  let #(final_alias, override) = extract_nullability_override(clean_alias)
+  SelectItem(
+    alias: final_alias,
+    expression: expr,
+    bare_column: bare_column,
+    override: override,
+  )
+}
+
+fn extract_nullability_override(alias: String) -> #(String, NullabilityOverride) {
+  case string.ends_with(alias, "!") {
+    True -> #(string.drop_end(alias, 1), OverrideNonNull)
+    False ->
+      case string.ends_with(alias, "?") {
+        True -> #(string.drop_end(alias, 1), OverrideNullable)
+        False -> #(alias, OverrideNone)
+      }
+  }
 }
 
 /// Split on the LAST top-level " AS " (case-insensitive).

@@ -704,3 +704,30 @@ pub fn introspect_order_by_with_sorter_resolves_columns_correctly_test() {
     Column(name: "name_fr", column_type: StringType, nullable: False),
   ] = result.columns
 }
+
+pub fn introspect_alias_with_bang_forces_not_null_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (id INTEGER NOT NULL PRIMARY KEY, name TEXT)",
+      on: db,
+    )
+  // `name` is nullable in schema; the `!` suffix on the alias overrides it
+  let assert Ok(result) =
+    sqlite.introspect_query(db, "SELECT name AS name! FROM users")
+  let assert [Column(name: "name", column_type: StringType, nullable: False)] =
+    result.columns
+}
+
+pub fn introspect_alias_with_question_forces_nullable_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(db, "SELECT name AS name? FROM users")
+  let assert [Column(name: "name", column_type: StringType, nullable: True)] =
+    result.columns
+}
