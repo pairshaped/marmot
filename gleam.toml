@@ -20,7 +20,7 @@ glinter = ">= 2.15.0 and < 3.0.0"
 
 [documentation]
 pages = [
-  { title = "llms.txt", path = "llms.txt" },
+  { title = "llms.txt", path = "llms.txt", source = "llms.txt" },
 ]
 
 [tools.glinter.rules]
