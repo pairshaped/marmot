@@ -212,6 +212,7 @@ fn process_sql_file(
       Nil
     }),
   )
+  use _ <- result.try(check_duplicate_columns(query_info.columns, file_path))
   Ok(query.Query(
     name: name,
     sql: sql,
@@ -245,6 +246,46 @@ fn validate_sql(trimmed: String, file_path: String) -> Result(String, Nil) {
         False -> Ok(stripped)
       }
     }
+  }
+}
+
+fn check_duplicate_columns(
+  columns: List(query.Column),
+  file_path: String,
+) -> Result(Nil, Nil) {
+  let names = list.map(columns, fn(c) { c.name })
+  let dupes = find_duplicates(names)
+  case dupes {
+    [] -> Ok(Nil)
+    _ -> {
+      io.println_error(
+        error.to_string(error.DuplicateColumns(path: file_path, columns: dupes)),
+      )
+      Error(Nil)
+    }
+  }
+}
+
+fn find_duplicates(names: List(String)) -> List(String) {
+  do_find_duplicates(names, [], [])
+}
+
+fn do_find_duplicates(
+  remaining: List(String),
+  seen: List(String),
+  dupes: List(String),
+) -> List(String) {
+  case remaining {
+    [] -> list.reverse(dupes)
+    [name, ..rest] ->
+      case list.contains(seen, name) {
+        True ->
+          case list.contains(dupes, name) {
+            True -> do_find_duplicates(rest, seen, dupes)
+            False -> do_find_duplicates(rest, seen, [name, ..dupes])
+          }
+        False -> do_find_duplicates(rest, [name, ..seen], dupes)
+      }
   }
 }
 

@@ -18,6 +18,7 @@ pub type MarmotError {
   EmptySqlFile(path: String)
   InvalidFilename(path: String)
   MultipleQueries(path: String)
+  DuplicateColumns(path: String, columns: List(String))
   StaleGeneratedCode(files: List(String))
   OutputNotUnderSrc(output: String)
 }
@@ -94,6 +95,20 @@ pub fn to_string(error: MarmotError) -> String {
   \u{2502} Each .sql file must contain exactly one query
   \u{2502}
   hint: Split this file into separate .sql files, one query per file"
+
+    DuplicateColumns(path:, columns:) -> {
+      let col_list =
+        columns
+        |> list.map(fn(c) { "\"" <> c <> "\"" })
+        |> string.join(", ")
+      "error: Duplicate column names
+  \u{250c}\u{2500} " <> path <> "
+  \u{2502}
+  \u{2502} Query returns duplicate column names: " <> col_list <> "
+  \u{2502}
+  hint: Use column aliases to give each column a unique name:
+        SELECT a.id AS a_id, b.id AS b_id ..."
+    }
 
     StaleGeneratedCode(files:) -> {
       let file_list =

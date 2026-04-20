@@ -84,6 +84,15 @@ pub fn database_open_error_test() {
   |> birdie.snap(title: "database open error")
 }
 
+pub fn duplicate_columns_error_test() {
+  error.DuplicateColumns(
+    path: "src/app/sql/find_user.sql",
+    columns: ["id", "name"],
+  )
+  |> error.to_string
+  |> birdie.snap(title: "duplicate columns error")
+}
+
 pub fn unknown_table_error_test() {
   error.UnknownTable(
     path: "src/app/sql/find_user.sql",
