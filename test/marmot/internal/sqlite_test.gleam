@@ -473,3 +473,63 @@ pub fn debug_exists_test() {
     Parameter(name: "field_key", column_type: StringType, nullable: False),
   ] = result.parameters
 }
+
+pub fn introspect_left_join_marks_right_side_nullable_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT NOT NULL
+      );
+      CREATE TABLE profiles (
+        id INTEGER NOT NULL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        bio TEXT NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT u.id, u.name, p.bio
+       FROM users u
+       LEFT JOIN profiles p ON p.user_id = u.id",
+    )
+  // u.id and u.name come from the primary (non-nullable) side
+  // p.bio comes from the LEFT JOINed (nullable) side
+  let assert [
+    Column(name: "id", column_type: IntType, nullable: False),
+    Column(name: "name", column_type: StringType, nullable: False),
+    Column(name: "bio", column_type: StringType, nullable: True),
+  ] = result.columns
+}
+
+pub fn introspect_inner_join_keeps_both_sides_non_nullable_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT NOT NULL
+      );
+      CREATE TABLE profiles (
+        id INTEGER NOT NULL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        bio TEXT NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT u.name, p.bio
+       FROM users u
+       JOIN profiles p ON p.user_id = u.id",
+    )
+  // INNER JOIN: both sides are non-nullable (NOT NULL in schema)
+  let assert [
+    Column(name: "name", column_type: StringType, nullable: False),
+    Column(name: "bio", column_type: StringType, nullable: False),
+  ] = result.columns
+}
