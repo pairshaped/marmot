@@ -84,12 +84,29 @@ pub fn list_sql_files_test() {
   let assert Ok(_) = simplifile.delete("test_tmp2")
 }
 
+pub fn parse_config_flag_without_value_test() {
+  // --database with no value followed by another flag should not consume the flag
+  let config =
+    project.parse_config("", ["--database", "--output", "src/gen"], option.None)
+  let assert Config(database: option.None, output: option.Some("src/gen")) =
+    config
+}
+
+pub fn output_path_configured_multi_dir_test() {
+  // Different sql dirs should produce different output files
+  let path1 =
+    project.output_path("src/users/sql", option.Some("src/generated"))
+  let path2 =
+    project.output_path("src/posts/sql", option.Some("src/generated"))
+  let assert True = path1 != path2
+}
+
 pub fn output_path_default_test() {
   let assert "src/app/sql.gleam" =
     project.output_path("src/app/sql", option.None)
 }
 
 pub fn output_path_configured_test() {
-  let assert "src/generated/sql.gleam" =
+  let assert "src/generated/src_app_sql.gleam" =
     project.output_path("src/app/sql", option.Some("src/generated"))
 }

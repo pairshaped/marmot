@@ -62,9 +62,17 @@ fn parse_cli_args(args: List(String)) -> CliArgs {
 fn parse_cli_args_loop(args: List(String), acc: CliArgs) -> CliArgs {
   case args {
     ["--database", value, ..rest] ->
-      parse_cli_args_loop(rest, CliArgs(..acc, database: option.Some(value)))
+      case string.starts_with(value, "--") {
+        True -> parse_cli_args_loop([value, ..rest], acc)
+        False ->
+          parse_cli_args_loop(rest, CliArgs(..acc, database: option.Some(value)))
+      }
     ["--output", value, ..rest] ->
-      parse_cli_args_loop(rest, CliArgs(..acc, output: option.Some(value)))
+      case string.starts_with(value, "--") {
+        True -> parse_cli_args_loop([value, ..rest], acc)
+        False ->
+          parse_cli_args_loop(rest, CliArgs(..acc, output: option.Some(value)))
+      }
     [_, ..rest] -> parse_cli_args_loop(rest, acc)
     [] -> acc
   }
@@ -110,6 +118,10 @@ pub fn list_sql_files(dir: String) -> List(String) {
 /// Determine the output path for a sql/ directory.
 /// Default: sibling of the sql/ directory (e.g., src/app/sql -> src/app/sql.gleam)
 /// Configured: use the configured output directory (e.g., src/generated/sql.gleam)
+/// Determine the output path for a sql/ directory.
+/// Default: sibling of the sql/ directory (e.g., src/app/sql -> src/app/sql.gleam)
+/// Configured: derives filename from the parent directory to avoid collisions
+/// (e.g., src/users/sql with output "src/gen" -> src/gen/users_sql.gleam)
 pub fn output_path(sql_dir: String, configured_output: Option(String)) -> String {
   case configured_output {
     option.Some(output) -> {
@@ -117,7 +129,12 @@ pub fn output_path(sql_dir: String, configured_output: Option(String)) -> String
         True -> string.drop_end(output, 1)
         False -> output
       }
-      trimmed <> "/sql.gleam"
+      // Derive a unique filename from the sql_dir path
+      let module_name =
+        sql_dir
+        |> string.replace("/", "_")
+        |> string.replace(".", "_")
+      trimmed <> "/" <> module_name <> ".gleam"
     }
     option.None -> sql_dir <> ".gleam"
   }

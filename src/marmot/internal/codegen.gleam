@@ -19,20 +19,34 @@ pub fn generate_function(q: Query) -> String {
 /// Generate a complete module from a list of queries.
 pub fn generate_module(queries: List(Query)) -> String {
   let imports = generate_imports(queries)
-  let needs_date =
+  let needs_date_decoder =
     list.any(queries, fn(q) {
       list.any(q.columns, fn(c) { c.column_type == DateType })
-      || list.any(q.parameters, fn(p) { p.column_type == DateType })
+    })
+  let needs_date_encoder =
+    list.any(queries, fn(q) {
+      list.any(q.parameters, fn(p) { p.column_type == DateType })
     })
   let needs_timestamp =
     list.any(queries, fn(q) {
       list.any(q.parameters, fn(p) { p.column_type == TimestampType })
     })
-  let helpers = case needs_date, needs_timestamp {
-    True, True -> "\n\n" <> timestamp_helpers() <> "\n\n" <> date_helpers()
-    True, False -> "\n\n" <> date_helpers()
-    False, True -> "\n\n" <> timestamp_helpers()
-    False, False -> ""
+  let helper_parts = []
+  let helper_parts = case needs_timestamp {
+    True -> [timestamp_helpers(), ..helper_parts]
+    False -> helper_parts
+  }
+  let helper_parts = case needs_date_decoder {
+    True -> [date_decoder_helper(), ..helper_parts]
+    False -> helper_parts
+  }
+  let helper_parts = case needs_date_encoder {
+    True -> [date_to_string_helper(), ..helper_parts]
+    False -> helper_parts
+  }
+  let helpers = case helper_parts {
+    [] -> ""
+    parts -> "\n\n" <> string.join(list.reverse(parts), "\n\n")
   }
   let functions =
     queries
@@ -261,6 +275,8 @@ fn escape_sql(sql: String) -> String {
   sql
   |> string.replace("\\", "\\\\")
   |> string.replace("\"", "\\\"")
+  |> string.replace("\r\n", " ")
+  |> string.replace("\r", " ")
   |> string.replace("\n", " ")
   |> string.replace("\t", " ")
   |> collapse_whitespace
@@ -282,7 +298,7 @@ fn timestamp_to_int(ts: Timestamp) -> Int {
 }"
 }
 
-fn date_helpers() -> String {
+fn date_decoder_helper() -> String {
   "/// Decode an ISO 8601 date string (YYYY-MM-DD) from the database into a Date.
 /// Returns a decode error if the string is not a valid date format.
 fn date_decoder() -> decode.Decoder(Date) {
@@ -299,11 +315,14 @@ fn date_decoder() -> decode.Decoder(Date) {
       }
     _ -> decode.failure(Date(0, January, 1), \"ISO 8601 date (YYYY-MM-DD)\")
   }
+}"
 }
 
-fn date_to_string(date: Date) -> String {
+fn date_to_string_helper() -> String {
+  "fn date_to_string(date: Date) -> String {
+  let year_str = int.to_string(date.year) |> string.pad_start(4, \"0\")
   let month_str = int.to_string(month_to_int(date.month)) |> string.pad_start(2, \"0\")
   let day_str = int.to_string(date.day) |> string.pad_start(2, \"0\")
-  int.to_string(date.year) <> \"-\" <> month_str <> \"-\" <> day_str
+  year_str <> \"-\" <> month_str <> \"-\" <> day_str
 }"
 }

@@ -309,6 +309,66 @@ pub fn codegen_timestamp_param_module_test() {
   |> birdie.snap(title: "codegen timestamp param module with helper")
 }
 
+pub fn codegen_date_param_module_test() {
+  let queries = [
+    Query(
+      name: "create_event",
+      sql: "INSERT INTO events (name, event_date) VALUES (?, ?)",
+      path: "src/app/sql/create_event.sql",
+      parameters: [
+        Parameter(name: "name", column_type: StringType),
+        Parameter(name: "event_date", column_type: DateType),
+      ],
+      columns: [],
+    ),
+  ]
+  codegen.generate_module(queries)
+  |> birdie.snap(title: "codegen date param module with encoder")
+}
+
+pub fn codegen_date_and_timestamp_module_test() {
+  let queries = [
+    Query(
+      name: "find_event",
+      sql: "SELECT id, event_date FROM events WHERE id = ?",
+      path: "src/app/sql/find_event.sql",
+      parameters: [Parameter(name: "id", column_type: IntType)],
+      columns: [
+        Column(name: "id", column_type: IntType, nullable: False),
+        Column(name: "event_date", column_type: DateType, nullable: False),
+      ],
+    ),
+    Query(
+      name: "update_last_seen",
+      sql: "UPDATE events SET last_seen = ? WHERE id = ?",
+      path: "src/app/sql/update_last_seen.sql",
+      parameters: [
+        Parameter(name: "last_seen", column_type: TimestampType),
+        Parameter(name: "id", column_type: IntType),
+      ],
+      columns: [],
+    ),
+  ]
+  codegen.generate_module(queries)
+  |> birdie.snap(title: "codegen date and timestamp module")
+}
+
+pub fn codegen_nullable_date_test() {
+  let q =
+    Query(
+      name: "find_event",
+      sql: "SELECT id, event_date FROM events WHERE id = ?",
+      path: "src/app/sql/find_event.sql",
+      parameters: [Parameter(name: "id", column_type: IntType)],
+      columns: [
+        Column(name: "id", column_type: IntType, nullable: False),
+        Column(name: "event_date", column_type: DateType, nullable: True),
+      ],
+    )
+  codegen.generate_function(q)
+  |> birdie.snap(title: "codegen nullable date column")
+}
+
 pub fn codegen_date_module_test() {
   let queries = [
     Query(

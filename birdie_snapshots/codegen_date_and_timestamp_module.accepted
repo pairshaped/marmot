@@ -1,14 +1,22 @@
 ---
 version: 1.5.5
-title: codegen date module with helpers
+title: codegen date and timestamp module
 file: ./test/marmot/internal/codegen_test.gleam
-test_name: codegen_date_module_test
+test_name: codegen_date_and_timestamp_module_test
 ---
 import gleam/dynamic/decode
 import gleam/int
 import gleam/string
 import gleam/time/calendar.{type Date, January, month_from_int, month_to_int}
+import gleam/time/timestamp.{type Timestamp}
 import sqlight
+
+/// Convert a Timestamp to a Unix seconds integer for SQLite storage.
+/// Note: sub-second precision is not preserved (nanoseconds are discarded).
+fn timestamp_to_int(ts: Timestamp) -> Int {
+  let #(s, _) = timestamp.to_unix_seconds_and_nanoseconds(ts)
+  s
+}
 
 /// Decode an ISO 8601 date string (YYYY-MM-DD) from the database into a Date.
 /// Returns a decode error if the string is not a valid date format.
@@ -48,6 +56,15 @@ pub fn find_event(db: sqlight.Connection, id: Int) {
         event_date:,
       ))
     },
+  )
+}
+
+pub fn update_last_seen(db: sqlight.Connection, last_seen: timestamp.Timestamp, id: Int) {
+  sqlight.query(
+    "UPDATE events SET last_seen = ? WHERE id = ?",
+    on: db,
+    with: [sqlight.int(timestamp_to_int(last_seen)), sqlight.int(id)],
+    expecting: decode.success(Nil),
   )
 }
 

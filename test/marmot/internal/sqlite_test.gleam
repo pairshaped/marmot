@@ -372,6 +372,59 @@ pub fn introspect_delete_returning_test() {
   let assert 1 = list.length(result.parameters)
 }
 
+pub fn introspect_where_no_spaces_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(db, "UPDATE users SET name=? WHERE id=?")
+  let assert [
+    Parameter(name: "name", column_type: StringType),
+    Parameter(name: "id", column_type: IntType),
+  ] = result.parameters
+}
+
+pub fn introspect_returning_alias_preserves_case_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "INSERT INTO users (name) VALUES (?) RETURNING id AS userId, name AS userName",
+    )
+  // Aliases should preserve original case, not be uppercased
+  let assert [
+    Column(name: "userId", ..),
+    Column(name: "userName", ..),
+  ] = result.columns
+}
+
+pub fn introspect_table_named_asset_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE asset (id INTEGER NOT NULL PRIMARY KEY, value REAL NOT NULL)",
+      on: db,
+    )
+  // "asset" contains "SET" as a substring -- should not confuse the parser
+  let assert Ok(result) =
+    sqlite.introspect_query(db, "UPDATE asset SET value = ? WHERE id = ?")
+  let assert [
+    Parameter(name: "value", column_type: FloatType),
+    Parameter(name: "id", column_type: IntType),
+  ] = result.parameters
+}
+
 pub fn introspect_join_query_test() {
   use db <- sqlight.with_connection(":memory:")
   let assert Ok(_) =

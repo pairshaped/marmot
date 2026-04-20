@@ -282,7 +282,9 @@ pub fn e2e_configured_output_dir_test() {
     )
 
   let output_path = project.output_path(sql_dir, option.Some(output_dir))
-  let assert True = output_path == output_dir <> "/sql.gleam"
+  // Output filename is derived from the sql_dir path to avoid collisions
+  let expected = output_dir <> "/" <> "test_e2e_tmp2_src_app_sql.gleam"
+  let assert True = output_path == expected
 
   // Cleanup
   let assert Ok(_) = simplifile.delete(base)

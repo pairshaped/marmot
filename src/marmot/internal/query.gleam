@@ -48,7 +48,8 @@ pub fn parse_sqlite_type(raw: String) -> Result(ColumnType, Nil) {
     Error(_) -> raw
   }
   case string.uppercase(base_type) {
-    "INTEGER" | "INT" -> Ok(IntType)
+    "INTEGER" | "INT" | "BIGINT" | "SMALLINT" | "TINYINT" | "MEDIUMINT" ->
+      Ok(IntType)
     "REAL" | "FLOAT" | "DOUBLE" | "DECIMAL" | "NUMERIC" -> Ok(FloatType)
     "TEXT" | "VARCHAR" | "CHAR" | "NVARCHAR" | "NCHAR" | "CLOB" -> Ok(StringType)
     "BLOB" -> Ok(BitArrayType)
@@ -60,10 +61,48 @@ pub fn parse_sqlite_type(raw: String) -> Result(ColumnType, Nil) {
 }
 
 pub fn function_name(filename: String) -> String {
-  case string.ends_with(filename, ".sql") {
+  let base = case string.ends_with(filename, ".sql") {
     True -> string.drop_end(filename, 4)
     False -> filename
   }
+  sanitize_identifier(base)
+}
+
+/// Sanitize a string to be a valid Gleam identifier:
+/// - Replace hyphens and spaces with underscores
+/// - Strip any characters that aren't alphanumeric or underscore
+/// - Prepend underscore if it starts with a digit
+/// - Lowercase the result
+fn sanitize_identifier(name: String) -> String {
+  let cleaned =
+    name
+    |> string.lowercase
+    |> string.replace("-", "_")
+    |> string.replace(" ", "_")
+    |> string.to_graphemes
+    |> list.filter(is_identifier_char)
+    |> string.join("")
+  case string.first(cleaned) {
+    Ok(c) ->
+      case is_digit(c) {
+        True -> "_" <> cleaned
+        False -> cleaned
+      }
+    _ -> cleaned
+  }
+}
+
+fn is_identifier_char(c: String) -> Bool {
+  c == "_" || c == "a" || c == "b" || c == "c" || c == "d" || c == "e"
+  || c == "f" || c == "g" || c == "h" || c == "i" || c == "j" || c == "k"
+  || c == "l" || c == "m" || c == "n" || c == "o" || c == "p" || c == "q"
+  || c == "r" || c == "s" || c == "t" || c == "u" || c == "v" || c == "w"
+  || c == "x" || c == "y" || c == "z" || is_digit(c)
+}
+
+fn is_digit(c: String) -> Bool {
+  c == "0" || c == "1" || c == "2" || c == "3" || c == "4"
+  || c == "5" || c == "6" || c == "7" || c == "8" || c == "9"
 }
 
 /// Gleam reserved words that cannot be used as identifiers

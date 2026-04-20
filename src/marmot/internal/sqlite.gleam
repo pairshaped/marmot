@@ -146,7 +146,7 @@ pub fn introspect_query(
   // Check statement type
   let stmt_type = classify_statement(sql)
   let is_insert = stmt_type == Insert
-  let has_returning = string.contains(string.uppercase(sql), "RETURNING")
+  let has_returning = contains_keyword(sql, "RETURNING")
 
   // Determine result columns
   let columns = case has_returning {
@@ -173,7 +173,8 @@ pub fn introspect_query(
   }
 
   // Determine parameters
-  let parameters = extract_parameters(opcodes, cursor_table, table_schemas, sql)
+  let parameters =
+    extract_parameters(opcodes, cursor_table, table_schemas, pk_columns, sql)
 
   let parameters = deduplicate_parameter_names(parameters)
   Ok(QueryInfo(columns: columns, parameters: parameters))
@@ -244,19 +245,24 @@ fn extract_returning_columns(
 /// Parse RETURNING column names from SQL, handling aliases (e.g., "id AS user_id")
 fn parse_returning_columns(sql: String) -> List(String) {
   let upper = string.uppercase(sql)
-  case string.split_once(upper, "RETURNING") {
+  case split_on_keyword(upper, " RETURNING ") {
     Ok(#(before, _)) -> {
-      let offset = string.length(before) + 9
-      // "RETURNING" is 9 chars
+      // Skip past " RETURNING " in the original string
+      let offset = string.length(before) + string.length(" RETURNING ")
       let original_rest = string.drop_start(sql, offset)
       original_rest
       |> string.trim
       |> string.split(",")
       |> list.map(fn(col) {
         let trimmed = string.trim(col)
-        // Handle "expr AS alias" — use the alias as the column name
+        // Handle "expr AS alias" -- use the alias as the column name
+        // Split on uppercased string to find position, then extract from original
         case string.split_once(string.uppercase(trimmed), " AS ") {
-          Ok(#(_, alias)) -> string.trim(alias)
+          Ok(#(before_as, _)) -> {
+            let alias_start = string.length(before_as) + 4
+            // " AS " is 4 chars
+            string.drop_start(trimmed, alias_start) |> string.trim
+          }
           Error(_) -> trimmed
         }
       })
@@ -376,6 +382,56 @@ fn normalize_column_ref(raw: String) -> String {
   }
 }
 
+/// Split a string on a SQL keyword, matching only as a whole word.
+/// The keyword should include surrounding spaces (e.g., " SET ", " WHERE ").
+/// Returns the parts before and after the keyword (excluding the keyword).
+fn split_on_keyword(
+  haystack: String,
+  keyword: String,
+) -> Result(#(String, String), Nil) {
+  case string.split_once(haystack, keyword) {
+    Ok(#(before, after)) -> Ok(#(before, after))
+    Error(_) -> {
+      // Also try keyword at end of string (no trailing space)
+      let trimmed_keyword = string.trim_end(keyword)
+      case string.ends_with(haystack, trimmed_keyword) {
+        True -> {
+          let before_len =
+            string.length(haystack) - string.length(trimmed_keyword)
+          Ok(#(string.slice(haystack, 0, before_len), ""))
+        }
+        False -> Error(Nil)
+      }
+    }
+  }
+}
+
+/// Check whether a SQL keyword appears as a whole word in the SQL string.
+/// Avoids matching substrings (e.g., "RETURNING" inside a table name).
+fn contains_keyword(sql: String, keyword: String) -> Bool {
+  let upper = string.uppercase(sql)
+  // Check with surrounding spaces
+  case string.contains(upper, " " <> keyword <> " ") {
+    True -> True
+    False ->
+      // Check at end of string with leading space
+      case string.ends_with(string.trim(upper), keyword) {
+        True -> {
+          let trimmed = string.trim(upper)
+          let idx = string.length(trimmed) - string.length(keyword)
+          case idx > 0 {
+            True -> {
+              let before = string.slice(trimmed, idx - 1, 1)
+              before == " " || before == "\n" || before == "\t"
+            }
+            False -> False
+          }
+        }
+        False -> False
+      }
+  }
+}
+
 /// Escape double quotes in an identifier to prevent SQL injection.
 fn quote_identifier(name: String) -> String {
   string.replace(name, "\"", "\"\"")
@@ -391,6 +447,7 @@ fn extract_parameters(
   opcodes: List(Opcode),
   cursor_table: Dict(Int, String),
   table_schemas: Dict(String, List(Column)),
+  pk_columns: Dict(String, String),
   sql: String,
 ) -> List(Parameter) {
   // Find all Variable opcodes sorted by p1 (parameter number)
@@ -405,7 +462,13 @@ fn extract_parameters(
       let stmt_type = classify_statement(sql)
       let opcode_fallback = fn() {
         list.map(variable_ops, fn(var_op) {
-          infer_parameter_type(var_op, opcodes, cursor_table, table_schemas)
+          infer_parameter_type(
+            var_op,
+            opcodes,
+            cursor_table,
+            table_schemas,
+            pk_columns,
+          )
         })
       }
 
@@ -490,6 +553,7 @@ fn infer_parameter_type(
   opcodes: List(Opcode),
   cursor_table: Dict(Int, String),
   table_schemas: Dict(String, List(Column)),
+  pk_columns: Dict(String, String),
 ) -> Parameter {
   let var_reg = var_op.p2
   let comparison_ops = [
@@ -529,19 +593,11 @@ fn infer_parameter_type(
         Ok(sr) ->
           case dict.get(cursor_table, sr.p1) {
             Ok(table) ->
-              case dict.get(table_schemas, table) {
-                Ok(table_cols) ->
-                  case
-                    list.find(table_cols, fn(c) {
-                      c.column_type == query.IntType && c.nullable == False
-                    })
-                  {
-                    Ok(col) ->
-                      Parameter(name: col.name, column_type: col.column_type)
-                    Error(_) ->
-                      Parameter(name: "id", column_type: query.IntType)
-                  }
-                Error(_) -> Parameter(name: "id", column_type: query.IntType)
+              case dict.get(pk_columns, table) {
+                Ok(pk_name) ->
+                  Parameter(name: pk_name, column_type: query.IntType)
+                Error(_) ->
+                  Parameter(name: "id", column_type: query.IntType)
               }
             Error(_) -> Parameter(name: "id", column_type: query.IntType)
           }
@@ -646,15 +702,15 @@ fn parse_delete_table_name(sql: String) -> String {
 /// Parse SET column names from UPDATE statement
 fn parse_update_set_columns(sql: String) -> List(String) {
   let upper = string.uppercase(sql)
-  case string.split_once(upper, "SET") {
+  case split_on_keyword(upper, " SET ") {
     Ok(#(_, rest_upper)) -> {
       let offset = string.length(sql) - string.length(rest_upper)
       let rest = string.drop_start(sql, offset)
       // Get the part between SET and WHERE/RETURNING
-      let set_part = case string.split_once(string.uppercase(rest), "WHERE") {
+      let set_part = case split_on_keyword(string.uppercase(rest), " WHERE ") {
         Ok(#(before, _)) -> string.slice(rest, 0, string.length(before))
         Error(_) ->
-          case string.split_once(string.uppercase(rest), "RETURNING") {
+          case split_on_keyword(string.uppercase(rest), " RETURNING ") {
             Ok(#(before, _)) -> string.slice(rest, 0, string.length(before))
             Error(_) -> rest
           }
@@ -676,14 +732,13 @@ fn parse_update_set_columns(sql: String) -> List(String) {
 /// Parse WHERE column names from UPDATE/DELETE statement
 fn parse_where_columns(sql: String) -> List(String) {
   let upper = string.uppercase(sql)
-  case string.split_once(upper, "WHERE") {
+  case split_on_keyword(upper, " WHERE ") {
     Ok(#(before_where, _)) -> {
-      let offset = string.length(before_where) + 5
-      // "WHERE" is 5 chars
+      let offset = string.length(before_where) + string.length(" WHERE ")
       let rest = string.drop_start(sql, offset)
       // Get part before RETURNING if present
       let where_part = case
-        string.split_once(string.uppercase(rest), "RETURNING")
+        split_on_keyword(string.uppercase(rest), " RETURNING ")
       {
         Ok(#(before, _)) -> string.slice(rest, 0, string.length(before))
         Error(_) -> rest
@@ -692,19 +747,52 @@ fn parse_where_columns(sql: String) -> List(String) {
       split_where_conditions(where_part)
       |> list.filter_map(fn(part) {
         let trimmed = string.trim(part)
-        // Match patterns like "col = ?", "col > ?", "col < ?", etc.
+        // Match patterns like "col = ?", "col > ?", "col=?", etc.
         case string.contains(trimmed, "?") {
-          True ->
-            case string.split_once(trimmed, " ") {
-              Ok(#(col_name, _)) ->
-                Ok(normalize_column_ref(string.trim(col_name)))
-              Error(_) -> Error(Nil)
+          True -> {
+            let col_name = extract_column_before_operator(trimmed)
+            case col_name {
+              "" -> Error(Nil)
+              name -> Ok(normalize_column_ref(name))
             }
+          }
           False -> Error(Nil)
         }
       })
     }
     Error(_) -> []
+  }
+}
+
+/// Extract the column name before an operator in a WHERE condition.
+/// Handles both "col = ?" and "col=?" (no spaces around operator).
+fn extract_column_before_operator(condition: String) -> String {
+  // Try splitting on common SQL comparison operators
+  let operators = [">=", "<=", "!=", "<>", "=", ">", "<", " LIKE ", " IN "]
+  extract_column_with_operators(string.trim(condition), operators)
+}
+
+fn extract_column_with_operators(
+  condition: String,
+  operators: List(String),
+) -> String {
+  case operators {
+    [] ->
+      // Fallback: try splitting on space
+      case string.split_once(condition, " ") {
+        Ok(#(col, _)) -> string.trim(col)
+        Error(_) -> ""
+      }
+    [op, ..rest] -> {
+      let check = case string.contains(op, " ") {
+        True -> string.split_once(string.uppercase(condition), op)
+        False -> string.split_once(condition, op)
+      }
+      case check {
+        Ok(#(col, _)) -> string.trim(col)
+        Error(_) -> extract_column_with_operators(condition, rest)
+      }
+    }
   }
 }
 

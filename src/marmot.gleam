@@ -24,13 +24,14 @@ pub fn main() -> Nil {
   }
 }
 
-fn run_generate(args: List(String)) -> Nil {
+fn with_database(
+  args: List(String),
+  callback: fn(sqlight.Connection, project.Config) -> Nil,
+) -> Nil {
   let env_database = get_env("DATABASE_URL")
-
   let toml_content =
     simplifile.read("gleam.toml")
     |> result.unwrap("")
-
   let config = project.parse_config(toml_content, args, env_database)
 
   case config.database {
@@ -41,8 +42,7 @@ fn run_generate(args: List(String)) -> Nil {
     option.Some(db_path) ->
       case sqlight.open(db_path) {
         Ok(db) -> {
-          generate_all(db, config)
-          // Connection cleanup — error is non-actionable
+          callback(db, config)
           let _close_result = sqlight.close(db)
           Nil
         }
@@ -57,6 +57,12 @@ fn run_generate(args: List(String)) -> Nil {
         }
       }
   }
+}
+
+fn run_generate(args: List(String)) -> Nil {
+  with_database(args, fn(db, config) {
+    generate_all(db, config)
+  })
 }
 
 fn generate_all(db: sqlight.Connection, config: project.Config) -> Nil {
@@ -115,22 +121,28 @@ fn generate_for_directory(
     _ -> {
       let output = project.output_path(sql_dir, config.output)
       let module_content = codegen.generate_module(queries)
-      ensure_parent_dir(output)
-      case simplifile.write(output, module_content) {
-        Ok(_) -> {
-          io.println("  wrote " <> output)
-          True
-        }
-        Error(_) -> {
-          io.println_error("error: Could not write to " <> output)
+      case ensure_parent_dir(output) {
+        Error(msg) -> {
+          io.println_error("error: " <> msg)
           False
         }
+        Ok(_) ->
+          case simplifile.write(output, module_content) {
+            Ok(_) -> {
+              io.println("  wrote " <> output)
+              True
+            }
+            Error(_) -> {
+              io.println_error("error: Could not write to " <> output)
+              False
+            }
+          }
       }
     }
   }
 }
 
-fn ensure_parent_dir(path: String) -> Nil {
+fn ensure_parent_dir(path: String) -> Result(Nil, String) {
   let parent =
     path
     |> string.split("/")
@@ -141,11 +153,12 @@ fn ensure_parent_dir(path: String) -> Nil {
     |> string.join("/")
 
   case parent {
-    "" -> Nil
-    dir -> {
-      let _mkdir_result = simplifile.create_directory_all(dir)
-      Nil
-    }
+    "" -> Ok(Nil)
+    dir ->
+      case simplifile.create_directory_all(dir) {
+        Ok(_) -> Ok(Nil)
+        Error(_) -> Error("Could not create directory: " <> dir)
+      }
   }
 }
 
@@ -250,47 +263,21 @@ fn do_check_semicolon(s: String, in_string: Bool) -> Bool {
 }
 
 fn run_check(args: List(String)) -> Nil {
-  let env_database = get_env("DATABASE_URL")
-  let toml_content =
-    simplifile.read("gleam.toml")
-    |> result.unwrap("")
-  let config = project.parse_config(toml_content, args, env_database)
-
-  case config.database {
-    option.None -> {
-      io.println_error(error.to_string(error.DatabaseNotConfigured))
-      halt(1)
-    }
-    option.Some(db_path) ->
-      case sqlight.open(db_path) {
-        Ok(db) -> {
-          let stale = check_all(db, config)
-          // Connection cleanup — error is non-actionable
-          let _close_result = sqlight.close(db)
-          case stale {
-            [] -> {
-              io.println("All generated code is up to date.")
-              halt(0)
-            }
-            files -> {
-              io.println_error(
-                error.to_string(error.StaleGeneratedCode(files: files)),
-              )
-              halt(1)
-            }
-          }
-        }
-        Error(err) -> {
-          io.println_error(
-            error.to_string(error.DatabaseOpenError(
-              path: db_path,
-              message: err.message,
-            )),
-          )
-          halt(1)
-        }
+  with_database(args, fn(db, config) {
+    let stale = check_all(db, config)
+    case stale {
+      [] -> {
+        io.println("All generated code is up to date.")
+        halt(0)
       }
-  }
+      files -> {
+        io.println_error(
+          error.to_string(error.StaleGeneratedCode(files: files)),
+        )
+        halt(1)
+      }
+    }
+  })
 }
 
 fn check_all(db: sqlight.Connection, config: project.Config) -> List(String) {
@@ -319,8 +306,19 @@ fn check_all(db: sqlight.Connection, config: project.Config) -> List(String) {
   })
 }
 
-@external(erlang, "erlang", "halt")
-fn halt(code: Int) -> Nil
+fn halt(code: Int) -> Nil {
+  // init:stop/1 performs a graceful shutdown that flushes I/O buffers,
+  // unlike erlang:halt/1 which exits immediately and may lose stderr output
+  init_stop(code)
+  // init:stop is async; block until the VM shuts down
+  timer_sleep(100_000_000)
+}
+
+@external(erlang, "init", "stop")
+fn init_stop(code: Int) -> Nil
+
+@external(erlang, "timer", "sleep")
+fn timer_sleep(ms: Int) -> Nil
 
 @external(erlang, "os", "getenv")
 fn getenv_ffi(name: String) -> Dynamic

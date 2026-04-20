@@ -89,6 +89,33 @@ pub fn query_has_return_columns_test() {
   let assert True = query.has_return_columns(q)
 }
 
+pub fn function_name_sanitizes_hyphens_test() {
+  let assert "get_users" = query.function_name("get-users.sql")
+}
+
+pub fn function_name_sanitizes_leading_digit_test() {
+  let assert "_1_get_users" = query.function_name("1-get-users.sql")
+}
+
+pub fn function_name_sanitizes_spaces_test() {
+  let assert "my_query" = query.function_name("my query.sql")
+}
+
+pub fn function_name_sanitizes_uppercase_test() {
+  let assert "find_user" = query.function_name("Find_User.sql")
+}
+
+pub fn function_name_strips_special_chars_test() {
+  let assert "finduser" = query.function_name("find@user!.sql")
+}
+
+pub fn sqlite_type_integer_aliases_test() {
+  let assert Ok(IntType) = query.parse_sqlite_type("BIGINT")
+  let assert Ok(IntType) = query.parse_sqlite_type("SMALLINT")
+  let assert Ok(IntType) = query.parse_sqlite_type("TINYINT")
+  let assert Ok(IntType) = query.parse_sqlite_type("MEDIUMINT")
+}
+
 pub fn query_has_no_return_columns_test() {
   let q =
     Query(

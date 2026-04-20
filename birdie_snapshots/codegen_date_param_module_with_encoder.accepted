@@ -1,0 +1,28 @@
+---
+version: 1.5.5
+title: codegen date param module with encoder
+file: ./test/marmot/internal/codegen_test.gleam
+test_name: codegen_date_param_module_test
+---
+import gleam/dynamic/decode
+import gleam/int
+import gleam/string
+import gleam/time/calendar.{type Date, January, month_from_int, month_to_int}
+import sqlight
+
+fn date_to_string(date: Date) -> String {
+  let year_str = int.to_string(date.year) |> string.pad_start(4, "0")
+  let month_str = int.to_string(month_to_int(date.month)) |> string.pad_start(2, "0")
+  let day_str = int.to_string(date.day) |> string.pad_start(2, "0")
+  year_str <> "-" <> month_str <> "-" <> day_str
+}
+
+pub fn create_event(db: sqlight.Connection, name: String, event_date: calendar.Date) {
+  sqlight.query(
+    "INSERT INTO events (name, event_date) VALUES (?, ?)",
+    on: db,
+    with: [sqlight.text(name), sqlight.text(date_to_string(event_date))],
+    expecting: decode.success(Nil),
+  )
+}
+
