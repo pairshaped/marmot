@@ -77,14 +77,16 @@ import my_app/sql
 
 pub fn main() {
   use db <- sqlight.with_connection("my_app.sqlite")
-  let assert Ok([user]) = sql.find_user(db, "alice")
+  let assert Ok([user]) = sql.find_user(db: db, username: "alice")
   // user.name, user.email are fully typed
 }
 ```
 
 Behind the scenes Marmot generates the decoders and functions you need; and
 it's pretty-printed, standard Gleam code (actually it's exactly like the hand
-written example I showed you earlier)!
+written example I showed you earlier)! Generated functions use labelled
+arguments (`sql.find_user(db: db, username: "alice")`) so call sites are
+self-documenting.
 So now you get the best of both worlds:
 
 - You don't have to take care of keeping encoders and decoders in sync, Marmot
@@ -198,6 +200,114 @@ Or via CLI flag:
 gleam run -m marmot -- --output src/my_app/generated
 ```
 
+### Structured output paths (`source_root`)
+
+If you keep `sql/` directories next to the entity they belong to (e.g.
+`src/app/users/sql/`, `src/app/orders/sql/`) but want the generated Gleam
+modules collected in one place, set `source_root` alongside `output`. Marmot
+will strip the `source_root` prefix from each `sql/` directory's parent path
+and use the remainder to namespace the generated file:
+
+```toml
+[marmot]
+database = "dev.sqlite"
+output = "src/app/generated/sql"
+source_root = "src/app"
+```
+
+Given that config, a project like this:
+
+```txt
+src/
+├── app/
+│   ├── users/
+│   │   └── sql/
+│   │       ├── find_user.sql
+│   │       └── list_users.sql
+│   └── orders/
+│       └── sql/
+│           ├── create_order.sql
+│           └── list_orders.sql
+```
+
+generates:
+
+```txt
+src/
+├── app/
+│   └── generated/
+│       └── sql/
+│           ├── users.gleam    -- from src/app/users/sql/
+│           └── orders.gleam   -- from src/app/orders/sql/
+```
+
+Nested entity paths are preserved, so `src/app/admin/orders/sql/` would
+generate `src/app/generated/sql/admin/orders.gleam`.
+
+> Without `source_root`, setting `output` falls back to a legacy
+> mangled-path mapping (`src_app_users_sql.gleam`) so multiple `sql/`
+> directories don't collide. It works but is ugly — prefer `source_root`
+> for new projects.
+
+### Custom query wrapper (`query_function`)
+
+By default the generated code calls `sqlight.query` directly. If you want to
+add logging, timing, or other instrumentation without forking Marmot, you can
+point `query_function` at your own wrapper:
+
+```toml
+[marmot]
+database = "dev.sqlite"
+query_function = "app/db.query"
+```
+
+With that config, the generated code imports your module and calls your
+function instead of `sqlight.query`:
+
+```gleam
+// Without query_function (default):
+import sqlight
+
+pub fn find_user(db db: sqlight.Connection, username username: String) {
+  sqlight.query(
+    "select name, email from users where username = ?",
+    on: db,
+    with: [sqlight.text(username)],
+    expecting: decoder,
+  )
+}
+
+// With query_function = "app/db.query":
+import app/db
+import sqlight
+
+pub fn find_user(db db: sqlight.Connection, username username: String) {
+  db.query(
+    "select name, email from users where username = ?",
+    on: db,
+    with: [sqlight.text(username)],
+    expecting: decoder,
+  )
+}
+```
+
+Your wrapper must match `sqlight.query`'s labelled signature exactly:
+
+```gleam
+import gleam/dynamic/decode
+import sqlight
+
+pub fn query(
+  sql: String,
+  on connection: sqlight.Connection,
+  with parameters: List(sqlight.Value),
+  expecting decoder: decode.Decoder(a),
+) -> Result(List(a), sqlight.Error) {
+  // Your logging / timing / instrumentation here, then delegate:
+  sqlight.query(sql, on: connection, with: parameters, expecting: decoder)
+}
+```
+
 ## Supported types
 
 Marmot maps SQLite column types to Gleam types. The types that are currently
@@ -236,10 +346,13 @@ queries.
 
 ### Why isn't Marmot configurable in any way?
 
-Following Squirrel's lead, Marmot uses convention over configuration. All
-projects using Marmot will have the same structure, making it easier to
-contribute to unfamiliar codebases. The only configuration options are the
-database path and output directory, since SQLite file paths vary across projects.
+Following Squirrel's lead, Marmot leans heavily on convention over
+configuration. Small projects should just work with zero config. The opt-in
+knobs Marmot does expose — `output`, `source_root`, and `query_function` —
+are there for larger codebases where the default conventions become awkward
+(scattered `sql/` directories, custom logging/instrumentation around every
+query). They don't change the generated code's shape, just where it lands and
+which function it calls.
 
 ## Known Limitations
 
@@ -254,9 +367,11 @@ database path and output directory, since SQLite file paths vary across projects
   Sub-second precision (nanoseconds) is not preserved.
 - `DATE` columns are stored as ISO 8601 text (`YYYY-MM-DD`). Malformed date
   strings in the database will produce a decode error.
-- When using a configured output directory, multiple `sql/` directories will
-  collide on the same output file. Either use the default output (sibling of
-  each `sql/` directory) or restructure to a single `sql/` directory.
+- When `output` is set without `source_root`, multiple `sql/` directories
+  with the same name produce mangled filenames (`src_app_users_sql.gleam`).
+  Use `source_root` to get clean namespaced paths (e.g.
+  `src/app/generated/sql/users.gleam`) — see the "Structured output paths"
+  section above.
 
 ## Credits
 

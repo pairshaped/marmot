@@ -20,6 +20,15 @@ Write SQL in `src/**/sql/*.sql`, one query per file. Filename becomes the functi
 4. Generates a `sql.gleam` module per `sql/` directory with typed functions + decoders
 5. `gleam run -m marmot check` compares generated output to existing files (CI mode)
 
+## Config (`[marmot]` in `gleam.toml`)
+
+| Key | Default | Purpose |
+|---|---|---|
+| `database` | — | Path to the SQLite file used for introspection (also `DATABASE_URL` env, `--database` CLI) |
+| `output` | sibling of each `sql/` dir | Centralized output directory for generated modules |
+| `source_root` | unset | Strip this prefix from each `sql/` dir's parent, use remainder to namespace output (e.g. `src/app/users/sql/` -> `<output>/users.gleam`). Without it, `output` falls back to legacy mangled filenames (`src_app_users_sql.gleam`). |
+| `query_function` | `sqlight.query` | Fully-qualified function (`module/path.name`) that generated code calls instead of `sqlight.query`. Wrapper must match `sqlight.query`'s labelled signature (`sql: String, on connection, with parameters, expecting decoder`). Useful for logging, timing, instrumentation. |
+
 ## Project structure
 
 ```
@@ -52,25 +61,29 @@ src/
 - **Live SQLite introspection**: connects to real `.db` file, not static analysis
 - **EXPLAIN-based type inference**: traces opcodes to map result columns and `?` params back to source table columns
 - **No external tools**: no `sqlc`, no `sqlite3` CLI, just `sqlight` (Gleam NIF)
-- **Convention over configuration**: follows Squirrel's conventions (one query per file, `sql/` dirs, filename = function name)
-- **Generated code calls sqlight directly**: no tuples, no intermediate types
+- **Convention over configuration**: follows Squirrel's conventions (one query per file, `sql/` dirs, filename = function name). `output`, `source_root`, and `query_function` are opt-in knobs for larger projects.
+- **Generated code calls sqlight directly** (or a user-supplied wrapper via `query_function`): no tuples, no intermediate types
 
 ## Generated code patterns
+
+Generated functions use labelled arguments: `pub fn find_user(db db: ..., username username: ...)`. Call sites read as `sql.find_user(db: db, username: "alice")`.
 
 **SELECT with decoder:**
 ```gleam
 pub type FindUserRow { FindUserRow(id: Int, name: String) }
-pub fn find_user(db: sqlight.Connection, username: String) {
+pub fn find_user(db db: sqlight.Connection, username username: String) {
   sqlight.query("...", on: db, with: [sqlight.text(username)], expecting: { ... })
 }
 ```
 
 **INSERT/UPDATE/DELETE without RETURNING:**
 ```gleam
-pub fn delete_user(db: sqlight.Connection, id: Int) {
+pub fn delete_user(db db: sqlight.Connection, id id: Int) {
   sqlight.query("...", on: db, with: [sqlight.int(id)], expecting: decode.success(Nil))
 }
 ```
+
+**With `query_function = "app/db.query"`:** the `sqlight.query(...)` call becomes `db.query(...)` with `import app/db` added. Everything else is identical.
 
 **Module:** imports are conditional (only include `decode`, `option`, `timestamp`, `calendar` when needed). Date modules get `parse_date`/`date_to_string` private helpers.
 
