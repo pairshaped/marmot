@@ -6,7 +6,7 @@
 Marmot is a code generator for Gleam that turns plain `.sql` files into type-safe
 functions for SQLite. Write your queries in SQL, point Marmot at your database,
 and it generates the Gleam functions, row types, and decoders you need. No ORM,
-no query builder, no manual decoder boilerplate. Inspired by
+no query builder, no manual decoder boilerplate. Heavily inspired by
 [Squirrel](https://github.com/giacomocavalieri/squirrel) (which does the same
 for Postgres).
 
