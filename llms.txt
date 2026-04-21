@@ -14,12 +14,12 @@ Write SQL in `src/**/sql/*.sql`, one query per file. Filename becomes the functi
 
 ## How it works
 
-1. Reads config: `DATABASE_URL` env > `--database` CLI flag > `gleam.toml [marmot]`
+1. Reads config: `DATABASE_URL` env > `--database` CLI flag > `gleam.toml [tools.marmot]`
 2. Opens the SQLite file, scans `src/` for `sql/` directories
 3. For each `.sql` file: reads SQL, introspects via `PRAGMA table_info` + `EXPLAIN`
 4. Generates a `sql.gleam` module per `sql/` directory with typed functions + decoders
 
-## Config (`[marmot]` in `gleam.toml`)
+## Config (`[tools.marmot]` in `gleam.toml`)
 
 | Key | Default | Purpose |
 |---|---|---|

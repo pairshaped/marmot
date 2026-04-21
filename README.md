@@ -147,7 +147,7 @@ path with the following precedence:
 
 1. `DATABASE_URL` environment variable
 2. `--database` CLI flag
-3. `database` field in `[marmot]` section of `gleam.toml`
+3. `database` field in `[tools.marmot]` section of `gleam.toml`
 
 ```sh
 # Environment variable
@@ -157,7 +157,7 @@ DATABASE_URL=dev.sqlite gleam run -m marmot
 gleam run -m marmot -- --database dev.sqlite
 
 # gleam.toml
-# [marmot]
+# [tools.marmot]
 # database = "dev.sqlite"
 ```
 
@@ -170,7 +170,7 @@ By default, generated modules are placed in `src/generated/sql/`. If you
 prefer a different location, set it in `gleam.toml` or via CLI flag:
 
 ```toml
-[marmot]
+[tools.marmot]
 output = "src/server/generated/sql"
 ```
 
@@ -187,7 +187,7 @@ add logging, timing, or other instrumentation without forking Marmot, you can
 point `query_function` at your own wrapper:
 
 ```toml
-[marmot]
+[tools.marmot]
 database = "dev.sqlite"
 query_function = "app/db.query"
 ```

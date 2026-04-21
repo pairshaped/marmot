@@ -27,13 +27,13 @@ pub fn parse_config(
     tom.parse(toml_content)
   {
     Ok(parsed) -> #(
-      tom.get_string(parsed, ["marmot", "database"])
+      tom.get_string(parsed, ["tools", "marmot", "database"])
         |> result.map(option.Some)
         |> result.unwrap(option.None),
-      tom.get_string(parsed, ["marmot", "output"])
+      tom.get_string(parsed, ["tools", "marmot", "output"])
         |> result.map(option.Some)
         |> result.unwrap(option.None),
-      tom.get_string(parsed, ["marmot", "query_function"])
+      tom.get_string(parsed, ["tools", "marmot", "query_function"])
         |> result.map(option.Some)
         |> result.unwrap(option.None),
     )

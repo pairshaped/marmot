@@ -14,7 +14,7 @@ pub fn parse_config_empty_toml_test() {
 
 pub fn parse_config_from_toml_test() {
   let toml =
-    "[marmot]
+    "[tools.marmot]
 database = \"dev.sqlite\"
 output = \"src/app/generated\"
 "
@@ -28,7 +28,7 @@ output = \"src/app/generated\"
 
 pub fn should_parse_query_function_from_toml_test() {
   let toml =
-    "[marmot]
+    "[tools.marmot]
 database = \"dev.sqlite\"
 query_function = \"server/db.query\"
 "
@@ -42,7 +42,7 @@ query_function = \"server/db.query\"
 
 pub fn should_default_query_function_to_none_test() {
   let toml =
-    "[marmot]
+    "[tools.marmot]
 database = \"dev.sqlite\"
 "
   let config = project.parse_config(toml, [], option.None)
@@ -51,7 +51,7 @@ database = \"dev.sqlite\"
 
 pub fn parse_config_cli_overrides_toml_test() {
   let toml =
-    "[marmot]
+    "[tools.marmot]
 database = \"dev.sqlite\"
 output = \"src/app/generated\"
 "
@@ -70,7 +70,7 @@ output = \"src/app/generated\"
 
 pub fn parse_config_env_overrides_all_test() {
   let toml =
-    "[marmot]
+    "[tools.marmot]
 database = \"dev.sqlite\"
 "
   let config =

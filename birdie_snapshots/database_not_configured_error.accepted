@@ -7,5 +7,5 @@ test_name: database_not_configured_error_test
 error: Could not connect to SQLite database
   No database configured. Set one of:
     • DATABASE_URL environment variable
-    • database field in [marmot] section of gleam.toml
+    • database field in [tools.marmot] section of gleam.toml
     • --database flag
