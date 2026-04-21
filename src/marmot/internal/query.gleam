@@ -237,3 +237,11 @@ fn do_strip_line_comments(
       do_strip_line_comments(rest, acc <> char, in_single, in_double, False)
   }
 }
+
+/// Collapse runs of spaces into single spaces.
+pub fn collapse_spaces(s: String) -> String {
+  s
+  |> string.split(" ")
+  |> list.filter(fn(part) { part != "" })
+  |> string.join(" ")
+}

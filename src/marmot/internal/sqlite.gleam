@@ -478,15 +478,8 @@ fn normalize_sql_whitespace(sql: String) -> String {
   |> string.replace("\r", " ")
   |> string.replace("\n", " ")
   |> string.replace("\t", " ")
-  |> collapse_spaces
+  |> query.collapse_spaces
   |> string.trim
-}
-
-fn collapse_spaces(sql: String) -> String {
-  sql
-  |> string.split(" ")
-  |> list.filter(fn(part) { part != "" })
-  |> string.join(" ")
 }
 
 /// Extract result columns for regular (non-INSERT) queries.
@@ -1691,7 +1684,13 @@ fn do_mask_string_contents(
         False ->
           case in_double {
             True ->
-              do_mask_string_contents(rest, acc <> "\"", False, False)
+              // Check for escaped quote "" inside double-quoted identifier
+              case string.pop_grapheme(rest) {
+                Ok(#("\"", rest2)) ->
+                  do_mask_string_contents(rest2, acc <> "  ", False, True)
+                _ ->
+                  do_mask_string_contents(rest, acc <> "\"", False, False)
+              }
             False ->
               do_mask_string_contents(rest, acc <> "\"", False, True)
           }
@@ -1708,8 +1707,12 @@ fn do_mask_string_contents(
 
 /// Find the index of the top-level `FROM` keyword in a SELECT's from-part.
 /// Respects nested parentheses, subqueries, and string literals.
+/// Input may be mixed-case; uppercased before scanning.
 fn find_top_level_from(s: String) -> option.Option(Int) {
-  find_top_level_keyword_on_masked(mask_string_contents(s), " FROM ")
+  find_top_level_keyword_on_masked(
+    mask_string_contents(string.uppercase(s)),
+    " FROM ",
+  )
 }
 
 /// Like `find_top_level_from` but the caller has already masked string literals.
@@ -1724,6 +1727,9 @@ fn do_find_top_level_keyword(
   depth: Int,
 ) -> option.Option(Int) {
   let keyword_len = string.length(keyword)
+  // Input is expected to be already uppercased (via mask_string_contents on
+  // an uppercased string), and keyword is an uppercase constant. Compare
+  // directly without re-uppercasing on every character.
   case string.length(s) < keyword_len {
     True -> option.None
     False -> {
@@ -1747,7 +1753,7 @@ fn do_find_top_level_keyword(
           case depth == 0 {
             True -> {
               let head = string.slice(s, 0, keyword_len)
-              case string.uppercase(head) == string.uppercase(keyword) {
+              case head == keyword {
                 True -> option.Some(idx)
                 False ->
                   do_find_top_level_keyword(
@@ -2104,15 +2110,12 @@ fn parse_returning_columns(sql: String) -> List(String) {
       |> split_top_level_commas
       |> list.map(fn(col) {
         let trimmed = string.trim(col)
-        // Handle "expr AS alias" -- use the alias as the column name
-        // Split on uppercased string to find position, then extract from original
-        case string.split_once(string.uppercase(trimmed), " AS ") {
-          Ok(#(before_as, _)) -> {
-            let alias_start = string.length(before_as) + 4
-            // " AS " is 4 chars
-            string.drop_start(trimmed, alias_start) |> string.trim
-          }
-          Error(_) -> trimmed
+        // Handle "expr AS alias" -- use the alias as the column name.
+        // Split on the LAST top-level " AS " so expressions like
+        // CAST(id AS INT) AS user_id are handled correctly.
+        case rsplit_on_as(trimmed) {
+          option.Some(#(_, alias)) -> string.trim(alias)
+          option.None -> trimmed
         }
       })
     }
@@ -2263,53 +2266,58 @@ fn do_normalize_column_ref(name: String) -> String {
   }
 }
 
-/// Split a string on a SQL keyword, matching only as a whole word.
-/// The keyword should include surrounding spaces (e.g., " SET ", " WHERE ").
+/// Split a string on a top-level SQL keyword (outside parens and string
+/// literals). The keyword should include surrounding spaces (e.g., " SET ").
 /// Returns the parts before and after the keyword (excluding the keyword).
 fn split_on_keyword(
   haystack: String,
   keyword: String,
 ) -> Result(#(String, String), Nil) {
-  case string.split_once(haystack, keyword) {
-    Ok(#(before, after)) -> Ok(#(before, after))
-    Error(_) -> {
+  let masked = mask_string_contents(haystack)
+  case find_top_level_keyword_on_masked(masked, keyword) {
+    option.Some(idx) -> {
+      let before = string.slice(haystack, 0, idx)
+      let after =
+        string.drop_start(haystack, idx + string.length(keyword))
+      Ok(#(before, after))
+    }
+    option.None -> {
       // Also try keyword at end of string (no trailing space)
       let trimmed_keyword = string.trim_end(keyword)
-      case string.ends_with(haystack, trimmed_keyword) {
-        True -> {
-          let before_len =
-            string.length(haystack) - string.length(trimmed_keyword)
-          Ok(#(string.slice(haystack, 0, before_len), ""))
+      let end_target = trimmed_keyword
+      case
+        find_keyword_idx_on_masked(
+          masked,
+          string.trim(trimmed_keyword),
+        )
+      {
+        option.Some(idx) -> {
+          let before = string.slice(haystack, 0, idx)
+          let after =
+            string.drop_start(haystack, idx + string.length(end_target))
+          Ok(#(before, after))
         }
-        False -> Error(Nil)
+        option.None -> Error(Nil)
       }
     }
   }
 }
 
-/// Check whether a SQL keyword appears as a whole word in the SQL string.
-/// Avoids matching substrings (e.g., "RETURNING" inside a table name).
+/// Check whether a SQL keyword appears at top-level (outside parens and
+/// string literals) in the SQL string. Uses masking + depth-aware scan.
 fn contains_keyword(sql: String, keyword: String) -> Bool {
-  let upper = string.uppercase(sql)
-  // Check with surrounding spaces
-  case string.contains(upper, " " <> keyword <> " ") {
-    True -> True
-    False ->
-      // Check at end of string with leading space
-      case string.ends_with(string.trim(upper), keyword) {
-        True -> {
-          let trimmed = string.trim(upper)
-          let idx = string.length(trimmed) - string.length(keyword)
-          case idx > 0 {
-            True -> {
-              let before = string.slice(trimmed, idx - 1, 1)
-              before == " " || before == "\n" || before == "\t"
-            }
-            False -> False
-          }
-        }
+  let masked = mask_string_contents(string.uppercase(sql))
+  let spaced = " " <> keyword <> " "
+  case find_top_level_keyword_on_masked(masked, spaced) {
+    option.Some(_) -> True
+    option.None -> {
+      // Also check for keyword at end of string (no trailing space)
+      let end_target = " " <> keyword
+      case string.ends_with(masked, end_target) {
+        True -> True
         False -> False
       }
+    }
   }
 }
 
@@ -3786,10 +3794,11 @@ fn extract_column_with_operators(
 }
 
 /// Split WHERE conditions on top-level AND/OR keywords (case-insensitive).
-/// Respects parenthesis depth and single-quoted string literals so subquery
-/// conditions and strings containing 'foo AND bar' are not split.
+/// Respects parenthesis depth, single-quoted string literals, and
+/// double-quoted identifiers so subquery conditions, strings containing
+/// 'foo AND bar', and identifiers like "AND column" are not split.
 fn split_where_conditions(where_part: String) -> List(String) {
-  do_split_on_and_or(where_part, "", [], 0, False)
+  do_split_on_and_or(where_part, "", [], 0, False, False)
 }
 
 fn do_split_on_and_or(
@@ -3797,7 +3806,8 @@ fn do_split_on_and_or(
   current: String,
   acc: List(String),
   depth: Int,
-  in_string: Bool,
+  in_single: Bool,
+  in_double: Bool,
 ) -> List(String) {
   case string.pop_grapheme(remaining) {
     Error(_) ->
@@ -3806,24 +3816,78 @@ fn do_split_on_and_or(
         trimmed -> list.reverse([trimmed, ..acc])
       }
     Ok(#("'", rest)) ->
-      case in_string {
+      case in_double {
         True ->
-          // Check for escaped quote ''
-          case string.pop_grapheme(rest) {
-            Ok(#("'", rest2)) ->
-              do_split_on_and_or(rest2, current <> "''", acc, depth, True)
-            _ ->
-              do_split_on_and_or(rest, current <> "'", acc, depth, False)
-          }
+          do_split_on_and_or(rest, current <> "'", acc, depth, in_single, True)
         False ->
-          do_split_on_and_or(rest, current <> "'", acc, depth, True)
+          case in_single {
+            True ->
+              // Check for escaped quote ''
+              case string.pop_grapheme(rest) {
+                Ok(#("'", rest2)) ->
+                  do_split_on_and_or(
+                    rest2,
+                    current <> "''",
+                    acc,
+                    depth,
+                    True,
+                    False,
+                  )
+                _ ->
+                  do_split_on_and_or(
+                    rest,
+                    current <> "'",
+                    acc,
+                    depth,
+                    False,
+                    False,
+                  )
+              }
+            False ->
+              do_split_on_and_or(
+                rest,
+                current <> "'",
+                acc,
+                depth,
+                True,
+                False,
+              )
+          }
       }
-    Ok(#(char, rest)) if in_string ->
-      do_split_on_and_or(rest, current <> char, acc, depth, True)
+    Ok(#("\"", rest)) ->
+      case in_single {
+        True ->
+          do_split_on_and_or(
+            rest,
+            current <> "\"",
+            acc,
+            depth,
+            True,
+            in_double,
+          )
+        False ->
+          do_split_on_and_or(
+            rest,
+            current <> "\"",
+            acc,
+            depth,
+            False,
+            !in_double,
+          )
+      }
+    Ok(#(char, rest)) if in_single || in_double ->
+      do_split_on_and_or(
+        rest,
+        current <> char,
+        acc,
+        depth,
+        in_single,
+        in_double,
+      )
     Ok(#("(", rest)) ->
-      do_split_on_and_or(rest, current <> "(", acc, depth + 1, False)
+      do_split_on_and_or(rest, current <> "(", acc, depth + 1, False, False)
     Ok(#(")", rest)) ->
-      do_split_on_and_or(rest, current <> ")", acc, depth - 1, False)
+      do_split_on_and_or(rest, current <> ")", acc, depth - 1, False, False)
     Ok(#(" ", rest)) ->
       case depth == 0 {
         True -> {
@@ -3833,8 +3897,17 @@ fn do_split_on_and_or(
               let trimmed = string.trim(current)
               let after = string.drop_start(rest, 4)
               case trimmed {
-                "" -> do_split_on_and_or(after, "", acc, 0, False)
-                _ -> do_split_on_and_or(after, "", [trimmed, ..acc], 0, False)
+                "" ->
+                  do_split_on_and_or(after, "", acc, 0, False, False)
+                _ ->
+                  do_split_on_and_or(
+                    after,
+                    "",
+                    [trimmed, ..acc],
+                    0,
+                    False,
+                    False,
+                  )
               }
             }
             _ -> {
@@ -3844,19 +3917,37 @@ fn do_split_on_and_or(
                   let trimmed = string.trim(current)
                   let after = string.drop_start(rest, 3)
                   case trimmed {
-                    "" -> do_split_on_and_or(after, "", acc, 0, False)
-                    _ -> do_split_on_and_or(after, "", [trimmed, ..acc], 0, False)
+                    "" ->
+                      do_split_on_and_or(after, "", acc, 0, False, False)
+                    _ ->
+                      do_split_on_and_or(
+                        after,
+                        "",
+                        [trimmed, ..acc],
+                        0,
+                        False,
+                        False,
+                      )
                   }
                 }
-                _ -> do_split_on_and_or(rest, current <> " ", acc, 0, False)
+                _ ->
+                  do_split_on_and_or(
+                    rest,
+                    current <> " ",
+                    acc,
+                    0,
+                    False,
+                    False,
+                  )
               }
             }
           }
         }
-        False -> do_split_on_and_or(rest, current <> " ", acc, depth, False)
+        False ->
+          do_split_on_and_or(rest, current <> " ", acc, depth, False, False)
       }
     Ok(#(char, rest)) ->
-      do_split_on_and_or(rest, current <> char, acc, depth, False)
+      do_split_on_and_or(rest, current <> char, acc, depth, False, False)
   }
 }
 

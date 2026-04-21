@@ -605,14 +605,7 @@ fn escape_sql(sql: String) -> String {
   |> string.replace("\r", " ")
   |> string.replace("\n", " ")
   |> string.replace("\t", " ")
-  |> collapse_whitespace
-}
-
-fn collapse_whitespace(s: String) -> String {
-  s
-  |> string.split(" ")
-  |> list.filter(fn(part) { part != "" })
-  |> string.join(" ")
+  |> query.collapse_spaces
 }
 
 fn timestamp_helpers() -> String {
