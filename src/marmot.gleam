@@ -413,12 +413,23 @@ fn format_gleam(code: String) -> String {
       code
     }
     Ok(_) -> {
-      run_executable("gleam", ["format", tmp])
-      let formatted = case simplifile.read(tmp) {
-        Ok(result) -> result
-        Error(_) -> {
+      let exit_code = run_executable("gleam", ["format", tmp])
+      let formatted = case exit_code {
+        0 ->
+          case simplifile.read(tmp) {
+            Ok(result) -> result
+            Error(_) -> {
+              io.println_error(
+                "warning: Could not read formatted file, using unformatted output",
+              )
+              code
+            }
+          }
+        _ -> {
           io.println_error(
-            "warning: gleam format failed, using unformatted output",
+            "warning: gleam format failed (exit code "
+            <> int.to_string(exit_code)
+            <> "), using unformatted output",
           )
           code
         }
@@ -438,18 +449,16 @@ fn get_tmp_dir() -> String {
 
 /// Run an executable with arguments, bypassing the shell.
 /// Uses erlang:open_port with spawn_executable to avoid shell injection.
-fn run_executable(executable: String, args: List(String)) -> Nil {
+/// Returns the exit status code, or -1 if the executable was not found.
+fn run_executable(executable: String, args: List(String)) -> Int {
   case find_executable(executable) {
-    option.None -> Nil
-    option.Some(path) -> {
-      run_executable_ffi(path, args)
-      Nil
-    }
+    option.None -> -1
+    option.Some(path) -> run_executable_ffi(path, args)
   }
 }
 
 @external(erlang, "marmot_ffi", "run_executable")
-fn run_executable_ffi(path: String, args: List(String)) -> Nil
+fn run_executable_ffi(path: String, args: List(String)) -> Int
 
 @external(erlang, "marmot_ffi", "find_executable")
 fn find_executable(name: String) -> Option(String)

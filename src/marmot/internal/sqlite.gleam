@@ -349,12 +349,13 @@ pub fn introspect_query(
 /// whitespace, comma, end-of-string, or closing paren. This avoids
 /// mangling legitimate SQL like `WHERE x != y` or `?` placeholders.
 pub fn strip_nullability_suffixes(sql: String) -> String {
-  do_strip_nullability_suffixes(sql, "", False, False)
+  do_strip_nullability_suffixes(sql, "", "", False, False)
 }
 
 fn do_strip_nullability_suffixes(
   remaining: String,
   acc: String,
+  prev_char: String,
   in_single: Bool,
   in_double: Bool,
 ) -> String {
@@ -363,7 +364,7 @@ fn do_strip_nullability_suffixes(
     Ok(#("'", rest)) ->
       case in_double {
         True ->
-          do_strip_nullability_suffixes(rest, acc <> "'", in_single, True)
+          do_strip_nullability_suffixes(rest, acc <> "'", "'", in_single, True)
         False ->
           case in_single {
             True ->
@@ -373,33 +374,58 @@ fn do_strip_nullability_suffixes(
                   do_strip_nullability_suffixes(
                     rest2,
                     acc <> "''",
+                    "'",
                     True,
                     False,
                   )
                 _ ->
-                  do_strip_nullability_suffixes(rest, acc <> "'", False, False)
+                  do_strip_nullability_suffixes(
+                    rest,
+                    acc <> "'",
+                    "'",
+                    False,
+                    False,
+                  )
               }
             False ->
-              do_strip_nullability_suffixes(rest, acc <> "'", True, False)
+              do_strip_nullability_suffixes(rest, acc <> "'", "'", True, False)
           }
       }
     Ok(#("\"", rest)) ->
       case in_single {
         True ->
-          do_strip_nullability_suffixes(rest, acc <> "\"", True, in_double)
+          do_strip_nullability_suffixes(
+            rest,
+            acc <> "\"",
+            "\"",
+            True,
+            in_double,
+          )
         False ->
-          do_strip_nullability_suffixes(rest, acc <> "\"", False, !in_double)
+          do_strip_nullability_suffixes(
+            rest,
+            acc <> "\"",
+            "\"",
+            False,
+            !in_double,
+          )
       }
     Ok(#(ch, rest)) ->
       case in_single || in_double {
         True ->
-          do_strip_nullability_suffixes(rest, acc <> ch, in_single, in_double)
+          do_strip_nullability_suffixes(
+            rest,
+            acc <> ch,
+            ch,
+            in_single,
+            in_double,
+          )
         False ->
           case ch == "!" || ch == "?" {
             True -> {
-              let prev_ok = case string_last(acc) {
-                Ok(p) -> is_ident_char(p)
-                Error(_) -> False
+              let prev_ok = case prev_char {
+                "" -> False
+                p -> is_ident_char(p)
               }
               let next_char = case string.pop_grapheme(rest) {
                 Ok(#(c, _)) -> c
@@ -411,11 +437,18 @@ fn do_strip_nullability_suffixes(
               }
               case prev_ok && next_ok {
                 True ->
-                  do_strip_nullability_suffixes(rest, acc, in_single, in_double)
+                  do_strip_nullability_suffixes(
+                    rest,
+                    acc,
+                    prev_char,
+                    in_single,
+                    in_double,
+                  )
                 False ->
                   do_strip_nullability_suffixes(
                     rest,
                     acc <> ch,
+                    ch,
                     in_single,
                     in_double,
                   )
@@ -425,6 +458,7 @@ fn do_strip_nullability_suffixes(
               do_strip_nullability_suffixes(
                 rest,
                 acc <> ch,
+                ch,
                 in_single,
                 in_double,
               )
@@ -435,13 +469,6 @@ fn do_strip_nullability_suffixes(
 
 fn is_ident_char(c: String) -> Bool {
   query.is_sql_ident_char(c)
-}
-
-fn string_last(s: String) -> Result(String, Nil) {
-  case string.length(s) {
-    0 -> Error(Nil)
-    n -> Ok(string.slice(s, n - 1, 1))
-  }
 }
 
 fn normalize_sql_whitespace(sql: String) -> String {
@@ -1680,9 +1707,10 @@ fn do_find_top_level_keyword(
   }
 }
 
-/// Split a string on top-level commas (ignoring commas inside parens).
+/// Split a string on top-level commas (ignoring commas inside parens or
+/// single-quoted string literals). Handles '' escape sequences.
 fn split_top_level_commas(s: String) -> List(String) {
-  do_split_top_level_commas(s, "", [], 0)
+  do_split_top_level_commas(s, "", [], 0, False)
 }
 
 fn do_split_top_level_commas(
@@ -1690,6 +1718,7 @@ fn do_split_top_level_commas(
   current: String,
   acc: List(String),
   depth: Int,
+  in_string: Bool,
 ) -> List(String) {
   case string.pop_grapheme(remaining) {
     Error(_) ->
@@ -1697,18 +1726,46 @@ fn do_split_top_level_commas(
         "" -> list.reverse(acc)
         _ -> list.reverse([string.trim(current), ..acc])
       }
+    Ok(#("'", rest)) ->
+      case in_string {
+        True ->
+          // Check for escaped quote ''
+          case string.pop_grapheme(rest) {
+            Ok(#("'", rest2)) ->
+              do_split_top_level_commas(
+                rest2,
+                current <> "''",
+                acc,
+                depth,
+                True,
+              )
+            _ ->
+              do_split_top_level_commas(rest, current <> "'", acc, depth, False)
+          }
+        False ->
+          do_split_top_level_commas(rest, current <> "'", acc, depth, True)
+      }
+    Ok(#(char, rest)) if in_string ->
+      do_split_top_level_commas(rest, current <> char, acc, depth, True)
     Ok(#("(", rest)) ->
-      do_split_top_level_commas(rest, current <> "(", acc, depth + 1)
+      do_split_top_level_commas(rest, current <> "(", acc, depth + 1, False)
     Ok(#(")", rest)) ->
-      do_split_top_level_commas(rest, current <> ")", acc, depth - 1)
+      do_split_top_level_commas(rest, current <> ")", acc, depth - 1, False)
     Ok(#(",", rest)) ->
       case depth {
         0 ->
-          do_split_top_level_commas(rest, "", [string.trim(current), ..acc], 0)
-        _ -> do_split_top_level_commas(rest, current <> ",", acc, depth)
+          do_split_top_level_commas(
+            rest,
+            "",
+            [string.trim(current), ..acc],
+            0,
+            False,
+          )
+        _ ->
+          do_split_top_level_commas(rest, current <> ",", acc, depth, False)
       }
     Ok(#(char, rest)) ->
-      do_split_top_level_commas(rest, current <> char, acc, depth)
+      do_split_top_level_commas(rest, current <> char, acc, depth, False)
   }
 }
 
@@ -3521,9 +3578,10 @@ fn extract_column_with_operators(
 }
 
 /// Split WHERE conditions on top-level AND/OR keywords (case-insensitive).
-/// Respects parenthesis depth so subquery conditions are not split.
+/// Respects parenthesis depth and single-quoted string literals so subquery
+/// conditions and strings containing 'foo AND bar' are not split.
 fn split_where_conditions(where_part: String) -> List(String) {
-  do_split_on_and_or(where_part, "", [], 0)
+  do_split_on_and_or(where_part, "", [], 0, False)
 }
 
 fn do_split_on_and_or(
@@ -3531,6 +3589,7 @@ fn do_split_on_and_or(
   current: String,
   acc: List(String),
   depth: Int,
+  in_string: Bool,
 ) -> List(String) {
   case string.pop_grapheme(remaining) {
     Error(_) ->
@@ -3538,8 +3597,25 @@ fn do_split_on_and_or(
         "" -> list.reverse(acc)
         trimmed -> list.reverse([trimmed, ..acc])
       }
-    Ok(#("(", rest)) -> do_split_on_and_or(rest, current <> "(", acc, depth + 1)
-    Ok(#(")", rest)) -> do_split_on_and_or(rest, current <> ")", acc, depth - 1)
+    Ok(#("'", rest)) ->
+      case in_string {
+        True ->
+          // Check for escaped quote ''
+          case string.pop_grapheme(rest) {
+            Ok(#("'", rest2)) ->
+              do_split_on_and_or(rest2, current <> "''", acc, depth, True)
+            _ ->
+              do_split_on_and_or(rest, current <> "'", acc, depth, False)
+          }
+        False ->
+          do_split_on_and_or(rest, current <> "'", acc, depth, True)
+      }
+    Ok(#(char, rest)) if in_string ->
+      do_split_on_and_or(rest, current <> char, acc, depth, True)
+    Ok(#("(", rest)) ->
+      do_split_on_and_or(rest, current <> "(", acc, depth + 1, False)
+    Ok(#(")", rest)) ->
+      do_split_on_and_or(rest, current <> ")", acc, depth - 1, False)
     Ok(#(" ", rest)) ->
       case depth == 0 {
         True -> {
@@ -3549,8 +3625,8 @@ fn do_split_on_and_or(
               let trimmed = string.trim(current)
               let after = string.drop_start(rest, 4)
               case trimmed {
-                "" -> do_split_on_and_or(after, "", acc, 0)
-                _ -> do_split_on_and_or(after, "", [trimmed, ..acc], 0)
+                "" -> do_split_on_and_or(after, "", acc, 0, False)
+                _ -> do_split_on_and_or(after, "", [trimmed, ..acc], 0, False)
               }
             }
             _ -> {
@@ -3560,18 +3636,19 @@ fn do_split_on_and_or(
                   let trimmed = string.trim(current)
                   let after = string.drop_start(rest, 3)
                   case trimmed {
-                    "" -> do_split_on_and_or(after, "", acc, 0)
-                    _ -> do_split_on_and_or(after, "", [trimmed, ..acc], 0)
+                    "" -> do_split_on_and_or(after, "", acc, 0, False)
+                    _ -> do_split_on_and_or(after, "", [trimmed, ..acc], 0, False)
                   }
                 }
-                _ -> do_split_on_and_or(rest, current <> " ", acc, 0)
+                _ -> do_split_on_and_or(rest, current <> " ", acc, 0, False)
               }
             }
           }
         }
-        False -> do_split_on_and_or(rest, current <> " ", acc, depth)
+        False -> do_split_on_and_or(rest, current <> " ", acc, depth, False)
       }
-    Ok(#(char, rest)) -> do_split_on_and_or(rest, current <> char, acc, depth)
+    Ok(#(char, rest)) ->
+      do_split_on_and_or(rest, current <> char, acc, depth, False)
   }
 }
 
