@@ -1,6 +1,6 @@
 # Marmot Context
 
-Marmot is a Gleam build tool that reads `.sql` files, introspects a live SQLite database for type information, and generates type-safe Gleam functions targeting `sqlight`. Inspired by [Squirrel](https://github.com/giacomocavalieri/squirrel) (which does the same for Postgres).
+Marmot is a Gleam build tool that reads `.sql` files, introspects a live SQLite database for type information, and generates type-safe Gleam functions targeting `sqlight`. Heavily inspired by [Squirrel](https://github.com/giacomocavalieri/squirrel) (which does the same for Postgres).
 
 ## Quick start
 
@@ -40,19 +40,6 @@ src/
       sqlite.gleam                -- PRAGMA + EXPLAIN introspection (QueryInfo)
       codegen.gleam               -- Gleam source generation (functions, row types, decoders)
 ```
-
-## Type mappings
-
-| SQLite type | Gleam type | Decoder | Encoder |
-|---|---|---|---|
-| `INTEGER`/`INT` | `Int` | `decode.int` | `sqlight.int` |
-| `REAL`/`FLOAT`/`DOUBLE` | `Float` | `decode.float` | `sqlight.float` |
-| `TEXT`/`VARCHAR`/`CHAR` | `String` | `decode.string` | `sqlight.text` |
-| `BLOB` | `BitArray` | `decode.bit_array` | `sqlight.blob` |
-| `BOOLEAN`/`BOOL` | `Bool` | `sqlight.decode_bool()` | `sqlight.bool` |
-| `TIMESTAMP`/`DATETIME` | `timestamp.Timestamp` | `decode.int` -> `from_unix_seconds` | `to_unix_seconds` -> `sqlight.int` |
-| `DATE` | `calendar.Date` | `decode.string` -> `parse_date` | `date_to_string` -> `sqlight.text` |
-| nullable column | `Option(T)` | `decode.optional(...)` | -- |
 
 ## Key design decisions
 
@@ -117,6 +104,19 @@ pub fn get_org(db db: ..., id id: Int) -> Result(List(OrgRow), sqlight.Error) {
   sqlight.query("...", on: db, with: [...], expecting: org_row_decoder())
 }
 ```
+
+## Type mappings
+
+| SQLite type | Gleam type | Decoder | Encoder |
+|---|---|---|---|
+| `INTEGER`/`INT` | `Int` | `decode.int` | `sqlight.int` |
+| `REAL`/`FLOAT`/`DOUBLE` | `Float` | `decode.float` | `sqlight.float` |
+| `TEXT`/`VARCHAR`/`CHAR` | `String` | `decode.string` | `sqlight.text` |
+| `BLOB` | `BitArray` | `decode.bit_array` | `sqlight.blob` |
+| `BOOLEAN`/`BOOL` | `Bool` | `sqlight.decode_bool()` | `sqlight.bool` |
+| `TIMESTAMP`/`DATETIME` | `timestamp.Timestamp` | `decode.int` -> `from_unix_seconds` | `to_unix_seconds` -> `sqlight.int` |
+| `DATE` | `calendar.Date` | `decode.string` -> `parse_date` | `date_to_string` -> `sqlight.text` |
+| nullable column | `Option(T)` | `decode.optional(...)` | -- |
 
 ## Known limitations
 
