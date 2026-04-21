@@ -215,8 +215,7 @@ fn do_strip_line_comments(
       do_strip_line_comments(rest, acc, in_single, in_double, True)
     Ok(#("'", rest)) ->
       case in_double {
-        True ->
-          do_strip_line_comments(rest, acc <> "'", in_single, True, False)
+        True -> do_strip_line_comments(rest, acc <> "'", in_single, True, False)
         False ->
           case in_single {
             True ->

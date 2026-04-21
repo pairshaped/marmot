@@ -425,7 +425,6 @@ fn normalize_sql_whitespace(sql: String) -> String {
   |> string.trim
 }
 
-
 fn collapse_spaces(sql: String) -> String {
   sql
   |> string.split(" ")
@@ -705,10 +704,18 @@ fn infer_case_type(alias: String, expr: String) -> Column {
         })
       let has_null =
         list.any(branches, fn(b) { string.uppercase(string.trim(b)) == "NULL" })
-      let has_unresolved = list.length(types) + { case has_null {
-        True -> list.count(branches, fn(b) { string.uppercase(string.trim(b)) == "NULL" })
-        False -> 0
-      } } != list.length(branches)
+      let has_unresolved =
+        list.length(types)
+        + {
+          case has_null {
+            True ->
+              list.count(branches, fn(b) {
+                string.uppercase(string.trim(b)) == "NULL"
+              })
+            False -> 0
+          }
+        }
+        != list.length(branches)
       case has_unresolved {
         // Some branches are non-literal expressions (column refs etc.) -- fall back
         True -> Column(name: alias, column_type: StringType, nullable: True)
@@ -721,11 +728,7 @@ fn infer_case_type(alias: String, expr: String) -> Column {
               case list.all(rest, fn(t) { t == first }) {
                 True -> {
                   let nullable = has_null || !has_else
-                  Column(
-                    name: alias,
-                    column_type: first,
-                    nullable: nullable,
-                  )
+                  Column(name: alias, column_type: first, nullable: nullable)
                 }
                 // Mixed types -- fall back
                 False ->
@@ -795,14 +798,20 @@ fn do_extract_branches(
             string.drop_start(original, 1),
             string.drop_start(upper, 1),
             current <> string.slice(original, 0, 1),
-            acc, has_else, depth + 1, state,
+            acc,
+            has_else,
+            depth + 1,
+            state,
           )
         ")" ->
           do_extract_branches(
             string.drop_start(original, 1),
             string.drop_start(upper, 1),
             current <> string.slice(original, 0, 1),
-            acc, has_else, depth - 1, state,
+            acc,
+            has_else,
+            depth - 1,
+            state,
           )
         _ ->
           case depth == 0 {
@@ -812,29 +821,48 @@ fn do_extract_branches(
                 string.drop_start(original, 1),
                 string.drop_start(upper, 1),
                 current <> string.slice(original, 0, 1),
-                acc, has_else, depth, state,
+                acc,
+                has_else,
+                depth,
+                state,
               )
             True ->
               // Check for CASE (nested) -- increase depth
-              case string.starts_with(upper, "CASE ") || string.starts_with(upper, "CASE\t") {
+              case
+                string.starts_with(upper, "CASE ")
+                || string.starts_with(upper, "CASE\t")
+              {
                 True ->
                   do_extract_branches(
                     string.drop_start(original, 4),
                     string.drop_start(upper, 4),
                     current <> string.slice(original, 0, 4),
-                    acc, has_else, depth + 1, state,
+                    acc,
+                    has_else,
+                    depth + 1,
+                    state,
                   )
                 False ->
                   // Check for END (closes a nested CASE at depth > 0 handled above;
                   // at depth 0 we should have already stripped the outer END)
-                  case string.starts_with(upper, "END ") || string.starts_with(upper, "END\t") || upper == "END" {
+                  case
+                    string.starts_with(upper, "END ")
+                    || string.starts_with(upper, "END\t")
+                    || upper == "END"
+                  {
                     True -> {
-                      let end_len = case upper == "END" { True -> 3 False -> 3 }
+                      let end_len = case upper == "END" {
+                        True -> 3
+                        False -> 3
+                      }
                       do_extract_branches(
                         string.drop_start(original, end_len),
                         string.drop_start(upper, end_len),
                         current <> string.slice(original, 0, end_len),
-                        acc, has_else, depth - 1, state,
+                        acc,
+                        has_else,
+                        depth - 1,
+                        state,
                       )
                     }
                     False ->
@@ -853,7 +881,11 @@ fn do_extract_branches(
                           do_extract_branches(
                             string.drop_start(original, 6),
                             string.drop_start(upper, 6),
-                            "", new_acc, has_else, 0, InWhen,
+                            "",
+                            new_acc,
+                            has_else,
+                            0,
+                            InWhen,
                           )
                         }
                         False ->
@@ -862,7 +894,11 @@ fn do_extract_branches(
                               do_extract_branches(
                                 string.drop_start(original, 6),
                                 string.drop_start(upper, 6),
-                                "", acc, has_else, 0, InThen,
+                                "",
+                                acc,
+                                has_else,
+                                0,
+                                InThen,
                               )
                             False ->
                               case string.starts_with(upper, " ELSE ") {
@@ -879,7 +915,11 @@ fn do_extract_branches(
                                   do_extract_branches(
                                     string.drop_start(original, 6),
                                     string.drop_start(upper, 6),
-                                    "", new_acc, True, 0, InElse,
+                                    "",
+                                    new_acc,
+                                    True,
+                                    0,
+                                    InElse,
                                   )
                                 }
                                 False ->
@@ -888,7 +928,10 @@ fn do_extract_branches(
                                     string.drop_start(original, 1),
                                     string.drop_start(upper, 1),
                                     current <> string.slice(original, 0, 1),
-                                    acc, has_else, depth, state,
+                                    acc,
+                                    has_else,
+                                    depth,
+                                    state,
                                   )
                               }
                           }
@@ -919,30 +962,44 @@ fn do_find_top_level_end(
       case head {
         "(" ->
           do_find_top_level_end(
-            string.drop_start(remaining, 1), idx + 1, depth + 1,
+            string.drop_start(remaining, 1),
+            idx + 1,
+            depth + 1,
           )
         ")" ->
           do_find_top_level_end(
-            string.drop_start(remaining, 1), idx + 1, depth - 1,
+            string.drop_start(remaining, 1),
+            idx + 1,
+            depth - 1,
           )
         _ ->
           case depth == 0 {
             False ->
               do_find_top_level_end(
-                string.drop_start(remaining, 1), idx + 1, depth,
+                string.drop_start(remaining, 1),
+                idx + 1,
+                depth,
               )
             True ->
               case string.starts_with(remaining, "CASE ") {
                 True ->
                   do_find_top_level_end(
-                    string.drop_start(remaining, 4), idx + 4, depth + 1,
+                    string.drop_start(remaining, 4),
+                    idx + 4,
+                    depth + 1,
                   )
                 False ->
-                  case remaining == "END" || string.starts_with(remaining, "END ") || string.starts_with(remaining, "END\t") {
+                  case
+                    remaining == "END"
+                    || string.starts_with(remaining, "END ")
+                    || string.starts_with(remaining, "END\t")
+                  {
                     True -> option.Some(idx)
                     False ->
                       do_find_top_level_end(
-                        string.drop_start(remaining, 1), idx + 1, depth,
+                        string.drop_start(remaining, 1),
+                        idx + 1,
+                        depth,
                       )
                   }
               }
@@ -1257,7 +1314,13 @@ fn replace_ignore_case(
   // Pre-uppercase both strings once, then scan in parallel
   let upper_needle = string.uppercase(needle)
   let upper_haystack = string.uppercase(haystack)
-  do_replace_ignore_case(haystack, upper_haystack, upper_needle, replacement, "")
+  do_replace_ignore_case(
+    haystack,
+    upper_haystack,
+    upper_needle,
+    replacement,
+    "",
+  )
 }
 
 fn do_replace_ignore_case(
@@ -2492,15 +2555,13 @@ fn do_find_matching_paren(
     _ ->
       case chars {
         [] -> acc
-        [")", ..rest] ->
-          do_find_matching_paren(rest, depth + 1, ")" <> acc)
+        [")", ..rest] -> do_find_matching_paren(rest, depth + 1, ")" <> acc)
         ["(", ..rest] ->
           case depth {
             1 -> acc
             _ -> do_find_matching_paren(rest, depth - 1, "(" <> acc)
           }
-        [char, ..rest] ->
-          do_find_matching_paren(rest, depth, char <> acc)
+        [char, ..rest] -> do_find_matching_paren(rest, depth, char <> acc)
       }
   }
 }
@@ -2979,6 +3040,27 @@ fn extract_named_param_from_rhs(rhs: String) -> Result(String, Nil) {
   }
 }
 
+/// Extract every @name identifier from a string, in order of appearance.
+/// Used when a single WHERE condition contains a subquery with multiple
+/// named parameters, e.g. `WHERE id = (SELECT ... @a ... @b ... @c ...)`.
+fn extract_all_named_params(s: String) -> List(String) {
+  do_extract_all_named_params(s, [])
+}
+
+fn do_extract_all_named_params(s: String, acc: List(String)) -> List(String) {
+  case string.split_once(s, "@") {
+    Error(_) -> list.reverse(acc)
+    Ok(#(_, after_at)) -> {
+      let name = take_identifier_chars(after_at, "")
+      let rest = string.drop_start(after_at, string.length(name))
+      case name {
+        "" -> do_extract_all_named_params(rest, acc)
+        _ -> do_extract_all_named_params(rest, [name, ..acc])
+      }
+    }
+  }
+}
+
 fn take_identifier_chars(s: String, acc: String) -> String {
   case string.pop_grapheme(s) {
     Error(_) -> acc
@@ -3015,81 +3097,83 @@ fn parse_where_columns(sql: String) -> List(#(String, String)) {
       }
       // Replace AND/OR with commas (case-insensitive) to split conditions
       split_where_conditions(where_part)
-      |> list.filter_map(fn(part) {
-        let trimmed = string.trim(part)
-        // Match patterns like "col = ?", "col > ?", "col=?", or "col = @name"
-        case string.contains(trimmed, "?") || string.contains(trimmed, "@") {
-          True -> {
-            // Special case: "col IN (subquery)" or "col = (subquery)" where
-            // @param is inside the subquery. Extract the first @named param
-            // from the subquery RHS. Type lookup searches all tables since
-            // the column may come from a JOINed table, not the main UPDATE table.
-            let upper = string.uppercase(trimmed)
-            let has_subquery =
-              string.contains(upper, " IN (SELECT")
-              || string.contains(upper, " IN ( SELECT")
-              || string.contains(upper, "= (SELECT")
-              || string.contains(upper, "= ( SELECT")
-            case has_subquery {
-              True -> {
-                case extract_named_param_from_rhs(trimmed) {
-                  Ok(param_name) -> Ok(#(param_name, param_name))
-                  Error(_) -> Error(Nil)
-                }
-              }
-              False -> {
-                let lhs = extract_column_before_operator(trimmed)
-                case lhs {
-                  "" -> Error(Nil)
-                  _ -> {
-                    // If LHS contains "@", it's an arithmetic expr like "balance_cents + @min_delta"
-                    // Extract the @param_name and use the base column for type lookup
-                    case string.contains(lhs, "@") {
-                      True -> {
-                        case extract_named_param_from_rhs(lhs) {
-                          Ok(param_name) -> {
-                            // Find the base column (everything before the @)
-                            let lookup_col = case string.split_once(lhs, "@") {
-                              Ok(#(before_at, _)) ->
-                                // Strip the arithmetic operator and spaces
-                                before_at
-                                |> string.trim
-                                |> fn(s) {
-                                  case
-                                    string.ends_with(s, "+")
-                                    || string.ends_with(s, "-")
-                                    || string.ends_with(s, "*")
-                                    || string.ends_with(s, "/")
-                                  {
-                                    True -> string.drop_end(s, 1) |> string.trim
-                                    False -> s
-                                  }
-                                }
-                              Error(_) -> param_name
-                            }
-                            Ok(#(param_name, normalize_column_ref(lookup_col)))
-                          }
-                          Error(_) ->
-                            Ok(#(
-                              normalize_column_ref(lhs),
-                              normalize_column_ref(lhs),
-                            ))
-                        }
-                      }
-                      False -> {
-                        let col_name = normalize_column_ref(lhs)
-                        Ok(#(col_name, col_name))
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-          False -> Error(Nil)
-        }
-      })
+      |> list.flat_map(parse_where_condition)
     }
+  }
+}
+
+/// Parse a single WHERE condition into zero or more #(param_name, lookup_col)
+/// tuples. Handles simple comparisons, arithmetic RHS, and subqueries with
+/// multiple @named params.
+fn parse_where_condition(part: String) -> List(#(String, String)) {
+  let trimmed = string.trim(part)
+  case string.contains(trimmed, "?") || string.contains(trimmed, "@") {
+    False -> []
+    True -> {
+      // Special case: "col IN (subquery)" or "col = (subquery)" where
+      // @params are inside the subquery. Extract ALL @named params from
+      // the subquery RHS in order of appearance. Type lookup searches all
+      // tables since the columns may come from JOINed tables, not the
+      // main UPDATE table.
+      let upper = string.uppercase(trimmed)
+      let has_subquery =
+        string.contains(upper, " IN (SELECT")
+        || string.contains(upper, " IN ( SELECT")
+        || string.contains(upper, "= (SELECT")
+        || string.contains(upper, "= ( SELECT")
+      case has_subquery {
+        True ->
+          extract_all_named_params(trimmed)
+          |> list.map(fn(name) { #(name, name) })
+        False -> parse_simple_where_condition(trimmed)
+      }
+    }
+  }
+}
+
+/// Parse a single non-subquery WHERE condition. Returns at most one tuple.
+fn parse_simple_where_condition(trimmed: String) -> List(#(String, String)) {
+  let lhs = extract_column_before_operator(trimmed)
+  case lhs {
+    "" -> []
+    _ ->
+      // If LHS contains "@", it's an arithmetic expr like
+      // "balance_cents + @min_delta". Extract the @param_name and use
+      // the base column for type lookup.
+      case string.contains(lhs, "@") {
+        True ->
+          case extract_named_param_from_rhs(lhs) {
+            Ok(param_name) -> {
+              let lookup_col = case string.split_once(lhs, "@") {
+                Ok(#(before_at, _)) ->
+                  before_at
+                  |> string.trim
+                  |> strip_trailing_arithmetic_op
+                Error(_) -> param_name
+              }
+              [#(param_name, normalize_column_ref(lookup_col))]
+            }
+            Error(_) -> [
+              #(normalize_column_ref(lhs), normalize_column_ref(lhs)),
+            ]
+          }
+        False -> {
+          let col_name = normalize_column_ref(lhs)
+          [#(col_name, col_name)]
+        }
+      }
+  }
+}
+
+fn strip_trailing_arithmetic_op(s: String) -> String {
+  case
+    string.ends_with(s, "+")
+    || string.ends_with(s, "-")
+    || string.ends_with(s, "*")
+    || string.ends_with(s, "/")
+  {
+    True -> string.drop_end(s, 1) |> string.trim
+    False -> s
   }
 }
 
@@ -3143,10 +3227,8 @@ fn do_split_on_and_or(
         "" -> list.reverse(acc)
         trimmed -> list.reverse([trimmed, ..acc])
       }
-    Ok(#("(", rest)) ->
-      do_split_on_and_or(rest, current <> "(", acc, depth + 1)
-    Ok(#(")", rest)) ->
-      do_split_on_and_or(rest, current <> ")", acc, depth - 1)
+    Ok(#("(", rest)) -> do_split_on_and_or(rest, current <> "(", acc, depth + 1)
+    Ok(#(")", rest)) -> do_split_on_and_or(rest, current <> ")", acc, depth - 1)
     Ok(#(" ", rest)) ->
       case depth == 0 {
         True -> {
@@ -3178,8 +3260,7 @@ fn do_split_on_and_or(
         }
         False -> do_split_on_and_or(rest, current <> " ", acc, depth)
       }
-    Ok(#(char, rest)) ->
-      do_split_on_and_or(rest, current <> char, acc, depth)
+    Ok(#(char, rest)) -> do_split_on_and_or(rest, current <> char, acc, depth)
   }
 }
 

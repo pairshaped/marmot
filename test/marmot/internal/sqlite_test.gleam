@@ -1184,6 +1184,48 @@ pub fn introspect_case_column_ref_fallback_test() {
     result.columns
 }
 
+// Regression: UPDATE with `WHERE col = (subquery)` where the subquery
+// contains multiple @named params. Previously only the first subquery
+// param was extracted, causing the rest to fall through to the opcode
+// fallback and produce generic `param`/`param_N: String` labels.
+pub fn introspect_update_with_eq_subquery_multiple_named_params_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE waitlist_registrations (
+        id INTEGER NOT NULL PRIMARY KEY,
+        item_id INTEGER NOT NULL,
+        account_id INTEGER NOT NULL,
+        org_id INTEGER NOT NULL,
+        claimed_at INTEGER,
+        updated_at INTEGER NOT NULL,
+        approved_at INTEGER,
+        cancelled_at INTEGER
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "UPDATE waitlist_registrations
+       SET claimed_at = @claimed_at, updated_at = @updated_at
+       WHERE id = (
+         SELECT wr.id FROM waitlist_registrations wr
+         WHERE wr.item_id = @item_id AND wr.account_id = @account_id AND wr.org_id = @org_id
+           AND wr.approved_at IS NOT NULL AND wr.claimed_at IS NULL AND wr.cancelled_at IS NULL
+         ORDER BY wr.approved_at ASC
+         LIMIT 1
+       )",
+    )
+  let assert [
+    Parameter(name: "claimed_at", column_type: IntType, nullable: True),
+    Parameter(name: "updated_at", column_type: IntType, nullable: False),
+    Parameter(name: "item_id", column_type: IntType, nullable: False),
+    Parameter(name: "account_id", column_type: IntType, nullable: False),
+    Parameter(name: "org_id", column_type: IntType, nullable: False),
+  ] = result.parameters
+}
+
 pub fn introspect_case_with_exists_subquery_test() {
   use db <- sqlight.with_connection(":memory:")
   let assert Ok(_) =
@@ -1201,7 +1243,6 @@ pub fn introspect_case_with_exists_subquery_test() {
       db,
       "SELECT CASE WHEN EXISTS(SELECT 1 FROM events WHERE events.season_id = seasons.id) THEN 1 ELSE 0 END AS registered FROM seasons",
     )
-  let assert [
-    Column(name: "registered", column_type: IntType, nullable: False),
-  ] = result.columns
+  let assert [Column(name: "registered", column_type: IntType, nullable: False)] =
+    result.columns
 }
