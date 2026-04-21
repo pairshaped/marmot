@@ -136,3 +136,17 @@ pub fn query_has_no_return_columns_test() {
     )
   let assert False = query.has_return_columns(q)
 }
+
+pub fn strip_line_comments_with_escaped_quotes_test() {
+  // The '' inside the string must not close the string literal, so the
+  // -- after it must still be recognized as a comment
+  let assert "SELECT 'it''s fine' \n" =
+    query.strip_line_comments("SELECT 'it''s fine' -- a comment\n")
+}
+
+pub fn strip_line_comments_escaped_quote_before_dash_test() {
+  // Ensure the parser stays in the string through the '' escape, so the
+  // -- inside the string is NOT treated as a comment
+  let assert "SELECT 'it''s -- tricky'" =
+    query.strip_line_comments("SELECT 'it''s -- tricky'")
+}

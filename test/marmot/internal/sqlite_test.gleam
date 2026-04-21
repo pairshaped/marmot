@@ -1337,3 +1337,213 @@ pub fn select_with_string_literal_containing_comma_test() {
   let assert [Parameter(name: "id", column_type: IntType, nullable: False)] =
     result.parameters
 }
+
+// --- Tests for previously untested fixes ---
+
+pub fn introspect_dollar_name_parameter_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id, name FROM users WHERE id = $id AND name = $name",
+    )
+  let assert [
+    Parameter(name: "id", column_type: IntType, nullable: False),
+    Parameter(name: "name", column_type: StringType, nullable: False),
+  ] = result.parameters
+}
+
+pub fn introspect_sum_returns_float_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE orders (id INTEGER NOT NULL PRIMARY KEY, amount REAL NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(db, "SELECT SUM(amount) AS total FROM orders")
+  let assert [Column(name: "total", column_type: FloatType, nullable: True)] =
+    result.columns
+}
+
+pub fn introspect_returning_cast_as_alias_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, val TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "INSERT INTO t (val) VALUES (?) RETURNING CAST(id AS TEXT) AS id_text",
+    )
+  let assert [Column(name: "id_text", column_type: StringType, ..)] =
+    result.columns
+}
+
+pub fn introspect_nested_cast_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, val REAL NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT CAST(CAST(val AS INT) AS TEXT) AS converted FROM t",
+    )
+  // EXPLAIN traces back to source column (REAL), so the type comes from the
+  // opcode path rather than the outer CAST. The important thing is the alias
+  // is correctly resolved via the last top-level AS (not the inner one).
+  let assert [Column(name: "converted", ..)] = result.columns
+}
+
+pub fn introspect_double_quoted_identifier_with_escaped_quotes_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (\"my\"\"col\" INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(db, "SELECT \"my\"\"col\", name FROM t")
+  let assert 2 = list.length(result.columns)
+}
+
+pub fn introspect_keyword_inside_string_literal_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "UPDATE t SET name = 'hello WHERE world' WHERE id = ?",
+    )
+  let assert [Parameter(name: "id", column_type: IntType, nullable: False)] =
+    result.parameters
+}
+
+pub fn introspect_double_quoted_identifier_containing_placeholder_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (\"what?\" INTEGER NOT NULL PRIMARY KEY, val TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(db, "SELECT \"what?\", val FROM t WHERE val = ?")
+  let assert [Parameter(name: "val", column_type: StringType, nullable: False)] =
+    result.parameters
+}
+
+pub fn introspect_nested_function_unwrap_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "UPDATE t SET name = LOWER(TRIM(name)) WHERE id = ?",
+    )
+  let assert [Parameter(name: "id", column_type: IntType, nullable: False)] =
+    result.parameters
+}
+
+pub fn introspect_case_with_string_containing_end_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, active BOOLEAN NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT CASE WHEN active THEN 'THE END' ELSE 'no END here' END AS label FROM t",
+    )
+  let assert [Column(name: "label", column_type: StringType, nullable: False)] =
+    result.columns
+}
+
+pub fn introspect_placeholder_after_escaped_quote_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id FROM t WHERE name != 'it''s' AND id = ?",
+    )
+  let assert [Parameter(name: "id", column_type: IntType, nullable: False)] =
+    result.parameters
+}
+
+pub fn introspect_string_literal_containing_close_paren_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT COALESCE(name, 'default)value') AS display FROM t WHERE id = ?",
+    )
+  let assert [Column(name: "display", column_type: StringType, ..)] =
+    result.columns
+  let assert [Parameter(name: "id", column_type: IntType, nullable: False)] =
+    result.parameters
+}
+
+pub fn introspect_keyword_in_subquery_not_matched_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE orders (id INTEGER NOT NULL PRIMARY KEY, user_id INTEGER NOT NULL, total REAL NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id, name FROM users WHERE id IN (SELECT user_id FROM orders WHERE total > ?)",
+    )
+  let assert [
+    Column(name: "id", column_type: IntType, nullable: False),
+    Column(name: "name", column_type: StringType, nullable: False),
+  ] = result.columns
+}
+
+pub fn introspect_double_quoted_keyword_identifier_in_where_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, \"AND\" TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(db, "SELECT id FROM t WHERE \"AND\" = ?")
+  let assert [Parameter(name: "AND", column_type: StringType, nullable: False)] =
+    result.parameters
+}

@@ -719,3 +719,29 @@ pub fn parse_query_function_allows_normal_path_test() {
   let assert option.Some(_) =
     codegen.parse_query_function(option.Some("server/db.query"))
 }
+
+pub fn parse_query_function_multi_dot_path_test() {
+  let assert option.Some(cfg) =
+    codegen.parse_query_function(option.Some("some.module.path.func"))
+  let assert "func" = cfg.function
+  let assert "some.module.path" = cfg.module_path
+}
+
+pub fn generate_module_returns_error_on_shared_type_mismatch_test() {
+  let q1 =
+    make_query(
+      "get_org",
+      "a.sql",
+      [Column(name: "id", column_type: IntType, nullable: False)],
+      option.Some("OrgRow"),
+    )
+  let q2 =
+    make_query(
+      "list_orgs",
+      "b.sql",
+      [Column(name: "name", column_type: StringType, nullable: False)],
+      option.Some("OrgRow"),
+    )
+  let assert Error(_) =
+    codegen.generate_module_with_config([q1, q2], option.None)
+}
