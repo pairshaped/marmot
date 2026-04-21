@@ -12,9 +12,9 @@ for Postgres).
 
 > If you are an LLM, see [llms.txt](https://raw.githubusercontent.com/pairshaped/marmot/refs/heads/master/llms.txt) for a condensed context document.
 
-## What's Marmot?
+## Why Marmot?
 
-If you need to talk to a SQLite database in Gleam you'll have to write something
+If you need to talk to a SQLite database in Gleam, you'll have to write something
 like this:
 
 ```gleam
@@ -41,25 +41,16 @@ pub fn find_user(db: sqlight.Connection, username: String) {
 }
 ```
 
-This is probably fine if you have a few small queries but it can become quite
-the burden when you have a lot of queries:
+This is fine for a small project but gets hairy when you have a lot of queries:
 
-- The SQL query you write is just a plain string, you do not get syntax
-  highlighting, auto formatting, suggestions... all the little niceties you
-  would otherwise get if you were writing a plain `*.sql` file.
-- This also means you lose the ability to run these queries on their own with
-  other external tools, inspect them and so on.
-- You have to manually keep in sync the decoder with the query's output.
+- Embedding SQL in strings means no syntax highlighting, no formatting, and
+  no way to run queries on their own with external tools.
+- You have to keep the decoder in sync with the query output manually.
 
-One might be tempted to hide all of this by reaching for something like an ORM.
-Marmot proposes a different approach: instead of trying to hide the SQL it
-_embraces it and leaves you in control._
-You write the SQL queries in plain old `*.sql` files and Marmot will take care
-of generating all the corresponding functions.
+Instead of hiding SQL behind an ORM, Marmot _embraces it._ Write your queries
+in plain `*.sql` files and Marmot generates the corresponding functions.
 
-A code snippet is worth a thousand words, so let's have a look at an example.
-Instead of the hand written example shown earlier you can instead just write the
-following query:
+Instead of the hand-written example above, write the following query:
 
 ```sql
 -- we're in file `src/users/sql/find_user.sql`
@@ -68,8 +59,8 @@ from users
 where username = ?
 ```
 
-And run `gleam run -m marmot`. Just like magic you'll now have a type-safe
-function `find_user` you can use just as you'd expect:
+Run `gleam run -m marmot`. You now have a type-safe
+function `find_user` you can use as expected:
 
 ```gleam
 import sqlight
@@ -82,55 +73,50 @@ pub fn main() {
 }
 ```
 
-Behind the scenes Marmot generates the decoders and functions you need. Generated functions use labelled
-arguments (`users_sql.find_user(db: db, username: "alice")`) so call sites are
+Generated functions use labelled arguments
+(`users_sql.find_user(db: db, username: "alice")`) so call sites are
 self-documenting.
-So now you get the best of both worlds:
 
-- You don't have to take care of keeping encoders and decoders in sync, Marmot
-  does that for you.
-- You're not compromising on type safety either: Marmot connects to your
-  SQLite database and uses `PRAGMA table_info` and `EXPLAIN` to understand the
-  types of your queries.
-- You can stick to writing plain SQL in `*.sql` files.
-- You can run each query on its own: need to `explain` a query?
-  No big deal, it's just a plain old `*.sql` file.
+- Marmot keeps encoders and decoders in sync with the query output for you.
+- Type safety is preserved: Marmot connects to your SQLite database and uses
+  `PRAGMA table_info` and `EXPLAIN` to understand query types.
+- Each query is a standalone `*.sql` file, so you can `explain` or lint it
+  independently.
 - No external tools required. No `sqlc` binary, no `sqlite3` CLI. Marmot uses
   `sqlight` directly.
 
 ## Usage
 
-First you'll need to add Marmot to your project as a dev dependency:
+Add Marmot as a dev dependency:
 
 ```sh
 gleam add marmot --dev
 ```
 
-You'll also need `sqlight` as a runtime dependency (the generated code calls it):
+Add `sqlight` as a runtime dependency (the generated code calls it):
 
 ```sh
 gleam add sqlight
 ```
 
-Then you can ask it to generate code running the `marmot` module:
+Generate code by running the `marmot` module:
 
 ```sh
 gleam run -m marmot
 ```
 
-And that's it! As long as you follow a couple of conventions Marmot will just
-work:
+As long as you follow a couple of conventions, Marmot will work out of the box:
 
-- Marmot will look for all `*.sql` files in any `sql` directory under your
+- Marmot looks for all `*.sql` files in any `sql` directory under your
   project's `src` directory.
-- Each `sql` directory will be turned into a single Gleam module containing a
-  function for each `*.sql` file inside it. Generated modules are placed in
+- Each `sql` directory becomes a single Gleam module containing a function
+  for each `*.sql` file inside it. Generated modules are placed in
   `src/generated/sql/` by default, with a `_sql` suffix to avoid import
   aliasing conflicts.
-- Each `*.sql` file _must contain a single SQL query._ And the name of the file
-  is going to be the name of the corresponding Gleam function to run that query.
+- Each `*.sql` file _must contain a single SQL query._ The filename becomes
+  the generated function name.
 
-> Let's make an example. Imagine you have a Gleam project that looks like this
+> Imagine you have a Gleam project that looks like this
 >
 > ```txt
 > src
@@ -175,8 +161,8 @@ gleam run -m marmot -- --database dev.sqlite
 # database = "dev.sqlite"
 ```
 
-If no database is configured, Marmot will show a helpful error message listing
-all three options.
+If no database is configured, Marmot shows an error message listing all three
+options.
 
 ### Configuring the output directory
 
@@ -335,7 +321,7 @@ Not Marmot's to fix.
   (`WHERE org_id = ? AND ... WHERE org_id = ?` produces `org_id` and
   `org_id_2`). This is a SQLite protocol limitation: anonymous `?` are
   always distinct bind slots. **Use named parameters (`@name` or `:name`)
-  instead** -- SQLite deduplicates them natively, so `WHERE org_id = @org_id
+  instead.** SQLite deduplicates them natively, so `WHERE org_id = @org_id
   AND ... WHERE org_id = @org_id` generates a single `org_id` argument.
   Named parameters are also self-documenting and generally preferable.
 - **`WHERE id IN (?)` with a dynamic list is not supported.** SQLite has no
@@ -393,12 +379,6 @@ information in fundamentally incompatible ways.
 - SQLite-specific quirks (`WITHOUT ROWID`, `STRICT` tables, `INTEGER PRIMARY
   KEY` aliasing `rowid`, affinity rules) have no Postgres analogue and
   required their own handling.
-
-## Contributing
-
-If you think there's any way to improve this package, or if you spot a bug don't
-be afraid to open PRs, issues or requests of any kind! Any contribution is
-welcome.
 
 ## License
 

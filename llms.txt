@@ -126,10 +126,10 @@ pub fn get_org(db db: ..., id id: Int) -> Result(List(OrgRow), sqlight.Error) {
 - Complex expressions (subqueries, CTEs, `COALESCE`) may not infer types. Use `CAST` for now; improvable per-kind.
 
 **Design decisions:**
-- `TIMESTAMP`/`DATETIME` stored as integer Unix seconds — sub-second precision not preserved.
+- `TIMESTAMP`/`DATETIME` stored as integer Unix seconds. Sub-second precision not preserved.
 
 **Hard limits (SQLite protocol):**
-- Repeated anonymous `?` produce distinct function args. Use named parameters (`@name`) — SQLite deduplicates them natively.
+- Repeated anonymous `?` produce distinct function args. Use named parameters (`@name`). SQLite deduplicates them natively.
 - `WHERE id IN (?)` with dynamic list: no array bind type. Workarounds: `json_each(?)`, fixed-size queries, or build the SQL dynamically in app code.
 
 ## Dependencies
