@@ -172,13 +172,13 @@ fn common_prefix_length(a: List(String), b: List(String), acc: Int) -> Int {
 }
 
 /// Validate that the configured output directory is under src/.
-pub fn validate_output(config: Config) -> Result(Nil, String) {
+pub fn validate_output(config: Config) -> Result(Nil, Nil) {
   case config.output {
     option.None -> Ok(Nil)
     option.Some(output) ->
       case string.starts_with(output, "src/") {
         True -> Ok(Nil)
-        False -> Error(output)
+        False -> Error(Nil)
       }
   }
 }

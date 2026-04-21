@@ -198,7 +198,7 @@ pub fn validate_output_not_under_src_test() {
       output: option.Some("gen/output"),
       query_function: option.None,
     )
-  let assert Error("gen/output") = project.validate_output(config)
+  let assert Error(Nil) = project.validate_output(config)
 }
 
 pub fn validate_output_none_test() {

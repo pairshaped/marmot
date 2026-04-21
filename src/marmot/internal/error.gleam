@@ -1,3 +1,4 @@
+import gleam/bool
 import gleam/list
 import gleam/string
 import marmot/internal/query.{type Column}
@@ -117,29 +118,27 @@ pub fn to_string(error: MarmotError) -> String {
 }
 
 fn sql_error_hint(message: String) -> String {
-  case string.contains(message, "row value misused") {
-    True ->
-      "
+  use <- bool.guard(
+    string.contains(message, "row value misused"),
+    "
   \u{2502}
   hint: Did you accidentally parenthesize your SELECT columns?
         Write: SELECT id, name FROM ...
-        Not:   SELECT (id, name) FROM ..."
-    False ->
-      case string.contains(message, "no such table") {
-        True ->
-          "
+        Not:   SELECT (id, name) FROM ...",
+  )
+  use <- bool.guard(
+    string.contains(message, "no such table"),
+    "
   \u{2502}
   hint: Make sure the database file contains your schema.
-        Marmot needs the tables to exist so it can infer types."
-        False ->
-          case string.contains(message, "no such column") {
-            True ->
-              "
+        Marmot needs the tables to exist so it can infer types.",
+  )
+  use <- bool.guard(
+    string.contains(message, "no such column"),
+    "
   \u{2502}
   hint: Check that the column name matches your schema exactly.
-        Column names are case-sensitive in some contexts."
-            False -> ""
-          }
-      }
-  }
+        Column names are case-sensitive in some contexts.",
+  )
+  ""
 }

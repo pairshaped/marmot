@@ -1,3 +1,4 @@
+import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/dynamic/decode
 import gleam/int
@@ -1095,8 +1096,7 @@ fn do_skip_string_literal_end(
     Ok(#("'", rest)) ->
       // Check for escaped quote ''
       case string.pop_grapheme(rest) {
-        Ok(#("'", rest2)) ->
-          do_skip_string_literal_end(rest2, idx + 2, depth)
+        Ok(#("'", rest2)) -> do_skip_string_literal_end(rest2, idx + 2, depth)
         _ -> do_find_top_level_end(rest, idx + 1, depth)
       }
     Ok(#(_, rest)) -> do_skip_string_literal_end(rest, idx + 1, depth)
@@ -1219,46 +1219,35 @@ fn do_find_last_top_level_as(
   depth: Int,
   last: option.Option(Int),
 ) -> option.Option(Int) {
-  case string.length(s) < 4 {
-    True -> last
-    False -> {
-      let ch = string.slice(s, 0, 1)
-      case ch {
-        "(" ->
-          do_find_last_top_level_as(
-            string.drop_start(s, 1),
-            idx + 1,
-            depth + 1,
-            last,
-          )
-        ")" ->
-          do_find_last_top_level_as(
-            string.drop_start(s, 1),
-            idx + 1,
-            depth - 1,
-            last,
-          )
-        _ ->
-          case depth == 0 {
-            True -> {
-              let head = string.slice(s, 0, 4)
-              case string.uppercase(head) == " AS " {
-                True ->
-                  do_find_last_top_level_as(
-                    string.drop_start(s, 1),
-                    idx + 1,
-                    depth,
-                    option.Some(idx),
-                  )
-                False ->
-                  do_find_last_top_level_as(
-                    string.drop_start(s, 1),
-                    idx + 1,
-                    depth,
-                    last,
-                  )
-              }
-            }
+  use <- bool.guard(string.length(s) < 4, last)
+  let ch = string.slice(s, 0, 1)
+  case ch {
+    "(" ->
+      do_find_last_top_level_as(
+        string.drop_start(s, 1),
+        idx + 1,
+        depth + 1,
+        last,
+      )
+    ")" ->
+      do_find_last_top_level_as(
+        string.drop_start(s, 1),
+        idx + 1,
+        depth - 1,
+        last,
+      )
+    _ ->
+      case depth == 0 {
+        True -> {
+          let head = string.slice(s, 0, 4)
+          case string.uppercase(head) == " AS " {
+            True ->
+              do_find_last_top_level_as(
+                string.drop_start(s, 1),
+                idx + 1,
+                depth,
+                option.Some(idx),
+              )
             False ->
               do_find_last_top_level_as(
                 string.drop_start(s, 1),
@@ -1267,8 +1256,15 @@ fn do_find_last_top_level_as(
                 last,
               )
           }
+        }
+        False ->
+          do_find_last_top_level_as(
+            string.drop_start(s, 1),
+            idx + 1,
+            depth,
+            last,
+          )
       }
-    }
   }
 }
 
@@ -1416,11 +1412,7 @@ fn walk_matching_paren(s: String, depth: Int) -> String {
   walk_matching_paren_impl(s, depth, False)
 }
 
-fn walk_matching_paren_impl(
-  s: String,
-  depth: Int,
-  in_string: Bool,
-) -> String {
+fn walk_matching_paren_impl(s: String, depth: Int, in_string: Bool) -> String {
   case depth {
     0 -> s
     _ ->
@@ -1629,18 +1621,11 @@ fn do_find_keyword_idx(
               case s == end_target {
                 True -> option.Some(idx)
                 False ->
-                  do_find_keyword_idx(
-                    rest,
-                    target,
-                    end_target,
-                    idx + 1,
-                    depth,
-                  )
+                  do_find_keyword_idx(rest, target, end_target, idx + 1, depth)
               }
           }
         }
-        False ->
-          do_find_keyword_idx(rest, target, end_target, idx + 1, depth)
+        False -> do_find_keyword_idx(rest, target, end_target, idx + 1, depth)
       }
   }
 }
@@ -1662,25 +1647,21 @@ fn do_mask_string_contents(
     Error(_) -> acc
     Ok(#("'", rest)) ->
       case in_double {
-        True ->
-          do_mask_string_contents(rest, acc <> " ", False, True)
+        True -> do_mask_string_contents(rest, acc <> " ", False, True)
         False ->
           case in_single {
             True ->
               case string.pop_grapheme(rest) {
                 Ok(#("'", rest2)) ->
                   do_mask_string_contents(rest2, acc <> "  ", True, False)
-                _ ->
-                  do_mask_string_contents(rest, acc <> "'", False, False)
+                _ -> do_mask_string_contents(rest, acc <> "'", False, False)
               }
-            False ->
-              do_mask_string_contents(rest, acc <> "'", True, False)
+            False -> do_mask_string_contents(rest, acc <> "'", True, False)
           }
       }
     Ok(#("\"", rest)) ->
       case in_single {
-        True ->
-          do_mask_string_contents(rest, acc <> " ", True, False)
+        True -> do_mask_string_contents(rest, acc <> " ", True, False)
         False ->
           case in_double {
             True ->
@@ -1688,19 +1669,15 @@ fn do_mask_string_contents(
               case string.pop_grapheme(rest) {
                 Ok(#("\"", rest2)) ->
                   do_mask_string_contents(rest2, acc <> "  ", False, True)
-                _ ->
-                  do_mask_string_contents(rest, acc <> "\"", False, False)
+                _ -> do_mask_string_contents(rest, acc <> "\"", False, False)
               }
-            False ->
-              do_mask_string_contents(rest, acc <> "\"", False, True)
+            False -> do_mask_string_contents(rest, acc <> "\"", False, True)
           }
       }
     Ok(#(ch, rest)) ->
       case in_single || in_double {
-        True ->
-          do_mask_string_contents(rest, acc <> " ", in_single, in_double)
-        False ->
-          do_mask_string_contents(rest, acc <> ch, in_single, in_double)
+        True -> do_mask_string_contents(rest, acc <> " ", in_single, in_double)
+        False -> do_mask_string_contents(rest, acc <> ch, in_single, in_double)
       }
   }
 }
@@ -1914,14 +1891,7 @@ fn do_split_top_level_commas(
           )
       }
     Ok(#(char, rest)) ->
-      do_split_top_level_commas(
-        rest,
-        current <> char,
-        acc,
-        depth,
-        False,
-        False,
-      )
+      do_split_top_level_commas(rest, current <> char, acc, depth, False, False)
   }
 }
 
@@ -1973,14 +1943,15 @@ fn parse_select_item(raw: String) -> SelectItem {
 }
 
 fn extract_nullability_override(alias: String) -> #(String, NullabilityOverride) {
-  case string.ends_with(alias, "!") {
-    True -> #(string.drop_end(alias, 1), OverrideNonNull)
-    False ->
-      case string.ends_with(alias, "?") {
-        True -> #(string.drop_end(alias, 1), OverrideNullable)
-        False -> #(alias, OverrideNone)
-      }
-  }
+  use <- bool.guard(string.ends_with(alias, "!"), #(
+    string.drop_end(alias, 1),
+    OverrideNonNull,
+  ))
+  use <- bool.guard(string.ends_with(alias, "?"), #(
+    string.drop_end(alias, 1),
+    OverrideNullable,
+  ))
+  #(alias, OverrideNone)
 }
 
 /// Split on the LAST top-level " AS " (case-insensitive).
@@ -2277,20 +2248,14 @@ fn split_on_keyword(
   case find_top_level_keyword_on_masked(masked, keyword) {
     option.Some(idx) -> {
       let before = string.slice(haystack, 0, idx)
-      let after =
-        string.drop_start(haystack, idx + string.length(keyword))
+      let after = string.drop_start(haystack, idx + string.length(keyword))
       Ok(#(before, after))
     }
     option.None -> {
       // Also try keyword at end of string (no trailing space)
       let trimmed_keyword = string.trim_end(keyword)
       let end_target = trimmed_keyword
-      case
-        find_keyword_idx_on_masked(
-          masked,
-          string.trim(trimmed_keyword),
-        )
-      {
+      case find_keyword_idx_on_masked(masked, string.trim(trimmed_keyword)) {
         option.Some(idx) -> {
           let before = string.slice(haystack, 0, idx)
           let after =
@@ -2775,8 +2740,7 @@ fn do_find_subquery_tables(sql: String, acc: List(String)) -> List(String) {
   case find_from_outside_strings(sql, 0, False, False) {
     option.None -> list.reverse(acc)
     option.Some(offset) -> {
-      let rest =
-        string.drop_start(sql, offset + 5) |> string.trim_start
+      let rest = string.drop_start(sql, offset + 5) |> string.trim_start
       let table =
         rest
         |> string.to_graphemes
@@ -2948,8 +2912,7 @@ fn do_find_placeholder(
         True -> do_find_placeholder(rest, idx + 1, in_single, in_double)
         False -> read_named_placeholder(rest, idx + 1)
       }
-    Ok(#(_, rest)) ->
-      do_find_placeholder(rest, idx + 1, in_single, in_double)
+    Ok(#(_, rest)) -> do_find_placeholder(rest, idx + 1, in_single, in_double)
   }
 }
 
@@ -3750,15 +3713,13 @@ fn parse_simple_where_condition(trimmed: String) -> List(#(String, String)) {
 }
 
 fn strip_trailing_arithmetic_op(s: String) -> String {
-  case
+  let has_op =
     string.ends_with(s, "+")
     || string.ends_with(s, "-")
     || string.ends_with(s, "*")
     || string.ends_with(s, "/")
-  {
-    True -> string.drop_end(s, 1) |> string.trim
-    False -> s
-  }
+  use <- bool.guard(!has_op, s)
+  string.drop_end(s, 1) |> string.trim
 }
 
 /// Extract the column name before an operator in a WHERE condition.
@@ -3844,27 +3805,13 @@ fn do_split_on_and_or(
                   )
               }
             False ->
-              do_split_on_and_or(
-                rest,
-                current <> "'",
-                acc,
-                depth,
-                True,
-                False,
-              )
+              do_split_on_and_or(rest, current <> "'", acc, depth, True, False)
           }
       }
     Ok(#("\"", rest)) ->
       case in_single {
         True ->
-          do_split_on_and_or(
-            rest,
-            current <> "\"",
-            acc,
-            depth,
-            True,
-            in_double,
-          )
+          do_split_on_and_or(rest, current <> "\"", acc, depth, True, in_double)
         False ->
           do_split_on_and_or(
             rest,
@@ -3897,8 +3844,7 @@ fn do_split_on_and_or(
               let trimmed = string.trim(current)
               let after = string.drop_start(rest, 4)
               case trimmed {
-                "" ->
-                  do_split_on_and_or(after, "", acc, 0, False, False)
+                "" -> do_split_on_and_or(after, "", acc, 0, False, False)
                 _ ->
                   do_split_on_and_or(
                     after,
@@ -3917,8 +3863,7 @@ fn do_split_on_and_or(
                   let trimmed = string.trim(current)
                   let after = string.drop_start(rest, 3)
                   case trimmed {
-                    "" ->
-                      do_split_on_and_or(after, "", acc, 0, False, False)
+                    "" -> do_split_on_and_or(after, "", acc, 0, False, False)
                     _ ->
                       do_split_on_and_or(
                         after,
@@ -3931,14 +3876,7 @@ fn do_split_on_and_or(
                   }
                 }
                 _ ->
-                  do_split_on_and_or(
-                    rest,
-                    current <> " ",
-                    acc,
-                    0,
-                    False,
-                    False,
-                  )
+                  do_split_on_and_or(rest, current <> " ", acc, 0, False, False)
               }
             }
           }

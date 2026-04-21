@@ -31,7 +31,8 @@ fn with_database(
   let config = project.parse_config(toml_content, args, env_database)
 
   case project.validate_output(config) {
-    Error(output) -> {
+    Error(_) -> {
+      let output = option.unwrap(config.output, "")
       io.println_error(error.to_string(error.OutputNotUnderSrc(output:)))
       halt(1)
     }
@@ -93,8 +94,7 @@ fn generate_all(db: sqlight.Connection, config: project.Config) -> Nil {
       case list.length(list.unique(outputs)) == list.length(outputs) {
         False -> {
           io.println_error(
-            "error: Multiple sql/ directories would write to the same output file."
-            <> "\n  Remove the output configuration or restructure your sql/ directories.",
+            "error: Multiple sql/ directories would write to the same output file.\n  Remove the output configuration or restructure your sql/ directories.",
           )
           halt(1)
         }
@@ -147,8 +147,10 @@ fn generate_for_directory(
         Ok(raw_content) -> {
           let module_content = format_gleam(raw_content)
           case ensure_parent_dir(output) {
-            Error(msg) -> {
-              io.println_error("error: " <> msg)
+            Error(_) -> {
+              io.println_error(
+                "error: Could not create parent directory for " <> output,
+              )
               False
             }
             Ok(_) ->
@@ -195,7 +197,7 @@ fn warn_subdirectories(sql_dir: String) -> Nil {
   }
 }
 
-fn ensure_parent_dir(path: String) -> Result(Nil, String) {
+fn ensure_parent_dir(path: String) -> Result(Nil, Nil) {
   let parent =
     path
     |> string.split("/")
@@ -210,7 +212,7 @@ fn ensure_parent_dir(path: String) -> Result(Nil, String) {
     dir ->
       case simplifile.create_directory_all(dir) {
         Ok(_) -> Ok(Nil)
-        Error(_) -> Error("Could not create directory: " <> dir)
+        Error(_) -> Error(Nil)
       }
   }
 }
@@ -449,7 +451,7 @@ fn format_gleam(code: String) -> String {
           code
         }
       }
-      let _ = simplifile.delete(tmp)
+      let _delete_result = simplifile.delete(tmp)
       formatted
     }
   }

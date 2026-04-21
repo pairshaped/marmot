@@ -1,3 +1,4 @@
+import gleam/bool
 import gleam/list
 import gleam/option.{type Option}
 import gleam/string
@@ -129,10 +130,8 @@ const reserved_words = [
 ]
 
 pub fn safe_name(name: String) -> String {
-  case list.contains(reserved_words, name) {
-    True -> name <> "_"
-    False -> name
-  }
+  use <- bool.guard(list.contains(reserved_words, name), name <> "_")
+  name
 }
 
 pub fn row_type_name(name: String) -> String {

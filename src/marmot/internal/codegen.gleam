@@ -145,9 +145,9 @@ pub fn generate_module_with_config(
     parts -> "\n\n" <> string.join(list.reverse(parts), "\n\n")
   }
 
-  use #(shared_groups, _plain_queries) <- result.try(
-    group_shared_queries(queries),
-  )
+  use #(shared_groups, _plain_queries) <- result.try(group_shared_queries(
+    queries,
+  ))
 
   // Shared types (one per group)
   let shared_types = case shared_groups {
