@@ -71,7 +71,7 @@ pub fn e2e_generate_module_test() {
   let assert 2 = list.length(queries)
 
   // Generate module
-  let output = codegen.generate_module(queries)
+  let assert Ok(output) = codegen.generate_module(queries)
   let assert True = string.contains(output, "pub fn delete_user")
   let assert True = string.contains(output, "pub fn find_user")
   let assert True = string.contains(output, "FindUserRow")
@@ -135,8 +135,7 @@ pub fn e2e_multiple_sql_directories_test() {
                     |> list.last
                     |> result.unwrap("query.sql")
                   let assert Ok(name) = query.function_name(filename)
-                  Ok(#(
-                    dir,
+                  let assert Ok(module) =
                     codegen.generate_module([
                       query.Query(
                         name: name,
@@ -146,8 +145,8 @@ pub fn e2e_multiple_sql_directories_test() {
                         columns: info.columns,
                         custom_type_name: option.None,
                       ),
-                    ]),
-                  ))
+                    ])
+                  Ok(#(dir, module))
                 }
                 Error(_) -> Error(Nil)
               }
@@ -217,7 +216,7 @@ pub fn e2e_check_stale_detection_test() {
 
   let output_dir = option.Some(base <> "/src/generated/sql")
   let output_path = project.output_path(sql_dir, output_dir)
-  let expected = codegen.generate_module(queries)
+  let assert Ok(expected) = codegen.generate_module(queries)
 
   // Before writing: output file doesn't exist, should be stale
   let current_before =
@@ -275,7 +274,7 @@ pub fn e2e_check_stale_detection_test() {
         Error(_) -> Error(Nil)
       }
     })
-  let expected2 = codegen.generate_module(queries2)
+  let assert Ok(expected2) = codegen.generate_module(queries2)
   let assert True = expected2 != current_after
 
   // Cleanup

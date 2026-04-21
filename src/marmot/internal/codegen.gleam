@@ -84,7 +84,9 @@ pub fn generate_function(q: Query) -> String {
 
 /// Generate a complete module from a list of queries. Uses `sqlight.query`
 /// directly.
-pub fn generate_module(queries: List(Query)) -> String {
+pub fn generate_module(
+  queries: List(Query),
+) -> Result(String, error.MarmotError) {
   generate_module_with_config(queries, option.None)
 }
 
@@ -110,7 +112,7 @@ pub fn generate_function_with_config(
 pub fn generate_module_with_config(
   queries: List(Query),
   query_function: Option(String),
-) -> String {
+) -> Result(String, error.MarmotError) {
   let config = parse_query_function(query_function)
   let imports = generate_imports(queries, config)
   let needs_date_decoder =
@@ -143,8 +145,9 @@ pub fn generate_module_with_config(
     parts -> "\n\n" <> string.join(list.reverse(parts), "\n\n")
   }
 
-  let assert Ok(#(shared_groups, _plain_queries)) =
-    group_shared_queries(queries)
+  use #(shared_groups, _plain_queries) <- result.try(
+    group_shared_queries(queries),
+  )
 
   // Shared types (one per group)
   let shared_types = case shared_groups {
@@ -186,13 +189,15 @@ pub fn generate_module_with_config(
     })
     |> string.join("\n\n")
 
-  imports
-  <> helpers
-  <> shared_types
-  <> shared_decoders
-  <> "\n\n"
-  <> functions
-  <> "\n"
+  Ok(
+    imports
+    <> helpers
+    <> shared_types
+    <> shared_decoders
+    <> "\n\n"
+    <> functions
+    <> "\n",
+  )
 }
 
 fn generate_imports(
@@ -622,6 +627,9 @@ fn timestamp_to_int(ts: Timestamp) -> Int {
 fn date_decoder_helper() -> String {
   "/// Decode an ISO 8601 date string (YYYY-MM-DD) from the database into a Date.
 /// Returns a decode error if the string is not a valid date format.
+/// Note: day validation is intentionally permissive (1-31 for all months)
+/// since data comes from the database and strict calendar validation would
+/// reject valid database rows on read.
 fn date_decoder() -> decode.Decoder(Date) {
   use iso <- decode.then(decode.string)
   case string.split(iso, \"-\") {

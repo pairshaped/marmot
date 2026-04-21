@@ -10,6 +10,9 @@ import sqlight
 
 /// Decode an ISO 8601 date string (YYYY-MM-DD) from the database into a Date.
 /// Returns a decode error if the string is not a valid date format.
+/// Note: day validation is intentionally permissive (1-31 for all months)
+/// since data comes from the database and strict calendar validation would
+/// reject valid database rows on read.
 fn date_decoder() -> decode.Decoder(Date) {
   use iso <- decode.then(decode.string)
   case string.split(iso, "-") {

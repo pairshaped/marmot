@@ -48,6 +48,10 @@ fn classify_statement(sql: String) -> StatementType {
 /// Introspect columns of a table using PRAGMA table_info.
 /// Note: get_table_metadata below has similar PRAGMA decoding but also extracts
 /// primary key info and builds multiple dicts in a single pass.
+///
+/// Safety: `table` must be a known table name (e.g. from sqlite_master),
+/// not arbitrary user input. The PRAGMA context does not support parameterized
+/// queries, so we rely on `quote_identifier` for escaping.
 pub fn introspect_columns(
   db: Connection,
   table: String,
@@ -1157,9 +1161,12 @@ fn is_digit_char(c: String) -> Bool {
 /// Parse `CAST(... AS type)` to find the target type. Uses the uppercased
 /// expression for keyword matching.
 fn infer_cast_type(name: String, upper_expr: String) -> Column {
-  // Find the last " AS " at top level inside the CAST parens
-  case string.split_once(upper_expr, " AS ") {
-    Ok(#(_, after)) -> {
+  // Find the last " AS " at depth 0 to handle nested CASTs like
+  // CAST(CAST(x AS INT) AS TEXT)
+  case find_last_top_level_as(upper_expr) {
+    option.None -> Column(name: name, column_type: StringType, nullable: True)
+    option.Some(as_idx) -> {
+      let after = string.drop_start(upper_expr, as_idx + 4)
       let target = string.trim(after)
       // Strip trailing ) and anything after
       let target = case string.split_once(target, ")") {
@@ -1178,7 +1185,70 @@ fn infer_cast_type(name: String, upper_expr: String) -> Column {
         _ -> Column(name: name, column_type: StringType, nullable: True)
       }
     }
-    Error(_) -> Column(name: name, column_type: StringType, nullable: True)
+  }
+}
+
+/// Find the index of the last " AS " at parenthesis depth 0.
+fn find_last_top_level_as(s: String) -> option.Option(Int) {
+  do_find_last_top_level_as(s, 0, 0, option.None)
+}
+
+fn do_find_last_top_level_as(
+  s: String,
+  idx: Int,
+  depth: Int,
+  last: option.Option(Int),
+) -> option.Option(Int) {
+  case string.length(s) < 4 {
+    True -> last
+    False -> {
+      let ch = string.slice(s, 0, 1)
+      case ch {
+        "(" ->
+          do_find_last_top_level_as(
+            string.drop_start(s, 1),
+            idx + 1,
+            depth + 1,
+            last,
+          )
+        ")" ->
+          do_find_last_top_level_as(
+            string.drop_start(s, 1),
+            idx + 1,
+            depth - 1,
+            last,
+          )
+        _ ->
+          case depth == 0 {
+            True -> {
+              let head = string.slice(s, 0, 4)
+              case string.uppercase(head) == " AS " {
+                True ->
+                  do_find_last_top_level_as(
+                    string.drop_start(s, 1),
+                    idx + 1,
+                    depth,
+                    option.Some(idx),
+                  )
+                False ->
+                  do_find_last_top_level_as(
+                    string.drop_start(s, 1),
+                    idx + 1,
+                    depth,
+                    last,
+                  )
+              }
+            }
+            False ->
+              do_find_last_top_level_as(
+                string.drop_start(s, 1),
+                idx + 1,
+                depth,
+                last,
+              )
+          }
+      }
+    }
   }
 }
 
@@ -1313,14 +1383,34 @@ fn find_top_level_keyword_offset(
 }
 
 fn walk_matching_paren(s: String, depth: Int) -> String {
+  walk_matching_paren_impl(s, depth, False)
+}
+
+fn walk_matching_paren_impl(
+  s: String,
+  depth: Int,
+  in_string: Bool,
+) -> String {
   case depth {
     0 -> s
     _ ->
       case string.pop_grapheme(s) {
         Error(_) -> s
-        Ok(#("(", rest)) -> walk_matching_paren(rest, depth + 1)
-        Ok(#(")", rest)) -> walk_matching_paren(rest, depth - 1)
-        Ok(#(_, rest)) -> walk_matching_paren(rest, depth)
+        Ok(#("'", rest)) ->
+          case in_string {
+            True ->
+              case string.pop_grapheme(rest) {
+                Ok(#("'", rest2)) ->
+                  walk_matching_paren_impl(rest2, depth, True)
+                _ -> walk_matching_paren_impl(rest, depth, False)
+              }
+            False -> walk_matching_paren_impl(rest, depth, True)
+          }
+        Ok(#(_, rest)) if in_string ->
+          walk_matching_paren_impl(rest, depth, in_string)
+        Ok(#("(", rest)) -> walk_matching_paren_impl(rest, depth + 1, False)
+        Ok(#(")", rest)) -> walk_matching_paren_impl(rest, depth - 1, False)
+        Ok(#(_, rest)) -> walk_matching_paren_impl(rest, depth, False)
       }
   }
 }
@@ -1468,14 +1558,64 @@ fn do_replace_ignore_case(
 }
 
 fn find_keyword_idx(upper: String, keyword: String) -> option.Option(Int) {
-  // Look for " KEYWORD " (with surrounding spaces) or keyword at end
-  let with_space = " " <> keyword <> " "
-  case string.split_once(upper, with_space) {
-    Ok(#(before, _)) -> option.Some(string.length(before))
-    Error(_) ->
-      case string.ends_with(upper, " " <> keyword) {
-        True -> option.Some(string.length(upper) - string.length(keyword) - 1)
-        False -> option.None
+  // Look for " KEYWORD " (with surrounding spaces) or keyword at end,
+  // but only at parenthesis depth 0 to avoid matching inside subqueries.
+  let target = " " <> keyword <> " "
+  let end_target = " " <> keyword
+  do_find_keyword_idx(upper, target, end_target, 0, 0)
+}
+
+fn do_find_keyword_idx(
+  s: String,
+  target: String,
+  end_target: String,
+  idx: Int,
+  depth: Int,
+) -> option.Option(Int) {
+  case string.pop_grapheme(s) {
+    Error(_) -> option.None
+    Ok(#("(", rest)) ->
+      do_find_keyword_idx(rest, target, end_target, idx + 1, depth + 1)
+    Ok(#(")", rest)) ->
+      do_find_keyword_idx(rest, target, end_target, idx + 1, depth - 1)
+    Ok(#(_, rest)) ->
+      case depth == 0 {
+        True -> {
+          let target_len = string.length(target)
+          let head = string.slice(s, 0, target_len)
+          case head == target {
+            True -> option.Some(idx)
+            False ->
+              // Check for keyword at end of string
+              case s == end_target || string.ends_with(s, end_target) {
+                True ->
+                  case
+                    string.length(s) == string.length(end_target)
+                    && depth == 0
+                  {
+                    True -> option.Some(idx)
+                    False ->
+                      do_find_keyword_idx(
+                        rest,
+                        target,
+                        end_target,
+                        idx + 1,
+                        depth,
+                      )
+                  }
+                False ->
+                  do_find_keyword_idx(
+                    rest,
+                    target,
+                    end_target,
+                    idx + 1,
+                    depth,
+                  )
+              }
+          }
+        }
+        False ->
+          do_find_keyword_idx(rest, target, end_target, idx + 1, depth)
       }
   }
 }
@@ -1893,18 +2033,23 @@ fn make_range(start: Int, count: Int) -> List(Int) {
 }
 
 /// Strip table prefixes ("t.name" -> "name") and function wrappers
-/// ("LOWER(name)" -> "name") from a column reference.
+/// ("LOWER(TRIM(name))" -> "name") from a column reference.
+/// Recursively unwraps nested function calls.
 fn normalize_column_ref(raw: String) -> String {
   // Strip table prefix
   let name = case string.split_once(raw, ".") {
     Ok(#(_, col)) -> col
     Error(_) -> raw
   }
-  // Strip function wrapper
+  // Recursively strip function wrappers
+  do_normalize_column_ref(name)
+}
+
+fn do_normalize_column_ref(name: String) -> String {
   case string.split_once(name, "(") {
     Ok(#(_, rest)) ->
       case string.split_once(rest, ")") {
-        Ok(#(inner, _)) -> string.trim(inner)
+        Ok(#(inner, _)) -> do_normalize_column_ref(string.trim(inner))
         Error(_) -> name
       }
     Error(_) -> name
@@ -2414,12 +2559,11 @@ fn find_all_subquery_tables(sql: String) -> List(String) {
 }
 
 fn do_find_subquery_tables(sql: String, acc: List(String)) -> List(String) {
-  let upper = string.uppercase(sql)
-  case string.split_once(upper, " FROM ") {
-    Error(_) -> list.reverse(acc)
-    Ok(#(before, _)) -> {
-      let offset = string.length(before) + 6
-      let rest = string.drop_start(sql, offset) |> string.trim_start
+  case find_from_outside_strings(sql, 0, False) {
+    option.None -> list.reverse(acc)
+    option.Some(offset) -> {
+      let rest =
+        string.drop_start(sql, offset + 5) |> string.trim_start
       let table =
         rest
         |> string.to_graphemes
@@ -2431,6 +2575,37 @@ fn do_find_subquery_tables(sql: String, acc: List(String)) -> List(String) {
       }
       do_find_subquery_tables(rest, new_acc)
     }
+  }
+}
+
+/// Find the next occurrence of " FROM " that is not inside a string literal.
+fn find_from_outside_strings(
+  s: String,
+  idx: Int,
+  in_string: Bool,
+) -> option.Option(Int) {
+  case string.pop_grapheme(s) {
+    Error(_) -> option.None
+    Ok(#("'", rest)) ->
+      case in_string {
+        True ->
+          case string.pop_grapheme(rest) {
+            Ok(#("'", rest2)) ->
+              find_from_outside_strings(rest2, idx + 2, True)
+            _ -> find_from_outside_strings(rest, idx + 1, False)
+          }
+        False -> find_from_outside_strings(rest, idx + 1, True)
+      }
+    Ok(#(_, rest)) if in_string ->
+      find_from_outside_strings(rest, idx + 1, True)
+    Ok(#(" ", rest)) -> {
+      let head = string.slice(s, 0, 6)
+      case string.uppercase(head) == " FROM " {
+        True -> option.Some(idx)
+        False -> find_from_outside_strings(rest, idx + 1, False)
+      }
+    }
+    Ok(#(_, rest)) -> find_from_outside_strings(rest, idx + 1, False)
   }
 }
 
@@ -2497,38 +2672,55 @@ type Placeholder {
 /// at or after from_idx, skipping single-quoted string literals.
 fn find_next_placeholder(sql: String, from_idx: Int) -> Placeholder {
   let rest = string.drop_start(sql, from_idx)
-  do_find_placeholder(rest, from_idx, False)
+  do_find_placeholder(rest, from_idx, False, False)
 }
 
-fn do_find_placeholder(s: String, idx: Int, in_string: Bool) -> Placeholder {
+fn do_find_placeholder(
+  s: String,
+  idx: Int,
+  in_single: Bool,
+  in_double: Bool,
+) -> Placeholder {
+  let in_quoted = in_single || in_double
   case string.pop_grapheme(s) {
     Error(_) -> PlaceholderNone
     Ok(#("'", rest)) ->
-      case in_string {
-        True ->
-          // Check for escaped quote ''
-          case string.pop_grapheme(rest) {
-            Ok(#("'", rest2)) -> do_find_placeholder(rest2, idx + 2, True)
-            _ -> do_find_placeholder(rest, idx + 1, False)
+      case in_double {
+        True -> do_find_placeholder(rest, idx + 1, in_single, True)
+        False ->
+          case in_single {
+            True ->
+              // Check for escaped quote ''
+              case string.pop_grapheme(rest) {
+                Ok(#("'", rest2)) ->
+                  do_find_placeholder(rest2, idx + 2, True, False)
+                _ -> do_find_placeholder(rest, idx + 1, False, False)
+              }
+            False -> do_find_placeholder(rest, idx + 1, True, False)
           }
-        False -> do_find_placeholder(rest, idx + 1, True)
+      }
+    Ok(#("\"", rest)) ->
+      case in_single {
+        True -> do_find_placeholder(rest, idx + 1, True, in_double)
+        False -> do_find_placeholder(rest, idx + 1, False, !in_double)
       }
     Ok(#("?", rest)) ->
-      case in_string {
-        True -> do_find_placeholder(rest, idx + 1, True)
+      case in_quoted {
+        True -> do_find_placeholder(rest, idx + 1, in_single, in_double)
         False -> PlaceholderAnon(idx, idx + 1)
       }
     Ok(#("@", rest)) ->
-      case in_string {
-        True -> do_find_placeholder(rest, idx + 1, True)
+      case in_quoted {
+        True -> do_find_placeholder(rest, idx + 1, in_single, in_double)
         False -> read_named_placeholder(rest, idx + 1)
       }
     Ok(#(":", rest)) ->
-      case in_string {
-        True -> do_find_placeholder(rest, idx + 1, True)
+      case in_quoted {
+        True -> do_find_placeholder(rest, idx + 1, in_single, in_double)
         False -> read_named_placeholder(rest, idx + 1)
       }
-    Ok(#(_, rest)) -> do_find_placeholder(rest, idx + 1, in_string)
+    Ok(#(_, rest)) ->
+      do_find_placeholder(rest, idx + 1, in_single, in_double)
   }
 }
 
@@ -2548,7 +2740,7 @@ fn do_read_named(s: String, idx: Int, acc: String) -> Placeholder {
         True -> do_read_named(rest, idx + 1, acc <> char)
         False ->
           case acc {
-            "" -> do_find_placeholder(s, idx, False)
+            "" -> do_find_placeholder(s, idx, False, False)
             n -> PlaceholderNamed(n, idx)
           }
       }

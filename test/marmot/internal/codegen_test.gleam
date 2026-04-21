@@ -277,7 +277,8 @@ pub fn codegen_full_module_test() {
       custom_type_name: option.None,
     ),
   ]
-  codegen.generate_module(queries)
+  let assert Ok(output) = codegen.generate_module(queries)
+  output
   |> birdie.snap(title: "codegen full module")
 }
 
@@ -300,7 +301,8 @@ pub fn codegen_exec_only_module_test() {
       custom_type_name: option.None,
     ),
   ]
-  codegen.generate_module(queries)
+  let assert Ok(output) = codegen.generate_module(queries)
+  output
   |> birdie.snap(title: "codegen exec only module")
 }
 
@@ -341,7 +343,8 @@ pub fn codegen_timestamp_param_module_test() {
       custom_type_name: option.None,
     ),
   ]
-  codegen.generate_module(queries)
+  let assert Ok(output) = codegen.generate_module(queries)
+  output
   |> birdie.snap(title: "codegen timestamp param module with helper")
 }
 
@@ -359,7 +362,8 @@ pub fn codegen_date_param_module_test() {
       custom_type_name: option.None,
     ),
   ]
-  codegen.generate_module(queries)
+  let assert Ok(output) = codegen.generate_module(queries)
+  output
   |> birdie.snap(title: "codegen date param module with encoder")
 }
 
@@ -392,7 +396,8 @@ pub fn codegen_date_and_timestamp_module_test() {
       custom_type_name: option.None,
     ),
   ]
-  codegen.generate_module(queries)
+  let assert Ok(output) = codegen.generate_module(queries)
+  output
   |> birdie.snap(title: "codegen date and timestamp module")
 }
 
@@ -427,7 +432,8 @@ pub fn codegen_date_module_test() {
       custom_type_name: option.None,
     ),
   ]
-  codegen.generate_module(queries)
+  let assert Ok(output) = codegen.generate_module(queries)
+  output
   |> birdie.snap(title: "codegen date module with helpers")
 }
 
@@ -455,7 +461,9 @@ pub fn codegen_module_without_query_function_test() {
       custom_type_name: option.None,
     ),
   ]
-  codegen.generate_module_with_config(queries, option.None)
+  let assert Ok(output) =
+    codegen.generate_module_with_config(queries, option.None)
+  output
   |> birdie.snap(title: "codegen module without query_function")
 }
 
@@ -486,7 +494,9 @@ pub fn codegen_module_with_query_function_test() {
       custom_type_name: option.None,
     ),
   ]
-  codegen.generate_module_with_config(queries, option.Some("server/db.query"))
+  let assert Ok(output) =
+    codegen.generate_module_with_config(queries, option.Some("server/db.query"))
+  output
   |> birdie.snap(title: "codegen module with query_function")
 }
 
@@ -637,7 +647,8 @@ pub fn generate_emits_shared_row_type_once_test() {
   ]
   let q1 = make_query("get_org_by_id", "a.sql", cols, option.Some("OrgRow"))
   let q2 = make_query("list_orgs", "b.sql", cols, option.Some("OrgRow"))
-  let output = codegen.generate_module_with_config([q1, q2], option.None)
+  let assert Ok(output) =
+    codegen.generate_module_with_config([q1, q2], option.None)
   let assert 1 = count_substring(output, "pub type OrgRow {")
   let assert 0 = count_substring(output, "pub type GetOrgByIdRow {")
   let assert 0 = count_substring(output, "pub type ListOrgsRow {")
@@ -646,7 +657,8 @@ pub fn generate_emits_shared_row_type_once_test() {
 pub fn generate_emits_per_query_type_for_unannotated_test() {
   let cols = [Column(name: "id", column_type: IntType, nullable: False)]
   let q = make_query("get_foo", "a.sql", cols, option.None)
-  let output = codegen.generate_module_with_config([q], option.None)
+  let assert Ok(output) =
+    codegen.generate_module_with_config([q], option.None)
   let assert 1 = count_substring(output, "pub type GetFooRow {")
   let assert 0 = count_substring(output, "pub type OrgRow {")
 }
@@ -656,7 +668,8 @@ pub fn generate_mixed_annotated_and_plain_test() {
   let cols_b = [Column(name: "name", column_type: StringType, nullable: False)]
   let q1 = make_query("get_org", "a.sql", cols_a, option.Some("OrgRow"))
   let q2 = make_query("other_query", "b.sql", cols_b, option.None)
-  let output = codegen.generate_module_with_config([q1, q2], option.None)
+  let assert Ok(output) =
+    codegen.generate_module_with_config([q1, q2], option.None)
   let assert 1 = count_substring(output, "pub type OrgRow {")
   let assert 1 = count_substring(output, "pub type OtherQueryRow {")
 }
@@ -665,14 +678,16 @@ pub fn generate_emits_shared_decoder_once_test() {
   let cols = [Column(name: "id", column_type: IntType, nullable: False)]
   let q1 = make_query("get_org", "a.sql", cols, option.Some("OrgRow"))
   let q2 = make_query("list_orgs", "b.sql", cols, option.Some("OrgRow"))
-  let output = codegen.generate_module_with_config([q1, q2], option.None)
+  let assert Ok(output) =
+    codegen.generate_module_with_config([q1, q2], option.None)
   let assert 1 = count_substring(output, "fn org_row_decoder()")
 }
 
 pub fn generate_query_function_references_shared_decoder_test() {
   let cols = [Column(name: "id", column_type: IntType, nullable: False)]
   let q = make_query("get_org", "a.sql", cols, option.Some("OrgRow"))
-  let output = codegen.generate_module_with_config([q], option.None)
+  let assert Ok(output) =
+    codegen.generate_module_with_config([q], option.None)
   let assert True = string.contains(output, "org_row_decoder()")
   let q_plain =
     make_query(
@@ -681,7 +696,8 @@ pub fn generate_query_function_references_shared_decoder_test() {
       [Column(name: "x", column_type: IntType, nullable: False)],
       option.None,
     )
-  let output2 = codegen.generate_module_with_config([q_plain], option.None)
+  let assert Ok(output2) =
+    codegen.generate_module_with_config([q_plain], option.None)
   let assert False = string.contains(output2, "other_row_decoder()")
 }
 

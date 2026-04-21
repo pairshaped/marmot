@@ -60,7 +60,8 @@ pub fn end_to_end_shared_row_types_test() {
     ),
   ]
 
-  let output = codegen.generate_module_with_config(queries, option.None)
+  let assert Ok(output) =
+    codegen.generate_module_with_config(queries, option.None)
 
   // Shared type emitted exactly once.
   let assert 1 = count_substring(output, "pub type OrgRow {")
@@ -119,6 +120,8 @@ pub fn snapshot_shared_row_types_output_test() {
     ),
   ]
 
-  codegen.generate_module_with_config(queries, option.None)
+  let assert Ok(output) =
+    codegen.generate_module_with_config(queries, option.None)
+  output
   |> birdie.snap(title: "shared_row_types_two_queries")
 }

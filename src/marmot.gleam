@@ -124,25 +124,31 @@ fn generate_for_directory(
       list.is_empty(sql_files)
     _ -> {
       let output = project.output_path(sql_dir, config.output)
-      let module_content =
-        codegen.generate_module_with_config(queries, config.query_function)
-        |> format_gleam
-      case ensure_parent_dir(output) {
-        Error(msg) -> {
-          io.println_error("error: " <> msg)
+      case codegen.generate_module_with_config(queries, config.query_function) {
+        Error(err) -> {
+          io.println_error(error.to_string(err))
           False
         }
-        Ok(_) ->
-          case simplifile.write(output, module_content) {
-            Ok(_) -> {
-              io.println("  wrote " <> output)
-              True
-            }
-            Error(_) -> {
-              io.println_error("error: Could not write to " <> output)
+        Ok(raw_content) -> {
+          let module_content = format_gleam(raw_content)
+          case ensure_parent_dir(output) {
+            Error(msg) -> {
+              io.println_error("error: " <> msg)
               False
             }
+            Ok(_) ->
+              case simplifile.write(output, module_content) {
+                Ok(_) -> {
+                  io.println("  wrote " <> output)
+                  True
+                }
+                Error(_) -> {
+                  io.println_error("error: Could not write to " <> output)
+                  False
+                }
+              }
           }
+        }
       }
     }
   }
@@ -407,7 +413,7 @@ fn format_gleam(code: String) -> String {
       code
     }
     Ok(_) -> {
-      run_os_cmd("gleam format " <> tmp)
+      run_executable("gleam", ["format", tmp])
       let formatted = case simplifile.read(tmp) {
         Ok(result) -> result
         Error(_) -> {
@@ -430,16 +436,23 @@ fn get_tmp_dir() -> String {
   |> option.unwrap("/tmp")
 }
 
-@external(erlang, "os", "cmd")
-fn os_cmd_ffi(command: List(Int)) -> List(Int)
-
-fn run_os_cmd(command: String) -> Nil {
-  command
-  |> string.to_utf_codepoints
-  |> list.map(string.utf_codepoint_to_int)
-  |> os_cmd_ffi
-  Nil
+/// Run an executable with arguments, bypassing the shell.
+/// Uses erlang:open_port with spawn_executable to avoid shell injection.
+fn run_executable(executable: String, args: List(String)) -> Nil {
+  case find_executable(executable) {
+    option.None -> Nil
+    option.Some(path) -> {
+      run_executable_ffi(path, args)
+      Nil
+    }
+  }
 }
+
+@external(erlang, "marmot_ffi", "run_executable")
+fn run_executable_ffi(path: String, args: List(String)) -> Nil
+
+@external(erlang, "marmot_ffi", "find_executable")
+fn find_executable(name: String) -> Option(String)
 
 fn halt(code: Int) -> Nil {
   // init:stop/1 performs a graceful shutdown that flushes I/O buffers,
