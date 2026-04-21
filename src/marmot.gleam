@@ -68,6 +68,21 @@ fn run_generate(args: List(String)) -> Nil {
 }
 
 fn generate_all(db: sqlight.Connection, config: project.Config) -> Nil {
+  // Warn if query_function is configured but malformed
+  case config.query_function {
+    option.Some(value) ->
+      case codegen.parse_query_function(config.query_function) {
+        option.None ->
+          io.println_error(
+            "warning: query_function \""
+            <> value
+            <> "\" is malformed, expected \"module/path.function\" format."
+            <> "\n  Falling back to sqlight.query",
+          )
+        option.Some(_) -> Nil
+      }
+    option.None -> Nil
+  }
   let sql_dirs = project.find_sql_directories("src")
   case sql_dirs {
     [] -> io.println("No sql/ directories found under src/")

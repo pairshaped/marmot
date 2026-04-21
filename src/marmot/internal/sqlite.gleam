@@ -1018,7 +1018,7 @@ fn do_extract_branches(
 /// Find the position of the top-level END keyword in an uppercased CASE body.
 /// Tracks nested CASE...END depth so inner ENDs are skipped.
 fn find_top_level_end(upper: String) -> option.Option(Int) {
-  do_find_top_level_end(upper, 0, 0)
+  do_find_top_level_end(mask_string_contents(upper), 0, 0)
 }
 
 fn do_find_top_level_end(
@@ -1217,7 +1217,7 @@ fn infer_cast_type(name: String, upper_expr: String) -> Column {
 
 /// Find the index of the last " AS " at parenthesis depth 0.
 fn find_last_top_level_as(s: String) -> option.Option(Int) {
-  do_find_last_top_level_as(s, 0, 0, option.None)
+  do_find_last_top_level_as(mask_string_contents(s), 0, 0, option.None)
 }
 
 fn do_find_last_top_level_as(
@@ -1320,10 +1320,11 @@ fn parse_select_items(sql: String) -> List(SelectItem) {
     "" -> []
     prefix -> {
       let after_select = string.drop_start(main_sql, string.length(prefix))
+      let masked_after = mask_string_contents(after_select)
       // Find end of SELECT list: FROM at top level, or end of string
       // for queries without FROM (SELECT EXISTS(...), SELECT COALESCE(...),
       // etc). Terminate at other top-level keywords too.
-      let end_idx = case find_top_level_from(after_select) {
+      let end_idx = case find_top_level_from_on_masked(masked_after) {
         option.Some(idx) -> idx
         option.None -> {
           // No top-level FROM (e.g. `SELECT EXISTS(...) AS alias`). The
@@ -1331,10 +1332,10 @@ fn parse_select_items(sql: String) -> List(SelectItem) {
           // or at end of string. Use the same paren-aware scan so we don't
           // truncate at a keyword that's inside a subquery.
           [
-            do_find_top_level_keyword(after_select, " WHERE ", 0, 0),
-            do_find_top_level_keyword(after_select, " GROUP BY ", 0, 0),
-            do_find_top_level_keyword(after_select, " ORDER BY ", 0, 0),
-            do_find_top_level_keyword(after_select, " LIMIT ", 0, 0),
+            find_top_level_keyword_on_masked(masked_after, " WHERE "),
+            find_top_level_keyword_on_masked(masked_after, " GROUP BY "),
+            find_top_level_keyword_on_masked(masked_after, " ORDER BY "),
+            find_top_level_keyword_on_masked(masked_after, " LIMIT "),
           ]
           |> list.filter_map(fn(x) {
             case x {
@@ -1406,7 +1407,16 @@ fn find_top_level_keyword_offset(
   s: String,
   keyword: String,
 ) -> option.Option(Int) {
-  do_find_top_level_keyword(s, keyword, 0, 0)
+  find_top_level_keyword_on_masked(mask_string_contents(s), keyword)
+}
+
+/// Like `find_top_level_keyword_offset` but the caller has already masked
+/// string literals. Avoids re-masking on repeated searches over the same text.
+fn find_top_level_keyword_on_masked(
+  masked: String,
+  keyword: String,
+) -> option.Option(Int) {
+  do_find_top_level_keyword(masked, keyword, 0, 0)
 }
 
 fn walk_matching_paren(s: String, depth: Int) -> String {
@@ -1466,14 +1476,15 @@ fn parse_from_tables(sql: String) -> List(String) {
         |> string.trim
       // Terminate at WHERE/GROUP/HAVING/ORDER/LIMIT/RETURNING
       let rest_upper = string.uppercase(rest)
+      let masked_rest = mask_string_contents(rest_upper)
       let end_idx =
         [
-          find_keyword_idx(rest_upper, "WHERE"),
-          find_keyword_idx(rest_upper, "GROUP BY"),
-          find_keyword_idx(rest_upper, "HAVING"),
-          find_keyword_idx(rest_upper, "ORDER BY"),
-          find_keyword_idx(rest_upper, "LIMIT"),
-          find_keyword_idx(rest_upper, "RETURNING"),
+          find_keyword_idx_on_masked(masked_rest, "WHERE"),
+          find_keyword_idx_on_masked(masked_rest, "GROUP BY"),
+          find_keyword_idx_on_masked(masked_rest, "HAVING"),
+          find_keyword_idx_on_masked(masked_rest, "ORDER BY"),
+          find_keyword_idx_on_masked(masked_rest, "LIMIT"),
+          find_keyword_idx_on_masked(masked_rest, "RETURNING"),
         ]
         |> list.filter_map(fn(x) {
           case x {
@@ -1541,10 +1552,12 @@ fn replace_ignore_case(
   // Pre-uppercase both strings once, then scan in parallel
   let upper_needle = string.uppercase(needle)
   let upper_haystack = string.uppercase(haystack)
+  let needle_len = string.length(upper_needle)
   do_replace_ignore_case(
     haystack,
     upper_haystack,
     upper_needle,
+    needle_len,
     replacement,
     "",
   )
@@ -1554,10 +1567,10 @@ fn do_replace_ignore_case(
   original: String,
   upper: String,
   upper_needle: String,
+  needle_len: Int,
   replacement: String,
   acc: String,
 ) -> String {
-  let needle_len = string.length(upper_needle)
   case string.length(upper) < needle_len {
     True -> acc <> original
     False ->
@@ -1567,6 +1580,7 @@ fn do_replace_ignore_case(
             string.drop_start(original, needle_len),
             string.drop_start(upper, needle_len),
             upper_needle,
+            needle_len,
             replacement,
             acc <> replacement,
           )
@@ -1576,6 +1590,7 @@ fn do_replace_ignore_case(
             string.drop_start(original, 1),
             string.drop_start(upper, 1),
             upper_needle,
+            needle_len,
             replacement,
             acc <> first,
           )
@@ -1584,12 +1599,16 @@ fn do_replace_ignore_case(
   }
 }
 
-fn find_keyword_idx(upper: String, keyword: String) -> option.Option(Int) {
-  // Look for " KEYWORD " (with surrounding spaces) or keyword at end,
-  // but only at parenthesis depth 0 to avoid matching inside subqueries.
+/// Find a SQL keyword at parenthesis depth 0, respecting string literals.
+/// Accepts pre-masked input to avoid redundant masking when searching for
+/// multiple keywords on the same string.
+fn find_keyword_idx_on_masked(
+  masked_upper: String,
+  keyword: String,
+) -> option.Option(Int) {
   let target = " " <> keyword <> " "
   let end_target = " " <> keyword
-  do_find_keyword_idx(upper, target, end_target, 0, 0)
+  do_find_keyword_idx(masked_upper, target, end_target, 0, 0)
 }
 
 fn do_find_keyword_idx(
@@ -1613,23 +1632,9 @@ fn do_find_keyword_idx(
           case head == target {
             True -> option.Some(idx)
             False ->
-              // Check for keyword at end of string
-              case s == end_target || string.ends_with(s, end_target) {
-                True ->
-                  case
-                    string.length(s) == string.length(end_target)
-                    && depth == 0
-                  {
-                    True -> option.Some(idx)
-                    False ->
-                      do_find_keyword_idx(
-                        rest,
-                        target,
-                        end_target,
-                        idx + 1,
-                        depth,
-                      )
-                  }
+              // Check for keyword at end of string (no trailing space)
+              case s == end_target {
+                True -> option.Some(idx)
                 False ->
                   do_find_keyword_idx(
                     rest,
@@ -1647,10 +1652,69 @@ fn do_find_keyword_idx(
   }
 }
 
+/// Replace the contents of string literals ('...' and "...") with spaces,
+/// preserving character positions. Keyword-scanning functions call this so
+/// they don't match keywords that appear inside string literals.
+fn mask_string_contents(sql: String) -> String {
+  do_mask_string_contents(sql, "", False, False)
+}
+
+fn do_mask_string_contents(
+  remaining: String,
+  acc: String,
+  in_single: Bool,
+  in_double: Bool,
+) -> String {
+  case string.pop_grapheme(remaining) {
+    Error(_) -> acc
+    Ok(#("'", rest)) ->
+      case in_double {
+        True ->
+          do_mask_string_contents(rest, acc <> " ", False, True)
+        False ->
+          case in_single {
+            True ->
+              case string.pop_grapheme(rest) {
+                Ok(#("'", rest2)) ->
+                  do_mask_string_contents(rest2, acc <> "  ", True, False)
+                _ ->
+                  do_mask_string_contents(rest, acc <> "'", False, False)
+              }
+            False ->
+              do_mask_string_contents(rest, acc <> "'", True, False)
+          }
+      }
+    Ok(#("\"", rest)) ->
+      case in_single {
+        True ->
+          do_mask_string_contents(rest, acc <> " ", True, False)
+        False ->
+          case in_double {
+            True ->
+              do_mask_string_contents(rest, acc <> "\"", False, False)
+            False ->
+              do_mask_string_contents(rest, acc <> "\"", False, True)
+          }
+      }
+    Ok(#(ch, rest)) ->
+      case in_single || in_double {
+        True ->
+          do_mask_string_contents(rest, acc <> " ", in_single, in_double)
+        False ->
+          do_mask_string_contents(rest, acc <> ch, in_single, in_double)
+      }
+  }
+}
+
 /// Find the index of the top-level `FROM` keyword in a SELECT's from-part.
-/// Respects nested parentheses (subqueries).
+/// Respects nested parentheses, subqueries, and string literals.
 fn find_top_level_from(s: String) -> option.Option(Int) {
-  do_find_top_level_keyword(s, " FROM ", 0, 0)
+  find_top_level_keyword_on_masked(mask_string_contents(s), " FROM ")
+}
+
+/// Like `find_top_level_from` but the caller has already masked string literals.
+fn find_top_level_from_on_masked(masked: String) -> option.Option(Int) {
+  find_top_level_keyword_on_masked(masked, " FROM ")
 }
 
 fn do_find_top_level_keyword(
@@ -1707,10 +1771,11 @@ fn do_find_top_level_keyword(
   }
 }
 
-/// Split a string on top-level commas (ignoring commas inside parens or
-/// single-quoted string literals). Handles '' escape sequences.
+/// Split a string on top-level commas (ignoring commas inside parens,
+/// single-quoted string literals, or double-quoted identifiers).
+/// Handles '' escape sequences.
 fn split_top_level_commas(s: String) -> List(String) {
-  do_split_top_level_commas(s, "", [], 0, False)
+  do_split_top_level_commas(s, "", [], 0, False, False)
 }
 
 fn do_split_top_level_commas(
@@ -1718,7 +1783,8 @@ fn do_split_top_level_commas(
   current: String,
   acc: List(String),
   depth: Int,
-  in_string: Bool,
+  in_single: Bool,
+  in_double: Bool,
 ) -> List(String) {
   case string.pop_grapheme(remaining) {
     Error(_) ->
@@ -1727,30 +1793,99 @@ fn do_split_top_level_commas(
         _ -> list.reverse([string.trim(current), ..acc])
       }
     Ok(#("'", rest)) ->
-      case in_string {
+      case in_double {
         True ->
-          // Check for escaped quote ''
-          case string.pop_grapheme(rest) {
-            Ok(#("'", rest2)) ->
+          do_split_top_level_commas(
+            rest,
+            current <> "'",
+            acc,
+            depth,
+            in_single,
+            True,
+          )
+        False ->
+          case in_single {
+            True ->
+              // Check for escaped quote ''
+              case string.pop_grapheme(rest) {
+                Ok(#("'", rest2)) ->
+                  do_split_top_level_commas(
+                    rest2,
+                    current <> "''",
+                    acc,
+                    depth,
+                    True,
+                    False,
+                  )
+                _ ->
+                  do_split_top_level_commas(
+                    rest,
+                    current <> "'",
+                    acc,
+                    depth,
+                    False,
+                    False,
+                  )
+              }
+            False ->
               do_split_top_level_commas(
-                rest2,
-                current <> "''",
+                rest,
+                current <> "'",
                 acc,
                 depth,
                 True,
+                False,
               )
-            _ ->
-              do_split_top_level_commas(rest, current <> "'", acc, depth, False)
           }
-        False ->
-          do_split_top_level_commas(rest, current <> "'", acc, depth, True)
       }
-    Ok(#(char, rest)) if in_string ->
-      do_split_top_level_commas(rest, current <> char, acc, depth, True)
+    Ok(#("\"", rest)) ->
+      case in_single {
+        True ->
+          do_split_top_level_commas(
+            rest,
+            current <> "\"",
+            acc,
+            depth,
+            True,
+            in_double,
+          )
+        False ->
+          do_split_top_level_commas(
+            rest,
+            current <> "\"",
+            acc,
+            depth,
+            False,
+            !in_double,
+          )
+      }
+    Ok(#(char, rest)) if in_single || in_double ->
+      do_split_top_level_commas(
+        rest,
+        current <> char,
+        acc,
+        depth,
+        in_single,
+        in_double,
+      )
     Ok(#("(", rest)) ->
-      do_split_top_level_commas(rest, current <> "(", acc, depth + 1, False)
+      do_split_top_level_commas(
+        rest,
+        current <> "(",
+        acc,
+        depth + 1,
+        False,
+        False,
+      )
     Ok(#(")", rest)) ->
-      do_split_top_level_commas(rest, current <> ")", acc, depth - 1, False)
+      do_split_top_level_commas(
+        rest,
+        current <> ")",
+        acc,
+        depth - 1,
+        False,
+        False,
+      )
     Ok(#(",", rest)) ->
       case depth {
         0 ->
@@ -1760,12 +1895,27 @@ fn do_split_top_level_commas(
             [string.trim(current), ..acc],
             0,
             False,
+            False,
           )
         _ ->
-          do_split_top_level_commas(rest, current <> ",", acc, depth, False)
+          do_split_top_level_commas(
+            rest,
+            current <> ",",
+            acc,
+            depth,
+            False,
+            False,
+          )
       }
     Ok(#(char, rest)) ->
-      do_split_top_level_commas(rest, current <> char, acc, depth, False)
+      do_split_top_level_commas(
+        rest,
+        current <> char,
+        acc,
+        depth,
+        False,
+        False,
+      )
   }
 }
 
@@ -1831,7 +1981,7 @@ fn extract_nullability_override(alias: String) -> #(String, NullabilityOverride)
 fn rsplit_on_as(s: String) -> option.Option(#(String, String)) {
   // Find all " AS " positions at depth 0, take the last.
   let upper = string.uppercase(s)
-  let positions = find_all_top_level_as(upper, 0, 0, [])
+  let positions = find_all_top_level_as(mask_string_contents(upper), 0, 0, [])
   case list.last(positions) {
     Error(_) -> option.None
     Ok(pos) -> {
@@ -1951,7 +2101,7 @@ fn parse_returning_columns(sql: String) -> List(String) {
       let original_rest = string.drop_start(sql, offset)
       original_rest
       |> string.trim
-      |> string.split(",")
+      |> split_top_level_commas
       |> list.map(fn(col) {
         let trimmed = string.trim(col)
         // Handle "expr AS alias" -- use the alias as the column name
@@ -2336,7 +2486,7 @@ fn parse_values_placeholder_positions(sql: String) -> List(Int) {
             case trimmed {
               "?" -> Ok(idx)
               _ ->
-                case string.starts_with(trimmed, "@") {
+                case starts_with_param_prefix(trimmed) {
                   True -> Ok(idx)
                   False -> Error(Nil)
                 }
@@ -2390,9 +2540,7 @@ fn extract_insert_select_parameters(
       let offset = string.length(before) + string.length(marker)
       let after_select = string.drop_start(sql, offset) |> string.trim_start
       // SELECT-list ends at " FROM " at top level
-      let end_idx = case
-        do_find_top_level_keyword(after_select, " FROM ", 0, 0)
-      {
+      let end_idx = case find_top_level_from(after_select) {
         option.Some(idx) -> idx
         option.None -> string.length(after_select)
       }
@@ -2404,7 +2552,7 @@ fn extract_insert_select_parameters(
         |> list.index_map(fn(item, idx) {
           let trimmed = string.trim(item)
           let is_anon = trimmed == "?"
-          let is_named = string.starts_with(trimmed, "@")
+          let is_named = starts_with_param_prefix(trimmed)
           case is_anon || is_named {
             True ->
               case list_at(target_cols, idx) {
@@ -2616,7 +2764,7 @@ fn find_all_subquery_tables(sql: String) -> List(String) {
 }
 
 fn do_find_subquery_tables(sql: String, acc: List(String)) -> List(String) {
-  case find_from_outside_strings(sql, 0, False) {
+  case find_from_outside_strings(sql, 0, False, False) {
     option.None -> list.reverse(acc)
     option.Some(offset) -> {
       let rest =
@@ -2635,34 +2783,45 @@ fn do_find_subquery_tables(sql: String, acc: List(String)) -> List(String) {
   }
 }
 
-/// Find the next occurrence of " FROM " that is not inside a string literal.
+/// Find the next occurrence of " FROM " that is not inside a string literal
+/// or double-quoted identifier.
 fn find_from_outside_strings(
   s: String,
   idx: Int,
-  in_string: Bool,
+  in_single: Bool,
+  in_double: Bool,
 ) -> option.Option(Int) {
   case string.pop_grapheme(s) {
     Error(_) -> option.None
     Ok(#("'", rest)) ->
-      case in_string {
-        True ->
-          case string.pop_grapheme(rest) {
-            Ok(#("'", rest2)) ->
-              find_from_outside_strings(rest2, idx + 2, True)
-            _ -> find_from_outside_strings(rest, idx + 1, False)
+      case in_double {
+        True -> find_from_outside_strings(rest, idx + 1, in_single, True)
+        False ->
+          case in_single {
+            True ->
+              case string.pop_grapheme(rest) {
+                Ok(#("'", rest2)) ->
+                  find_from_outside_strings(rest2, idx + 2, True, False)
+                _ -> find_from_outside_strings(rest, idx + 1, False, False)
+              }
+            False -> find_from_outside_strings(rest, idx + 1, True, False)
           }
-        False -> find_from_outside_strings(rest, idx + 1, True)
       }
-    Ok(#(_, rest)) if in_string ->
-      find_from_outside_strings(rest, idx + 1, True)
+    Ok(#("\"", rest)) ->
+      case in_single {
+        True -> find_from_outside_strings(rest, idx + 1, True, in_double)
+        False -> find_from_outside_strings(rest, idx + 1, False, !in_double)
+      }
+    Ok(#(_, rest)) if in_single || in_double ->
+      find_from_outside_strings(rest, idx + 1, in_single, in_double)
     Ok(#(" ", rest)) -> {
       let head = string.slice(s, 0, 6)
       case string.uppercase(head) == " FROM " {
         True -> option.Some(idx)
-        False -> find_from_outside_strings(rest, idx + 1, False)
+        False -> find_from_outside_strings(rest, idx + 1, False, False)
       }
     }
-    Ok(#(_, rest)) -> find_from_outside_strings(rest, idx + 1, False)
+    Ok(#(_, rest)) -> find_from_outside_strings(rest, idx + 1, False, False)
   }
 }
 
@@ -2772,6 +2931,11 @@ fn do_find_placeholder(
         False -> read_named_placeholder(rest, idx + 1)
       }
     Ok(#(":", rest)) ->
+      case in_quoted {
+        True -> do_find_placeholder(rest, idx + 1, in_single, in_double)
+        False -> read_named_placeholder(rest, idx + 1)
+      }
+    Ok(#("$", rest)) ->
       case in_quoted {
         True -> do_find_placeholder(rest, idx + 1, in_single, in_double)
         False -> read_named_placeholder(rest, idx + 1)
@@ -3355,10 +3519,13 @@ fn parse_update_set_columns(sql: String) -> List(#(String, String)) {
       let offset = string.length(sql) - string.length(rest_upper)
       let rest = string.drop_start(sql, offset)
       // Get the part between SET and WHERE/RETURNING (top-level only)
-      let set_part = case find_top_level_keyword_offset(rest, " WHERE ") {
+      let masked_rest = mask_string_contents(rest)
+      let set_part = case
+        find_top_level_keyword_on_masked(masked_rest, " WHERE ")
+      {
         option.Some(idx) -> string.slice(rest, 0, idx)
         option.None ->
-          case find_top_level_keyword_offset(rest, " RETURNING ") {
+          case find_top_level_keyword_on_masked(masked_rest, " RETURNING ") {
             option.Some(idx) -> string.slice(rest, 0, idx)
             option.None -> rest
           }
@@ -3393,34 +3560,67 @@ fn parse_update_set_columns(sql: String) -> List(#(String, String)) {
   }
 }
 
-/// Extract the first @name identifier from an RHS expression.
-/// E.g. "COALESCE(@gender, gender)" -> Ok("gender")
-///      "@updated_at" -> Ok("updated_at")
-///      "balance_cents + @amount_cents" -> Ok("amount_cents")
-///      "other_col" -> Error(Nil)
-fn extract_named_param_from_rhs(rhs: String) -> Result(String, Nil) {
-  case string.split_once(rhs, "@") {
+/// Check if a string starts with a named parameter prefix (@, :, or $).
+fn starts_with_param_prefix(s: String) -> Bool {
+  string.starts_with(s, "@")
+  || string.starts_with(s, ":")
+  || string.starts_with(s, "$")
+}
+
+/// Check if a string contains any parameter marker (?, @, :, or $).
+fn contains_param_marker(s: String) -> Bool {
+  string.contains(s, "?")
+  || string.contains(s, "@")
+  || string.contains(s, ":")
+  || string.contains(s, "$")
+}
+
+/// Find the first named parameter prefix (@, :, or $) in a string and
+/// return the text before and after the prefix character.
+fn find_first_param_prefix(s: String) -> Result(#(String, String), Nil) {
+  do_find_first_param_prefix(s, "")
+}
+
+fn do_find_first_param_prefix(
+  remaining: String,
+  before: String,
+) -> Result(#(String, String), Nil) {
+  case string.pop_grapheme(remaining) {
     Error(_) -> Error(Nil)
-    Ok(#(_, after_at)) -> {
-      // Collect chars until non-identifier character
-      Ok(take_identifier_chars(after_at, ""))
-    }
+    Ok(#(c, rest)) ->
+      case c == "@" || c == ":" || c == "$" {
+        True -> Ok(#(before, rest))
+        False -> do_find_first_param_prefix(rest, before <> c)
+      }
   }
 }
 
-/// Extract every @name identifier from a string, in order of appearance.
-/// Used when a single WHERE condition contains a subquery with multiple
-/// named parameters, e.g. `WHERE id = (SELECT ... @a ... @b ... @c ...)`.
+/// Extract the first @name, :name, or $name identifier from an RHS expression.
+/// E.g. "COALESCE(@gender, gender)" -> Ok("gender")
+///      "@updated_at" -> Ok("updated_at")
+///      "balance_cents + @amount_cents" -> Ok("amount_cents")
+///      ":new_value" -> Ok("new_value")
+///      "other_col" -> Error(Nil)
+fn extract_named_param_from_rhs(rhs: String) -> Result(String, Nil) {
+  case find_first_param_prefix(rhs) {
+    Error(_) -> Error(Nil)
+    Ok(#(_, after)) -> Ok(take_identifier_chars(after, ""))
+  }
+}
+
+/// Extract every @name, :name, or $name identifier from a string, in order
+/// of appearance. Used when a single WHERE condition contains a subquery
+/// with multiple named parameters.
 fn extract_all_named_params(s: String) -> List(String) {
   do_extract_all_named_params(s, [])
 }
 
 fn do_extract_all_named_params(s: String, acc: List(String)) -> List(String) {
-  case string.split_once(s, "@") {
+  case find_first_param_prefix(s) {
     Error(_) -> list.reverse(acc)
-    Ok(#(_, after_at)) -> {
-      let name = take_identifier_chars(after_at, "")
-      let rest = string.drop_start(after_at, string.length(name))
+    Ok(#(_, after)) -> {
+      let name = take_identifier_chars(after, "")
+      let rest = string.drop_start(after, string.length(name))
       case name {
         "" -> do_extract_all_named_params(rest, acc)
         _ -> do_extract_all_named_params(rest, [name, ..acc])
@@ -3453,13 +3653,17 @@ fn take_identifier_chars(s: String, acc: String) -> String {
 /// For IN (subquery) conditions like "col IN (SELECT ... WHERE x = @param)",
 /// param_name is extracted from the subquery's @named param.
 fn parse_where_columns(sql: String) -> List(#(String, String)) {
-  case find_top_level_keyword_offset(sql, " WHERE ") {
+  let masked_sql = mask_string_contents(sql)
+  case find_top_level_keyword_on_masked(masked_sql, " WHERE ") {
     option.None -> []
     option.Some(where_offset) -> {
       let offset = where_offset + string.length(" WHERE ")
       let rest = string.drop_start(sql, offset)
+      let masked_rest = string.drop_start(masked_sql, offset)
       // Get part before RETURNING if present (also top-level only)
-      let where_part = case find_top_level_keyword_offset(rest, " RETURNING ") {
+      let where_part = case
+        find_top_level_keyword_on_masked(masked_rest, " RETURNING ")
+      {
         option.Some(ret_offset) -> string.slice(rest, 0, ret_offset)
         option.None -> rest
       }
@@ -3475,14 +3679,14 @@ fn parse_where_columns(sql: String) -> List(#(String, String)) {
 /// multiple @named params.
 fn parse_where_condition(part: String) -> List(#(String, String)) {
   let trimmed = string.trim(part)
-  case string.contains(trimmed, "?") || string.contains(trimmed, "@") {
+  case contains_param_marker(trimmed) {
     False -> []
     True -> {
       // Special case: "col IN (subquery)" or "col = (subquery)" where
-      // @params are inside the subquery. Extract ALL @named params from
-      // the subquery RHS in order of appearance. Type lookup searches all
-      // tables since the columns may come from JOINed tables, not the
-      // main UPDATE table.
+      // named params are inside the subquery. Extract ALL named params
+      // from the subquery RHS in order of appearance. Type lookup
+      // searches all tables since the columns may come from JOINed
+      // tables, not the main UPDATE table.
       let upper = string.uppercase(trimmed)
       let has_subquery =
         string.contains(upper, " IN (SELECT")
@@ -3505,16 +3709,20 @@ fn parse_simple_where_condition(trimmed: String) -> List(#(String, String)) {
   case lhs {
     "" -> []
     _ ->
-      // If LHS contains "@", it's an arithmetic expr like
-      // "balance_cents + @min_delta". Extract the @param_name and use
-      // the base column for type lookup.
-      case string.contains(lhs, "@") {
+      // If LHS contains a named param prefix (@, :, $), it's an
+      // arithmetic expr like "balance_cents + @min_delta". Extract the
+      // param name and use the base column for type lookup.
+      case
+        string.contains(lhs, "@")
+        || string.contains(lhs, ":")
+        || string.contains(lhs, "$")
+      {
         True ->
           case extract_named_param_from_rhs(lhs) {
             Ok(param_name) -> {
-              let lookup_col = case string.split_once(lhs, "@") {
-                Ok(#(before_at, _)) ->
-                  before_at
+              let lookup_col = case find_first_param_prefix(lhs) {
+                Ok(#(before_prefix, _)) ->
+                  before_prefix
                   |> string.trim
                   |> strip_trailing_arithmetic_op
                 Error(_) -> param_name
