@@ -394,21 +394,40 @@ fn do_check_semicolon(
 }
 
 /// Run `gleam format` on generated code. Falls back to the original string
-/// if formatting fails (e.g., gleam not on PATH).
+/// if formatting fails (e.g., gleam not on PATH) and prints a warning.
 fn format_gleam(code: String) -> String {
   let suffix = int.to_string(int.absolute_value(unique_integer()))
-  let tmp = ".marmot_fmt_" <> suffix <> ".gleam"
+  let tmp_dir = get_tmp_dir()
+  let tmp = tmp_dir <> "/marmot_fmt_" <> suffix <> ".gleam"
   case simplifile.write(tmp, code) {
-    Error(_) -> code
+    Error(_) -> {
+      io.println_error(
+        "warning: Could not write temp file for formatting, skipping gleam format",
+      )
+      code
+    }
     Ok(_) -> {
       run_os_cmd("gleam format " <> tmp)
-      let formatted =
-        simplifile.read(tmp)
-        |> result.unwrap(code)
+      let formatted = case simplifile.read(tmp) {
+        Ok(result) -> result
+        Error(_) -> {
+          io.println_error(
+            "warning: gleam format failed, using unformatted output",
+          )
+          code
+        }
+      }
       let _ = simplifile.delete(tmp)
       formatted
     }
   }
+}
+
+fn get_tmp_dir() -> String {
+  get_env("TMPDIR")
+  |> option.lazy_or(fn() { get_env("TMP") })
+  |> option.lazy_or(fn() { get_env("TEMP") })
+  |> option.unwrap("/tmp")
 }
 
 @external(erlang, "os", "cmd")

@@ -357,9 +357,35 @@ fn do_strip_nullability_suffixes(
   case string.pop_grapheme(remaining) {
     Error(_) -> acc
     Ok(#("'", rest)) ->
-      do_strip_nullability_suffixes(rest, acc <> "'", !in_single, in_double)
+      case in_double {
+        True ->
+          do_strip_nullability_suffixes(rest, acc <> "'", in_single, True)
+        False ->
+          case in_single {
+            True ->
+              // Check for escaped quote ''
+              case string.pop_grapheme(rest) {
+                Ok(#("'", rest2)) ->
+                  do_strip_nullability_suffixes(
+                    rest2,
+                    acc <> "''",
+                    True,
+                    False,
+                  )
+                _ ->
+                  do_strip_nullability_suffixes(rest, acc <> "'", False, False)
+              }
+            False ->
+              do_strip_nullability_suffixes(rest, acc <> "'", True, False)
+          }
+      }
     Ok(#("\"", rest)) ->
-      do_strip_nullability_suffixes(rest, acc <> "\"", in_single, !in_double)
+      case in_single {
+        True ->
+          do_strip_nullability_suffixes(rest, acc <> "\"", True, in_double)
+        False ->
+          do_strip_nullability_suffixes(rest, acc <> "\"", False, !in_double)
+      }
     Ok(#(ch, rest)) ->
       case in_single || in_double {
         True ->
@@ -624,7 +650,7 @@ fn infer_expression_type(item: SelectItem) -> Column {
                         True ->
                           Column(
                             name: item.alias,
-                            column_type: query.IntType,
+                            column_type: query.FloatType,
                             nullable: True,
                           )
                         False ->
@@ -793,6 +819,20 @@ fn do_extract_branches(
     _ -> {
       let head = string.slice(upper, 0, 1)
       case head {
+        // Skip single-quoted string literals, accumulating them verbatim
+        "'" -> {
+          let #(literal, rest_orig, rest_upper) =
+            consume_string_literal(original, upper)
+          do_extract_branches(
+            rest_orig,
+            rest_upper,
+            current <> literal,
+            acc,
+            has_else,
+            depth,
+            state,
+          )
+        }
         "(" ->
           do_extract_branches(
             string.drop_start(original, 1),
@@ -960,6 +1000,8 @@ fn do_find_top_level_end(
     _ -> {
       let head = string.slice(remaining, 0, 1)
       case head {
+        // Skip single-quoted string literals (already uppercased input)
+        "'" -> skip_string_literal_end(remaining, idx, depth)
         "(" ->
           do_find_top_level_end(
             string.drop_start(remaining, 1),
@@ -1006,6 +1048,74 @@ fn do_find_top_level_end(
           }
       }
     }
+  }
+}
+
+/// Skip past a single-quoted string literal, handling '' escapes.
+fn skip_string_literal_end(
+  remaining: String,
+  idx: Int,
+  depth: Int,
+) -> option.Option(Int) {
+  let rest = string.drop_start(remaining, 1)
+  do_skip_string_literal_end(rest, idx + 1, depth)
+}
+
+fn do_skip_string_literal_end(
+  remaining: String,
+  idx: Int,
+  depth: Int,
+) -> option.Option(Int) {
+  case string.pop_grapheme(remaining) {
+    Error(_) -> option.None
+    Ok(#("'", rest)) ->
+      // Check for escaped quote ''
+      case string.pop_grapheme(rest) {
+        Ok(#("'", rest2)) ->
+          do_skip_string_literal_end(rest2, idx + 2, depth)
+        _ -> do_find_top_level_end(rest, idx + 1, depth)
+      }
+    Ok(#(_, rest)) -> do_skip_string_literal_end(rest, idx + 1, depth)
+  }
+}
+
+/// Consume a single-quoted string literal from both original and upper strings.
+/// Returns the consumed literal (from original) and the remaining strings.
+/// Handles '' escape sequences.
+fn consume_string_literal(
+  original: String,
+  upper: String,
+) -> #(String, String, String) {
+  // Skip the opening quote
+  let orig_rest = string.drop_start(original, 1)
+  let upper_rest = string.drop_start(upper, 1)
+  do_consume_string_literal(orig_rest, upper_rest, "'")
+}
+
+fn do_consume_string_literal(
+  original: String,
+  upper: String,
+  acc: String,
+) -> #(String, String, String) {
+  case string.pop_grapheme(original) {
+    Error(_) -> #(acc, "", "")
+    Ok(#("'", orig_rest)) ->
+      // Check for escaped quote ''
+      case string.pop_grapheme(orig_rest) {
+        Ok(#("'", orig_rest2)) ->
+          do_consume_string_literal(
+            orig_rest2,
+            string.drop_start(upper, 2),
+            acc <> "''",
+          )
+        _ -> #(acc <> "'", orig_rest, string.drop_start(upper, 1))
+      }
+    Ok(#(ch, orig_rest)) ->
+      do_consume_string_literal(
+        orig_rest,
+        string.drop_start(upper, 1),
+        acc <> ch,
+      )
   }
 }
 
@@ -2393,7 +2503,16 @@ fn find_next_placeholder(sql: String, from_idx: Int) -> Placeholder {
 fn do_find_placeholder(s: String, idx: Int, in_string: Bool) -> Placeholder {
   case string.pop_grapheme(s) {
     Error(_) -> PlaceholderNone
-    Ok(#("'", rest)) -> do_find_placeholder(rest, idx + 1, !in_string)
+    Ok(#("'", rest)) ->
+      case in_string {
+        True ->
+          // Check for escaped quote ''
+          case string.pop_grapheme(rest) {
+            Ok(#("'", rest2)) -> do_find_placeholder(rest2, idx + 2, True)
+            _ -> do_find_placeholder(rest, idx + 1, False)
+          }
+        False -> do_find_placeholder(rest, idx + 1, True)
+      }
     Ok(#("?", rest)) ->
       case in_string {
         True -> do_find_placeholder(rest, idx + 1, True)
