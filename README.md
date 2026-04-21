@@ -341,7 +341,7 @@ switching between the two feels seamless. The type-inference engine underneath
 had to be built from scratch because Postgres and SQLite expose type
 information in fundamentally incompatible ways.
 
-**Where Marmot diverges on the surface:**
+**Where Marmot diverges on the surface (might change over time):**
 
 - **Output directory**: Marmot defaults to `src/generated/sql/` with a `_sql`
   filename suffix (e.g., `users_sql.gleam`). Squirrel places `sql.gleam` as a
