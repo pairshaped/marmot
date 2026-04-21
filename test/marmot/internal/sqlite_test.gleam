@@ -1547,3 +1547,61 @@ pub fn introspect_double_quoted_keyword_identifier_in_where_test() {
   let assert [Parameter(name: "AND", column_type: StringType, nullable: False)] =
     result.parameters
 }
+
+// Regression: CAST(COUNT(*) AS INTEGER) should infer IntType, not
+// fall through to the StringType/nullable=True default. The outer CAST
+// declares the target type and should be trusted when opcode tracing
+// can't reach through the aggregate+cast chain.
+pub fn introspect_cast_count_as_integer_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT CAST(COUNT(*) AS INTEGER) AS count FROM t",
+    )
+  let assert [Column(name: "count", column_type: IntType, nullable: False)] =
+    result.columns
+}
+
+// Regression: CAST(COALESCE(SUM(...), 0) AS INTEGER) should infer IntType.
+// The outer CAST target is explicit; use it when opcode tracing can't
+// resolve the chained aggregate/coalesce through to a source column.
+pub fn introspect_cast_coalesce_sum_as_integer_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, amount_cents INTEGER NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT CAST(COALESCE(SUM(amount_cents), 0) AS INTEGER) AS total FROM t",
+    )
+  let assert [Column(name: "total", column_type: IntType, nullable: False)] =
+    result.columns
+}
+
+// Regression: outer CAST around a subquery-aliased column should honor
+// the CAST target type.
+pub fn introspect_cast_subquery_column_as_integer_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, val INTEGER NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT CAST(sub.val AS INTEGER) AS v
+       FROM (SELECT val FROM t) sub",
+    )
+  let assert [Column(name: "v", column_type: IntType, nullable: False)] =
+    result.columns
+}

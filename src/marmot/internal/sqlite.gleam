@@ -1181,13 +1181,26 @@ fn is_digit_char(c: String) -> Bool {
 /// Parse `CAST(... AS type)` to find the target type. Uses the uppercased
 /// expression for keyword matching.
 fn infer_cast_type(name: String, upper_expr: String) -> Column {
-  // Find the last " AS " at depth 0 to handle nested CASTs like
-  // CAST(CAST(x AS INT) AS TEXT)
-  case find_last_top_level_as(upper_expr) {
+  // Strip the outer `CAST(` ... `)` wrapper so the AS we care about sits at
+  // depth 0 of the inner expression. Handles nested CASTs like
+  // CAST(CAST(x AS INT) AS TEXT) — the outer strip leaves the inner CAST
+  // at depth 1, so find_last_top_level_as picks the outer AS (TEXT).
+  let inner = case string.starts_with(upper_expr, "CAST(") {
+    True -> {
+      let after = string.drop_start(upper_expr, 5)
+      // Drop the matching trailing ) if present.
+      case string.ends_with(after, ")") {
+        True -> string.drop_end(after, 1)
+        False -> after
+      }
+    }
+    False -> upper_expr
+  }
+  case find_last_top_level_as(inner) {
     option.None -> Column(name: name, column_type: StringType, nullable: True)
     option.Some(as_idx) -> {
-      let after = string.drop_start(upper_expr, as_idx + 4)
-      let target = string.trim(after)
+      let after_as = string.drop_start(inner, as_idx + 4)
+      let target = string.trim(after_as)
       // Strip trailing ) and anything after
       let target = case string.split_once(target, ")") {
         Ok(#(t, _)) -> string.trim(t)
