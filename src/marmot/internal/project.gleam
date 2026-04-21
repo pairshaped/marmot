@@ -172,13 +172,34 @@ fn common_prefix_length(a: List(String), b: List(String), acc: Int) -> Int {
 }
 
 /// Validate that the configured output directory is under src/.
+/// Resolves `.` and `..` segments before checking, so paths like
+/// `src/../../etc/foo` are correctly rejected.
 pub fn validate_output(config: Config) -> Result(Nil, Nil) {
   case config.output {
     option.None -> Ok(Nil)
     option.Some(output) ->
-      case string.starts_with(output, "src/") {
+      case string.starts_with(resolve_path(output), "src/") {
         True -> Ok(Nil)
         False -> Error(Nil)
       }
   }
+}
+
+/// Resolve `.` and `..` segments in a path without touching the filesystem.
+fn resolve_path(path: String) -> String {
+  path
+  |> string.split("/")
+  |> list.fold([], fn(acc, segment) {
+    case segment {
+      "." -> acc
+      ".." ->
+        case acc {
+          [_, ..rest] -> rest
+          [] -> acc
+        }
+      _ -> [segment, ..acc]
+    }
+  })
+  |> list.reverse
+  |> string.join("/")
 }

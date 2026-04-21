@@ -47,16 +47,21 @@ pub fn parse_query_function(raw: Option(String)) -> Option(QueryFunctionConfig) 
       case module_path {
         "" -> option.None
         _ -> {
-          let alias =
-            module_path
-            |> string.split("/")
-            |> list.last
-            |> result.unwrap(module_path)
-          option.Some(QueryFunctionConfig(
-            module_path: module_path,
-            module_alias: alias,
-            function: function,
-          ))
+          // Reject paths containing ".." segments to prevent directory traversal
+          let segments = string.split(module_path, "/")
+          case list.contains(segments, "..") {
+            True -> option.None
+            False -> {
+              let alias =
+                list.last(segments)
+                |> result.unwrap(module_path)
+              option.Some(QueryFunctionConfig(
+                module_path: module_path,
+                module_alias: alias,
+                function: function,
+              ))
+            }
+          }
         }
       }
     }

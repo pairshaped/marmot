@@ -210,3 +210,33 @@ pub fn validate_output_none_test() {
     )
   let assert Ok(Nil) = project.validate_output(config)
 }
+
+pub fn validate_output_path_traversal_test() {
+  let config =
+    Config(
+      database: option.None,
+      output: option.Some("src/../../etc/evil"),
+      query_function: option.None,
+    )
+  let assert Error(Nil) = project.validate_output(config)
+}
+
+pub fn validate_output_dot_segments_test() {
+  let config =
+    Config(
+      database: option.None,
+      output: option.Some("src/./generated"),
+      query_function: option.None,
+    )
+  let assert Ok(Nil) = project.validate_output(config)
+}
+
+pub fn validate_output_double_traversal_test() {
+  let config =
+    Config(
+      database: option.None,
+      output: option.Some("src/a/../../../outside"),
+      query_function: option.None,
+    )
+  let assert Error(Nil) = project.validate_output(config)
+}

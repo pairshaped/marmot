@@ -419,7 +419,10 @@ fn do_check_semicolon(
 /// Run `gleam format` on generated code. Falls back to the original string
 /// if formatting fails (e.g., gleam not on PATH) and prints a warning.
 fn format_gleam(code: String) -> String {
-  let suffix = int.to_string(int.absolute_value(unique_integer()))
+  let suffix =
+    int.to_string(int.absolute_value(unique_integer()))
+    <> "_"
+    <> int.to_string(random_integer(999_999_999))
   let tmp_dir = get_tmp_dir()
   let tmp = tmp_dir <> "/marmot_fmt_" <> suffix <> ".gleam"
   case simplifile.write(tmp, code) {
@@ -497,6 +500,9 @@ fn erlang_halt(code: Int) -> Nil
 
 @external(erlang, "erlang", "unique_integer")
 fn unique_integer() -> Int
+
+@external(erlang, "rand", "uniform")
+fn random_integer(max: Int) -> Int
 
 @external(erlang, "timer", "sleep")
 fn timer_sleep(ms: Int) -> Nil

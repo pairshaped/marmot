@@ -657,8 +657,7 @@ pub fn generate_emits_shared_row_type_once_test() {
 pub fn generate_emits_per_query_type_for_unannotated_test() {
   let cols = [Column(name: "id", column_type: IntType, nullable: False)]
   let q = make_query("get_foo", "a.sql", cols, option.None)
-  let assert Ok(output) =
-    codegen.generate_module_with_config([q], option.None)
+  let assert Ok(output) = codegen.generate_module_with_config([q], option.None)
   let assert 1 = count_substring(output, "pub type GetFooRow {")
   let assert 0 = count_substring(output, "pub type OrgRow {")
 }
@@ -686,8 +685,7 @@ pub fn generate_emits_shared_decoder_once_test() {
 pub fn generate_query_function_references_shared_decoder_test() {
   let cols = [Column(name: "id", column_type: IntType, nullable: False)]
   let q = make_query("get_org", "a.sql", cols, option.Some("OrgRow"))
-  let assert Ok(output) =
-    codegen.generate_module_with_config([q], option.None)
+  let assert Ok(output) = codegen.generate_module_with_config([q], option.None)
   let assert True = string.contains(output, "org_row_decoder()")
   let q_plain =
     make_query(
@@ -705,4 +703,19 @@ fn count_substring(haystack: String, needle: String) -> Int {
   string.split(haystack, needle)
   |> list.length
   |> int.subtract(1)
+}
+
+pub fn parse_query_function_rejects_path_traversal_test() {
+  let assert option.None =
+    codegen.parse_query_function(option.Some("../../evil/module.exec"))
+}
+
+pub fn parse_query_function_rejects_embedded_traversal_test() {
+  let assert option.None =
+    codegen.parse_query_function(option.Some("app/../../../evil.exec"))
+}
+
+pub fn parse_query_function_allows_normal_path_test() {
+  let assert option.Some(_) =
+    codegen.parse_query_function(option.Some("server/db.query"))
 }

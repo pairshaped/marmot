@@ -1280,9 +1280,8 @@ pub fn insert_values_with_escaped_quote_in_string_test() {
       db,
       "INSERT INTO notes (id, title) VALUES (?, 'it''s, complicated')",
     )
-  let assert [
-    Parameter(name: "id", column_type: IntType, nullable: False),
-  ] = result.parameters
+  let assert [Parameter(name: "id", column_type: IntType, nullable: False)] =
+    result.parameters
 }
 
 pub fn where_with_string_containing_and_test() {
@@ -1333,10 +1332,8 @@ pub fn select_with_string_literal_containing_comma_test() {
       db,
       "SELECT COALESCE(name, 'unknown, unnamed') AS display_name FROM users WHERE id = ?",
     )
-  let assert [
-    Column(name: "display_name", column_type: StringType, ..),
-  ] = result.columns
-  let assert [
-    Parameter(name: "id", column_type: IntType, nullable: False),
-  ] = result.parameters
+  let assert [Column(name: "display_name", column_type: StringType, ..)] =
+    result.columns
+  let assert [Parameter(name: "id", column_type: IntType, nullable: False)] =
+    result.parameters
 }
