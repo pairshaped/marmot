@@ -24,7 +24,7 @@ Write SQL in `src/**/sql/*.sql`, one query per file. Filename becomes the functi
 | Key | Default | Purpose |
 |---|---|---|
 | `database` | — | Path to the SQLite file used for introspection (also `DATABASE_URL` env, `--database` CLI) |
-| `output` | `src/generated/sql` | Output directory for generated modules (must be under `src/`). Marmot infers the directory structure by finding the longest common path prefix between `output` and each `sql/` directory, then uses the remainder as the namespace (e.g. `output = "src/generated"` with `src/app/users/sql/` produces `src/generated/app/users.gleam`). |
+| `output` | `src/generated/sql` | Output directory for generated modules (must be under `src/`). Marmot infers the directory structure by finding the longest common path prefix between `output` and each `sql/` directory, then uses the remainder as the namespace (e.g. `src/app/users/sql/` with default output produces `src/generated/sql/app/users_sql.gleam`). |
 | `query_function` | `sqlight.query` | Fully-qualified function (`module/path.name`) that generated code calls instead of `sqlight.query`. Wrapper must match `sqlight.query`'s labelled signature (`sql: String, on connection, with parameters, expecting decoder`). Useful for logging, timing, instrumentation. |
 
 ## Project structure
@@ -64,7 +64,7 @@ src/
 
 ## Generated code patterns
 
-Generated functions use labelled arguments: `pub fn find_user(db db: ..., username username: ...)`. Call sites read as `sql.find_user(db: db, username: "alice")`.
+Generated functions use labelled arguments: `pub fn find_user(db db: ..., username username: ...)`. Call sites read as `users_sql.find_user(db: db, username: "alice")`.
 
 **SELECT with decoder:**
 ```gleam
@@ -83,7 +83,7 @@ pub fn delete_user(db db: sqlight.Connection, id id: Int) {
 
 **With `query_function = "app/db.query"`:** the `sqlight.query(...)` call becomes `db.query(...)` with `import app/db` added. Everything else is identical.
 
-**Module:** imports are conditional (only include `decode`, `option`, `timestamp`, `calendar` when needed). Date modules get `parse_date`/`date_to_string` private helpers.
+**Module:** imports are conditional (only include `decode`, `option`, `timestamp`, `calendar` when needed). Date modules get `date_decoder`/`date_to_string` private helpers. Timestamp modules get a `timestamp_to_int` helper.
 
 ## Shared return types
 
