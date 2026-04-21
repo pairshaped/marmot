@@ -1246,3 +1246,97 @@ pub fn introspect_case_with_exists_subquery_test() {
   let assert [Column(name: "registered", column_type: IntType, nullable: False)] =
     result.columns
 }
+
+// --- String literal awareness in comma/condition splitting ---
+
+pub fn insert_values_with_string_containing_comma_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE notes (id INTEGER NOT NULL PRIMARY KEY, title TEXT NOT NULL, body TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "INSERT INTO notes (id, title, body) VALUES (?, 'hello, world', ?)",
+    )
+  // Only 2 params: the string literal 'hello, world' is not a placeholder
+  let assert [
+    Parameter(name: "id", column_type: IntType, nullable: False),
+    Parameter(name: "body", column_type: StringType, nullable: False),
+  ] = result.parameters
+}
+
+pub fn insert_values_with_escaped_quote_in_string_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE notes (id INTEGER NOT NULL PRIMARY KEY, title TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "INSERT INTO notes (id, title) VALUES (?, 'it''s, complicated')",
+    )
+  let assert [
+    Parameter(name: "id", column_type: IntType, nullable: False),
+  ] = result.parameters
+}
+
+pub fn where_with_string_containing_and_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL)",
+      on: db,
+    )
+  // The AND inside the string literal must not split the WHERE condition
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id FROM users WHERE name != 'foo AND bar' AND email = ?",
+    )
+  let assert [
+    Parameter(name: "email", column_type: StringType, nullable: False),
+  ] = result.parameters
+}
+
+pub fn where_with_string_containing_or_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL, status TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id FROM users WHERE name != 'yes or no' AND status = ?",
+    )
+  let assert [
+    Parameter(name: "status", column_type: StringType, nullable: False),
+  ] = result.parameters
+}
+
+pub fn select_with_string_literal_containing_comma_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+      on: db,
+    )
+  // The comma inside the string literal in COALESCE must not split SELECT items
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT COALESCE(name, 'unknown, unnamed') AS display_name FROM users WHERE id = ?",
+    )
+  let assert [
+    Column(name: "display_name", column_type: StringType, ..),
+  ] = result.columns
+  let assert [
+    Parameter(name: "id", column_type: IntType, nullable: False),
+  ] = result.parameters
+}
