@@ -5,6 +5,7 @@ import gleam/list
 import marmot/internal/query.{
   type Column, type Parameter, Column, Parameter, StringType,
 }
+import marmot/internal/sqlite/parse
 
 /// Opcode from EXPLAIN output
 pub type Opcode {
@@ -243,7 +244,7 @@ pub fn resolve_column(
     Ok(table_name) ->
       case dict.get(table_schemas, table_name) {
         Ok(table_cols) ->
-          case list_at(table_cols, col_idx) {
+          case parse.list_at(table_cols, col_idx) {
             Ok(col) -> col
             Error(_) ->
               Column(name: "unknown", column_type: StringType, nullable: True)
@@ -421,7 +422,7 @@ fn resolve_column_to_parameter(
     Ok(table_name) ->
       case dict.get(table_schemas, table_name) {
         Ok(table_cols) ->
-          case list_at(table_cols, col_idx) {
+          case parse.list_at(table_cols, col_idx) {
             Ok(col) ->
               Parameter(
                 name: col.name,
@@ -461,10 +462,6 @@ fn do_dedupe_variables(
   }
 }
 
-/// Get element at index from a list
-fn list_at(lst: List(a), idx: Int) -> Result(a, Nil) {
-  lst |> list.drop(idx) |> list.first
-}
 
 /// A decoder that handles both string and non-string p4 values from EXPLAIN
 pub fn flexible_string_decoder() -> decode.Decoder(String) {

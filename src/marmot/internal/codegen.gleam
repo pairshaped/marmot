@@ -34,7 +34,7 @@ pub type QueryFunctionConfig {
 /// Parse a `query_function` config string of the form "module/path.function".
 /// Returns `None` if input is `None` or malformed (no dot, empty parts).
 pub fn parse_query_function(raw: Option(String)) -> Option(QueryFunctionConfig) {
-  use value <- option_then(raw)
+  use value <- option.then(raw)
   // Split on the LAST "." so that paths with dots are handled correctly:
   // "server/db.query" -> #("server/db", "query").
   let parts = string.split(value, ".")
@@ -84,12 +84,6 @@ pub fn parse_query_function(raw: Option(String)) -> Option(QueryFunctionConfig) 
   }
 }
 
-fn option_then(opt: Option(a), next: fn(a) -> Option(b)) -> Option(b) {
-  case opt {
-    option.Some(value) -> next(value)
-    option.None -> option.None
-  }
-}
 
 /// Check that a name is a valid Gleam module segment or function name:
 /// non-empty, starts with a lowercase letter or underscore, and contains
@@ -277,6 +271,8 @@ fn generate_imports(
     [
       #(True, "import sqlight"),
       #(True, "import gleam/dynamic/decode"),
+      // gleam/int and gleam/string are only used by date/timestamp decoders.
+      // If a future type mapping needs them, add a separate condition here.
       #(needs_date, "import gleam/int"),
       #(needs_option, "import gleam/option.{type Option}"),
       #(needs_date, "import gleam/string"),

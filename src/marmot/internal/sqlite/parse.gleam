@@ -55,6 +55,11 @@ pub fn normalize_sql_whitespace(sql: String) -> String {
 /// Strip Marmot-specific `!`/`?` nullability suffixes from alias names
 /// before sending SQL to SQLite's EXPLAIN. Kept as a string operation
 /// because its output is sent to SQLite, not analyzed by Marmot.
+///
+/// Note: this does not track comment state (line or block comments) because
+/// comments are already stripped by `query.strip_comments` before this
+/// function is called. Suffixes inside string literals are protected by
+/// the in_single/in_double tracking.
 pub fn strip_nullability_suffixes(sql: String) -> String {
   let graphemes = string.to_graphemes(sql)
   do_strip_suffixes(graphemes, [], "", False, False)
@@ -114,6 +119,9 @@ fn do_strip_suffixes(
   }
 }
 
+/// Delegates to query.is_sql_ident_char. This is intentionally separate from
+/// tokenize.is_word_char: both match [a-zA-Z0-9_] but serve different roles
+/// (suffix-stripping context vs. token boundary detection).
 fn is_ident_char(c: String) -> Bool {
   query.is_sql_ident_char(c)
 }
@@ -597,30 +605,16 @@ fn has_subquery(tokens: List(Token)) -> Bool {
 fn do_has_subquery(tokens: List(Token)) -> Bool {
   case tokens {
     [] -> False
-    [Word(w1), OpenParen, Word(w2), ..] -> {
-      let u1 = string.uppercase(w1)
-      let u2 = string.uppercase(w2)
-      case { u1 == "IN" || u1 == "=" } && u2 == "SELECT" {
+    // IN (SELECT ...) or IN(SELECT ...)
+    [Word(w), OpenParen, Word(s), ..] -> {
+      let uw = string.uppercase(w)
+      let us = string.uppercase(s)
+      case uw == "IN" && us == "SELECT" {
         True -> True
         False -> do_has_subquery(list.drop(tokens, 1))
       }
     }
-    // Also check: IN ( SELECT or = ( SELECT  (with space after paren)
-    [Word(w), OpenParen, ..rest] -> {
-      let u = string.uppercase(w)
-      case u == "IN" {
-        True ->
-          case rest {
-            [Word(s), ..] ->
-              case string.uppercase(s) == "SELECT" {
-                True -> True
-                False -> do_has_subquery(list.drop(tokens, 1))
-              }
-            _ -> do_has_subquery(list.drop(tokens, 1))
-          }
-        False -> do_has_subquery(list.drop(tokens, 1))
-      }
-    }
+    // = (SELECT ...)
     [Eq, OpenParen, Word(w), ..] ->
       case string.uppercase(w) == "SELECT" {
         True -> True

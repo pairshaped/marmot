@@ -158,7 +158,8 @@ pub fn strip_comments_block_comment_inserts_space_test() {
 }
 
 pub fn strip_comments_block_comment_multiline_test() {
-  // Newlines inside block comments are preserved, comment content is stripped
-  let assert "SELECT \n  id" =
+  // Block comment content (including newlines) is fully stripped, leaving
+  // only the space inserted at the closing */ to prevent token fusion
+  let assert "SELECT   id" =
     query.strip_comments("SELECT /* a\ncomment */ id")
 }

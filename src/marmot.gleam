@@ -69,17 +69,19 @@ fn run_generate(args: List(String)) -> Nil {
 }
 
 fn generate_all(db: sqlight.Connection, config: project.Config) -> Nil {
-  // Warn if query_function is configured but malformed
+  // Reject malformed query_function early rather than silently falling back
+  // to sqlight.query, which would generate code using the wrong call path.
   case config.query_function {
     option.Some(value) ->
       case codegen.parse_query_function(config.query_function) {
-        option.None ->
+        option.None -> {
           io.println_error(
-            "warning: query_function \""
+            "error: query_function \""
             <> value
-            <> "\" is malformed, expected \"module/path.function\" format."
-            <> "\n  Falling back to sqlight.query",
+            <> "\" is malformed, expected \"module/path.function\" format.",
           )
+          halt(1)
+        }
         option.Some(_) -> Nil
       }
     option.None -> Nil

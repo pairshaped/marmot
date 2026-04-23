@@ -187,7 +187,20 @@ fn do_strip_comments(
 ) -> List(String) {
   case chars {
     [] -> acc
-    // Newline ends line comments
+    // Inside line comment: skip until newline
+    ["\n", ..rest] if in_line_comment ->
+      do_strip_comments(rest, ["\n", ..acc], in_single, in_double, False, False)
+    [_, ..rest] if in_line_comment ->
+      do_strip_comments(rest, acc, in_single, in_double, True, False)
+    // Block comment end: insert a space so adjacent tokens don't fuse
+    // (e.g., SELECT/**/id must not become SELECTid).
+    // Preserve in_single/in_double since quote state is independent of comments.
+    ["*", "/", ..rest] if in_block_comment ->
+      do_strip_comments(rest, [" ", ..acc], in_single, in_double, False, False)
+    // Inside block comment: skip (including newlines)
+    [_, ..rest] if in_block_comment ->
+      do_strip_comments(rest, acc, in_single, in_double, False, True)
+    // Newline outside any comment: preserve
     ["\n", ..rest] ->
       do_strip_comments(
         rest,
@@ -195,18 +208,8 @@ fn do_strip_comments(
         in_single,
         in_double,
         False,
-        in_block_comment,
+        False,
       )
-    // Inside line comment: skip until newline
-    [_, ..rest] if in_line_comment ->
-      do_strip_comments(rest, acc, in_single, in_double, True, False)
-    // Block comment end: insert a space so adjacent tokens don't fuse
-    // (e.g., SELECT/**/id must not become SELECTid)
-    ["*", "/", ..rest] if in_block_comment ->
-      do_strip_comments(rest, [" ", ..acc], False, False, False, False)
-    // Inside block comment: skip
-    [_, ..rest] if in_block_comment ->
-      do_strip_comments(rest, acc, False, False, False, True)
     // Single-quoted strings
     ["'", ..rest] ->
       case in_double {
