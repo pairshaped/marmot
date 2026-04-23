@@ -1,4 +1,5 @@
 import gleam/dict.{type Dict}
+import gleam/dynamic/decode
 import gleam/int
 import gleam/list
 import marmot/internal/query.{
@@ -473,5 +474,3 @@ pub fn flexible_string_decoder() -> decode.Decoder(String) {
     decode.success(""),
   ])
 }
-
-import gleam/dynamic/decode

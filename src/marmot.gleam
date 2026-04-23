@@ -1,4 +1,5 @@
 import argv
+import gleam/dict
 import gleam/dynamic.{type Dynamic}
 import gleam/dynamic/decode
 import gleam/int
@@ -12,6 +13,7 @@ import marmot/internal/error
 import marmot/internal/project
 import marmot/internal/query
 import marmot/internal/sqlite
+import marmot/internal/sqlite/tokenize
 import simplifile
 import sqlight
 
@@ -328,159 +330,27 @@ fn check_duplicate_columns(
 }
 
 fn find_duplicates(names: List(String)) -> List(String) {
-  do_find_duplicates(names, [], [])
-}
-
-fn do_find_duplicates(
-  remaining: List(String),
-  seen: List(String),
-  dupes: List(String),
-) -> List(String) {
-  case remaining {
-    [] -> list.reverse(dupes)
-    [name, ..rest] ->
-      case list.contains(seen, name) {
-        True ->
-          case list.contains(dupes, name) {
-            True -> do_find_duplicates(rest, seen, dupes)
-            False -> do_find_duplicates(rest, seen, [name, ..dupes])
-          }
-        False -> do_find_duplicates(rest, [name, ..seen], dupes)
-      }
-  }
+  let counts =
+    list.fold(names, dict.new(), fn(acc, name) {
+      let count = result.unwrap(dict.get(acc, name), 0)
+      dict.insert(acc, name, count + 1)
+    })
+  names
+  |> list.unique
+  |> list.filter(fn(name) {
+    case dict.get(counts, name) {
+      Ok(n) if n > 1 -> True
+      _ -> False
+    }
+  })
 }
 
 /// Check for semicolons outside of quoted SQL contexts, line comments, and
-/// block comments. Handles single-quoted strings (with '' escapes),
-/// double-quoted identifiers, `-- line comments`, and `/* block comments */`.
+/// block comments. Delegates to the tokenizer which already handles all
+/// quoting and comment styles correctly.
 fn contains_semicolon_outside_strings(sql: String) -> Bool {
-  do_check_semicolon(sql, False, False, False, False)
-}
-
-fn do_check_semicolon(
-  s: String,
-  in_single_quote: Bool,
-  in_double_quote: Bool,
-  in_line_comment: Bool,
-  in_block_comment: Bool,
-) -> Bool {
-  case string.pop_grapheme(s) {
-    Error(_) -> False
-    // Newline ends any active line comment (but not block comments)
-    Ok(#("\n", rest)) ->
-      do_check_semicolon(
-        rest,
-        in_single_quote,
-        in_double_quote,
-        False,
-        in_block_comment,
-      )
-    // Inside a line comment, everything is ignored until newline
-    Ok(#(_, rest)) if in_line_comment ->
-      do_check_semicolon(rest, in_single_quote, in_double_quote, True, False)
-    // Block comment: look for closing */
-    Ok(#("*", rest)) if in_block_comment ->
-      case string.pop_grapheme(rest) {
-        Ok(#("/", rest2)) ->
-          do_check_semicolon(rest2, False, False, False, False)
-        _ -> do_check_semicolon(rest, False, False, False, True)
-      }
-    Ok(#(_, rest)) if in_block_comment ->
-      do_check_semicolon(rest, False, False, False, True)
-    Ok(#("'", rest)) ->
-      case in_double_quote {
-        True -> do_check_semicolon(rest, in_single_quote, True, False, False)
-        False ->
-          case in_single_quote {
-            True ->
-              // Check for escaped quote ''
-              case string.pop_grapheme(rest) {
-                Ok(#("'", rest2)) ->
-                  do_check_semicolon(rest2, True, False, False, False)
-                _ -> do_check_semicolon(rest, False, False, False, False)
-              }
-            False -> do_check_semicolon(rest, True, False, False, False)
-          }
-      }
-    Ok(#("\"", rest)) ->
-      case in_single_quote {
-        True ->
-          do_check_semicolon(rest, True, in_double_quote, False, False)
-        // No explicit "" escape handling needed: toggling twice is a no-op
-        // that leaves in_double_quote in the correct state.
-        False -> do_check_semicolon(rest, False, !in_double_quote, False, False)
-      }
-    // `--` starts a line comment, but only outside quoted contexts
-    Ok(#("-", rest)) ->
-      case in_single_quote || in_double_quote {
-        True ->
-          do_check_semicolon(
-            rest,
-            in_single_quote,
-            in_double_quote,
-            False,
-            False,
-          )
-        False ->
-          case string.pop_grapheme(rest) {
-            Ok(#("-", rest2)) ->
-              do_check_semicolon(rest2, False, False, True, False)
-            _ ->
-              do_check_semicolon(
-                rest,
-                in_single_quote,
-                in_double_quote,
-                False,
-                False,
-              )
-          }
-      }
-    // `/*` starts a block comment, but only outside quoted contexts
-    Ok(#("/", rest)) ->
-      case in_single_quote || in_double_quote {
-        True ->
-          do_check_semicolon(
-            rest,
-            in_single_quote,
-            in_double_quote,
-            False,
-            False,
-          )
-        False ->
-          case string.pop_grapheme(rest) {
-            Ok(#("*", rest2)) ->
-              do_check_semicolon(rest2, False, False, False, True)
-            _ ->
-              do_check_semicolon(
-                rest,
-                in_single_quote,
-                in_double_quote,
-                False,
-                False,
-              )
-          }
-      }
-    Ok(#(";", rest)) ->
-      case in_single_quote || in_double_quote {
-        True ->
-          do_check_semicolon(
-            rest,
-            in_single_quote,
-            in_double_quote,
-            False,
-            False,
-          )
-        False -> True
-      }
-    Ok(#(_, rest)) ->
-      do_check_semicolon(
-        rest,
-        in_single_quote,
-        in_double_quote,
-        False,
-        False,
-      )
-  }
+  tokenize.tokenize(sql)
+  |> list.any(fn(t) { t == tokenize.Semicolon })
 }
 
 /// Run `gleam format` on generated code. Falls back to the original string

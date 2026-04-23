@@ -169,71 +169,122 @@ pub fn is_sql_ident_char(c: String) -> Bool {
   }
 }
 
-/// Remove `-- line comments` from SQL, preserving string literals.
-/// Handles single-quoted strings with '' escapes and double-quoted identifiers.
-/// A line comment starts with `--` outside of a string literal and extends to
-/// end of line. Preserves newlines so subsequent whitespace collapsing works.
+/// Remove `-- line comments` and `/* block comments */` from SQL, preserving
+/// string literals and the original spacing. Scans grapheme-by-grapheme,
+/// tracking quote state and comment boundaries.
 pub fn strip_line_comments(sql: String) -> String {
-  do_strip_line_comments(sql, "", False, False, False)
+  do_strip_comments(string.to_graphemes(sql), [], False, False, False, False)
+  |> list.reverse
+  |> string.join("")
 }
 
-fn do_strip_line_comments(
-  remaining: String,
-  acc: String,
+fn do_strip_comments(
+  chars: List(String),
+  acc: List(String),
   in_single: Bool,
   in_double: Bool,
-  in_comment: Bool,
-) -> String {
-  case string.pop_grapheme(remaining) {
-    Error(_) -> acc
-    Ok(#("\n", rest)) ->
-      do_strip_line_comments(rest, acc <> "\n", in_single, in_double, False)
-    Ok(#(_, rest)) if in_comment ->
-      do_strip_line_comments(rest, acc, in_single, in_double, True)
-    Ok(#("'", rest)) ->
+  in_line_comment: Bool,
+  in_block_comment: Bool,
+) -> List(String) {
+  case chars {
+    [] -> acc
+    // Newline ends line comments
+    ["\n", ..rest] ->
+      do_strip_comments(
+        rest,
+        ["\n", ..acc],
+        in_single,
+        in_double,
+        False,
+        in_block_comment,
+      )
+    // Inside line comment: skip until newline
+    [_, ..rest] if in_line_comment ->
+      do_strip_comments(rest, acc, in_single, in_double, True, False)
+    // Block comment end
+    ["*", "/", ..rest] if in_block_comment ->
+      do_strip_comments(rest, acc, False, False, False, False)
+    // Inside block comment: skip
+    [_, ..rest] if in_block_comment ->
+      do_strip_comments(rest, acc, False, False, False, True)
+    // Single-quoted strings
+    ["'", ..rest] ->
       case in_double {
-        True -> do_strip_line_comments(rest, acc <> "'", in_single, True, False)
+        True ->
+          do_strip_comments(rest, ["'", ..acc], in_single, True, False, False)
         False ->
           case in_single {
             True ->
-              // Check for escaped quote ''
-              case string.pop_grapheme(rest) {
-                Ok(#("'", rest2)) ->
-                  do_strip_line_comments(rest2, acc <> "''", True, False, False)
+              case rest {
+                ["'", ..rest2] ->
+                  do_strip_comments(
+                    rest2,
+                    ["'", "'", ..acc],
+                    True,
+                    False,
+                    False,
+                    False,
+                  )
                 _ ->
-                  do_strip_line_comments(rest, acc <> "'", False, False, False)
+                  do_strip_comments(
+                    rest,
+                    ["'", ..acc],
+                    False,
+                    False,
+                    False,
+                    False,
+                  )
               }
             False ->
-              do_strip_line_comments(rest, acc <> "'", True, False, False)
+              do_strip_comments(rest, ["'", ..acc], True, False, False, False)
           }
       }
-    Ok(#("\"", rest)) ->
+    // Double-quoted identifiers
+    ["\"", ..rest] ->
       case in_single {
         True ->
-          do_strip_line_comments(rest, acc <> "\"", True, in_double, False)
+          do_strip_comments(rest, ["\"", ..acc], True, in_double, False, False)
         False ->
-          do_strip_line_comments(rest, acc <> "\"", False, !in_double, False)
+          do_strip_comments(
+            rest,
+            ["\"", ..acc],
+            False,
+            !in_double,
+            False,
+            False,
+          )
       }
-    Ok(#("-", rest)) ->
+    // Line comment start (outside quotes)
+    ["-", "-", ..rest] ->
       case in_single || in_double {
         True ->
-          do_strip_line_comments(rest, acc <> "-", in_single, in_double, False)
-        False ->
-          case string.pop_grapheme(rest) {
-            Ok(#("-", rest2)) ->
-              do_strip_line_comments(rest2, acc, False, False, True)
-            _ ->
-              do_strip_line_comments(
-                rest,
-                acc <> "-",
-                in_single,
-                in_double,
-                False,
-              )
-          }
+          do_strip_comments(
+            ["-", ..rest],
+            ["-", ..acc],
+            in_single,
+            in_double,
+            False,
+            False,
+          )
+        False -> do_strip_comments(rest, acc, False, False, True, False)
       }
-    Ok(#(char, rest)) ->
-      do_strip_line_comments(rest, acc <> char, in_single, in_double, False)
+    // Block comment start (outside quotes)
+    ["/", "*", ..rest] ->
+      case in_single || in_double {
+        True ->
+          do_strip_comments(
+            ["*", ..rest],
+            ["/", ..acc],
+            in_single,
+            in_double,
+            False,
+            False,
+          )
+        False -> do_strip_comments(rest, acc, False, False, False, True)
+      }
+    // Everything else
+    [c, ..rest] ->
+      do_strip_comments(rest, [c, ..acc], in_single, in_double, False, False)
   }
 }
 

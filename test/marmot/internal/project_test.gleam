@@ -3,6 +3,20 @@ import gleam/option
 import marmot/internal/project.{Config}
 import simplifile
 
+/// Run a test body with guaranteed cleanup of a temp directory, even if
+/// the body panics on a failed assertion.
+fn with_temp_dir(base: String, body: fn() -> Nil) -> Nil {
+  let result = rescue(body)
+  let _ = simplifile.delete(base)
+  case result {
+    Ok(Nil) -> Nil
+    Error(msg) -> panic as msg
+  }
+}
+
+@external(erlang, "marmot_test_ffi", "rescue")
+fn rescue(body: fn() -> Nil) -> Result(Nil, String)
+
 pub fn parse_config_empty_toml_test() {
   let config = project.parse_config("", [], option.None)
   let assert Config(
@@ -83,6 +97,8 @@ database = \"dev.sqlite\"
 }
 
 pub fn find_sql_directories_test() {
+  use <- with_temp_dir("test_tmp")
+
   let assert Ok(_) = simplifile.create_directory_all("test_tmp/src/app/sql")
   let assert Ok(_) =
     simplifile.write("test_tmp/src/app/sql/find_user.sql", "SELECT 1")
@@ -94,11 +110,12 @@ pub fn find_sql_directories_test() {
   let assert True = list.contains(dirs, "test_tmp/src/app/sql")
   let assert True = list.contains(dirs, "test_tmp/src/other/sql")
   let assert 2 = list.length(dirs)
-
-  let assert Ok(_) = simplifile.delete("test_tmp")
+  Nil
 }
 
 pub fn list_sql_files_test() {
+  use <- with_temp_dir("test_tmp2")
+
   let assert Ok(_) = simplifile.create_directory_all("test_tmp2/sql")
   let assert Ok(_) = simplifile.write("test_tmp2/sql/find_user.sql", "SELECT 1")
   let assert Ok(_) =
@@ -109,8 +126,7 @@ pub fn list_sql_files_test() {
   let assert True = list.contains(files, "test_tmp2/sql/find_user.sql")
   let assert True = list.contains(files, "test_tmp2/sql/list_posts.sql")
   let assert 2 = list.length(files)
-
-  let assert Ok(_) = simplifile.delete("test_tmp2")
+  Nil
 }
 
 pub fn parse_config_flag_without_value_test() {

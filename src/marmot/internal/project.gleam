@@ -1,3 +1,5 @@
+import gleam/dict
+import gleam/io
 import gleam/list
 import gleam/option.{type Option}
 import gleam/result
@@ -26,17 +28,20 @@ pub fn parse_config(
   let #(toml_database, toml_output, toml_query_function) = case
     tom.parse(toml_content)
   {
-    Ok(parsed) -> #(
-      tom.get_string(parsed, ["tools", "marmot", "database"])
-        |> result.map(option.Some)
-        |> result.unwrap(option.None),
-      tom.get_string(parsed, ["tools", "marmot", "output"])
-        |> result.map(option.Some)
-        |> result.unwrap(option.None),
-      tom.get_string(parsed, ["tools", "marmot", "query_function"])
-        |> result.map(option.Some)
-        |> result.unwrap(option.None),
-    )
+    Ok(parsed) -> {
+      warn_unknown_config_keys(parsed)
+      #(
+        tom.get_string(parsed, ["tools", "marmot", "database"])
+          |> result.map(option.Some)
+          |> result.unwrap(option.None),
+        tom.get_string(parsed, ["tools", "marmot", "output"])
+          |> result.map(option.Some)
+          |> result.unwrap(option.None),
+        tom.get_string(parsed, ["tools", "marmot", "query_function"])
+          |> result.map(option.Some)
+          |> result.unwrap(option.None),
+      )
+    }
     Error(_) -> #(option.None, option.None, option.None)
   }
 
@@ -207,4 +212,27 @@ fn resolve_path(path: String) -> String {
   })
   |> list.reverse
   |> string.join("/")
+}
+
+const known_config_keys = ["database", "output", "query_function"]
+
+fn warn_unknown_config_keys(parsed: dict.Dict(String, tom.Toml)) -> Nil {
+  case tom.get_table(parsed, ["tools", "marmot"]) {
+    Ok(table) -> {
+      let keys = dict.keys(table)
+      let unknown =
+        list.filter(keys, fn(k) { !list.contains(known_config_keys, k) })
+      case unknown {
+        [] -> Nil
+        _ ->
+          io.println_error(
+            "warning: Unrecognized keys in [tools.marmot]: "
+            <> string.join(unknown, ", ")
+            <> "\n  Known keys: "
+            <> string.join(known_config_keys, ", "),
+          )
+      }
+    }
+    Error(_) -> Nil
+  }
 }

@@ -285,7 +285,8 @@ fn is_digit(c: String) -> Bool {
 }
 
 fn is_alpha_or_underscore(c: String) -> Bool {
-  c == "_" || {
+  c == "_"
+  || {
     let code = char_code(c)
     { code >= 65 && code <= 90 } || { code >= 97 && code <= 122 }
   }
@@ -366,10 +367,8 @@ fn do_find_keyword(
 ) -> Option(Int) {
   case tokens {
     [] -> option.None
-    [OpenParen, ..rest] ->
-      do_find_keyword(rest, keyword, idx + 1, depth + 1)
-    [CloseParen, ..rest] ->
-      do_find_keyword(rest, keyword, idx + 1, depth - 1)
+    [OpenParen, ..rest] -> do_find_keyword(rest, keyword, idx + 1, depth + 1)
+    [CloseParen, ..rest] -> do_find_keyword(rest, keyword, idx + 1, depth - 1)
     [Word(text), ..rest] ->
       case depth == 0 && string.uppercase(text) == keyword {
         True -> option.Some(idx)
@@ -469,8 +468,7 @@ fn do_take_until_keywords(
       let upper = string.uppercase(w)
       case depth == 0 && list.contains(keywords, upper) {
         True -> list.reverse(acc)
-        False ->
-          do_take_until_keywords(rest, keywords, [Word(w), ..acc], depth)
+        False -> do_take_until_keywords(rest, keywords, [Word(w), ..acc], depth)
       }
     }
     [token, ..rest] ->
@@ -480,10 +478,7 @@ fn do_take_until_keywords(
 
 /// Drop tokens until one of the given keywords appears at depth 0.
 /// Returns tokens starting FROM the keyword (inclusive).
-pub fn drop_until_keyword(
-  tokens: List(Token),
-  keyword: String,
-) -> List(Token) {
+pub fn drop_until_keyword(tokens: List(Token), keyword: String) -> List(Token) {
   case find_keyword(tokens, keyword) {
     option.Some(idx) -> list.drop(tokens, idx)
     option.None -> []
@@ -513,13 +508,10 @@ fn do_split_on_commas(
       do_split_on_commas(rest, [CloseParen, ..current], acc, depth - 1)
     [Comma, ..rest] ->
       case depth {
-        0 ->
-          do_split_on_commas(rest, [], [list.reverse(current), ..acc], 0)
-        _ ->
-          do_split_on_commas(rest, [Comma, ..current], acc, depth)
+        0 -> do_split_on_commas(rest, [], [list.reverse(current), ..acc], 0)
+        _ -> do_split_on_commas(rest, [Comma, ..current], acc, depth)
       }
-    [token, ..rest] ->
-      do_split_on_commas(rest, [token, ..current], acc, depth)
+    [token, ..rest] -> do_split_on_commas(rest, [token, ..current], acc, depth)
   }
 }
 
@@ -550,20 +542,12 @@ fn do_split_on_and_or(
         True ->
           case current {
             [] -> do_split_on_and_or(rest, [], acc, 0)
-            _ ->
-              do_split_on_and_or(
-                rest,
-                [],
-                [list.reverse(current), ..acc],
-                0,
-              )
+            _ -> do_split_on_and_or(rest, [], [list.reverse(current), ..acc], 0)
           }
-        False ->
-          do_split_on_and_or(rest, [Word(w), ..current], acc, depth)
+        False -> do_split_on_and_or(rest, [Word(w), ..current], acc, depth)
       }
     }
-    [token, ..rest] ->
-      do_split_on_and_or(rest, [token, ..current], acc, depth)
+    [token, ..rest] -> do_split_on_and_or(rest, [token, ..current], acc, depth)
   }
 }
 
@@ -584,9 +568,7 @@ pub fn skip_matching_paren(tokens: List(Token), depth: Int) -> List(Token) {
 
 /// Collect tokens inside matching parens (depth 1). Opening paren consumed.
 /// Returns (inner_tokens, remaining_after_close_paren).
-pub fn collect_inside_parens(
-  tokens: List(Token),
-) -> #(List(Token), List(Token)) {
+pub fn collect_inside_parens(tokens: List(Token)) -> #(List(Token), List(Token)) {
   do_collect_inside_parens(tokens, [], 1)
 }
 
@@ -600,13 +582,11 @@ fn do_collect_inside_parens(
     [CloseParen, ..rest] ->
       case depth {
         1 -> #(list.reverse(acc), rest)
-        _ ->
-          do_collect_inside_parens(rest, [CloseParen, ..acc], depth - 1)
+        _ -> do_collect_inside_parens(rest, [CloseParen, ..acc], depth - 1)
       }
     [OpenParen, ..rest] ->
       do_collect_inside_parens(rest, [OpenParen, ..acc], depth + 1)
-    [token, ..rest] ->
-      do_collect_inside_parens(rest, [token, ..acc], depth)
+    [token, ..rest] -> do_collect_inside_parens(rest, [token, ..acc], depth)
   }
 }
 

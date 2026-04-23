@@ -52,14 +52,30 @@ pub fn parse_query_function(raw: Option(String)) -> Option(QueryFunctionConfig) 
           case list.contains(segments, "..") {
             True -> option.None
             False -> {
-              let alias =
-                list.last(segments)
-                |> result.unwrap(module_path)
-              option.Some(QueryFunctionConfig(
-                module_path: module_path,
-                module_alias: alias,
-                function: function,
-              ))
+              // Split on both "/" and "." to get individual name parts,
+              // since module paths can use either separator
+              // (e.g., "server/db" or "some.module.path")
+              let all_parts =
+                segments
+                |> list.flat_map(fn(s) { string.split(s, ".") })
+              // Validate that all parts and the function are valid Gleam
+              // identifiers (lowercase, alphanumeric + underscore)
+              case
+                list.all(all_parts, is_valid_gleam_name)
+                && is_valid_gleam_name(function)
+              {
+                False -> option.None
+                True -> {
+                  let alias =
+                    list.last(all_parts)
+                    |> result.unwrap(module_path)
+                  option.Some(QueryFunctionConfig(
+                    module_path: module_path,
+                    module_alias: alias,
+                    function: function,
+                  ))
+                }
+              }
             }
           }
         }
@@ -72,6 +88,38 @@ fn option_then(opt: Option(a), next: fn(a) -> Option(b)) -> Option(b) {
   case opt {
     option.Some(value) -> next(value)
     option.None -> option.None
+  }
+}
+
+/// Check that a name is a valid Gleam module segment or function name:
+/// non-empty, starts with a lowercase letter or underscore, and contains
+/// only lowercase letters, digits, and underscores.
+fn is_valid_gleam_name(name: String) -> Bool {
+  case string.to_graphemes(name) {
+    [] -> False
+    [first, ..rest] ->
+      is_lower_or_underscore(first)
+      && list.all(rest, fn(c) { is_lower_or_underscore(c) || is_ascii_digit(c) })
+  }
+}
+
+fn is_lower_or_underscore(c: String) -> Bool {
+  c == "_"
+  || {
+    let code = char_code(c)
+    code >= 97 && code <= 122
+  }
+}
+
+fn is_ascii_digit(c: String) -> Bool {
+  let code = char_code(c)
+  code >= 48 && code <= 57
+}
+
+fn char_code(c: String) -> Int {
+  case string.to_utf_codepoints(c) {
+    [cp] -> string.utf_codepoint_to_int(cp)
+    _ -> 0
   }
 }
 

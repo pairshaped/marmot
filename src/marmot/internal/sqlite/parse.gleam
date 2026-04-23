@@ -1,13 +1,11 @@
 import gleam/list
 import gleam/option.{type Option}
 import gleam/string
-import marmot/internal/query.{
-  type Column, type ColumnType, Column, StringType,
-}
+import marmot/internal/query.{type Column, type ColumnType, Column, StringType}
 import marmot/internal/sqlite/tokenize.{
-  type Token, Comma, CloseParen, Dot, Eq, Ge, Gt, Le, Lt, Minus, Ne,
-  NullOverride, NullableOverride, Number, OpenParen, ParamAnon, ParamNamed,
-  Plus, QuotedId, Slash, Star, StringLit, Word,
+  type Token, CloseParen, Comma, Dot, Eq, Ge, Gt, Le, Lt, Minus, Ne,
+  NullOverride, NullableOverride, Number, OpenParen, ParamAnon, ParamNamed, Plus,
+  QuotedId, Slash, Star, StringLit, Word,
 }
 
 // ---- Types ----
@@ -89,10 +87,8 @@ fn do_strip_suffixes(
       }
     ["\"", ..rest] ->
       case in_single {
-        True ->
-          do_strip_suffixes(rest, ["\"", ..acc], "\"", True, in_double)
-        False ->
-          do_strip_suffixes(rest, ["\"", ..acc], "\"", False, !in_double)
+        True -> do_strip_suffixes(rest, ["\"", ..acc], "\"", True, in_double)
+        False -> do_strip_suffixes(rest, ["\"", ..acc], "\"", False, !in_double)
       }
     [ch, ..rest] ->
       case in_single || in_double {
@@ -106,8 +102,7 @@ fn do_strip_suffixes(
                   c == " " || c == "," || c == ")" || c == "\t" || c == "\n"
               }
               case next_ok {
-                True ->
-                  do_strip_suffixes(rest, acc, prev, in_single, in_double)
+                True -> do_strip_suffixes(rest, acc, prev, in_single, in_double)
                 False ->
                   do_strip_suffixes(rest, [ch, ..acc], ch, in_single, in_double)
               }
@@ -188,11 +183,12 @@ fn skip_select_keyword(tokens: List(Token)) -> List(Token) {
 
 /// Parse a single SELECT-list item from tokens.
 pub fn parse_select_item(tokens: List(Token)) -> SelectItem {
-  let #(expr_tokens, alias_tokens, has_as) =
-    case tokenize.split_at_last_keyword(tokens, "AS") {
-      Ok(#(before, after)) -> #(before, after, True)
-      Error(_) -> #(tokens, tokens, False)
-    }
+  let #(expr_tokens, alias_tokens, has_as) = case
+    tokenize.split_at_last_keyword(tokens, "AS")
+  {
+    Ok(#(before, after)) -> #(before, after, True)
+    Error(_) -> #(tokens, tokens, False)
+  }
 
   let alias_text = case has_as {
     True -> token_list_to_name(alias_tokens)
@@ -574,8 +570,7 @@ pub fn parse_where_columns(tokens: List(Token)) -> List(#(String, String)) {
   case tokenize.split_at_keyword(tokens, "WHERE") {
     Error(_) -> []
     Ok(#(_, where_tokens)) -> {
-      let where_part =
-        tokenize.take_until_keywords(where_tokens, ["RETURNING"])
+      let where_part = tokenize.take_until_keywords(where_tokens, ["RETURNING"])
       tokenize.split_on_and_or(where_part)
       |> list.flat_map(parse_where_condition)
     }
@@ -635,9 +630,7 @@ fn do_has_subquery(tokens: List(Token)) -> Bool {
   }
 }
 
-fn parse_simple_where_condition(
-  tokens: List(Token),
-) -> List(#(String, String)) {
+fn parse_simple_where_condition(tokens: List(Token)) -> List(#(String, String)) {
   // Find the operator and extract LHS column
   let lhs_result = extract_lhs_column(tokens)
   case lhs_result {
@@ -662,10 +655,7 @@ fn extract_lhs_column(tokens: List(Token)) -> Option(String) {
   do_extract_lhs(tokens, [])
 }
 
-fn do_extract_lhs(
-  tokens: List(Token),
-  acc: List(Token),
-) -> Option(String) {
+fn do_extract_lhs(tokens: List(Token), acc: List(Token)) -> Option(String) {
   case tokens {
     [] -> option.None
     // Comparison operators mark the boundary
@@ -677,7 +667,9 @@ fn do_extract_lhs(
     // Keyword operators
     [Word(w), ..] -> {
       let upper = string.uppercase(w)
-      case upper == "LIKE" || upper == "IN" || upper == "IS" || upper == "BETWEEN" {
+      case
+        upper == "LIKE" || upper == "IN" || upper == "IS" || upper == "BETWEEN"
+      {
         True ->
           case acc {
             [] -> option.None
@@ -902,8 +894,7 @@ fn do_skip_between(prev: List(Token), skipped: Int) -> Option(List(Token)) {
 fn extract_column_word(prev: List(Token)) -> Option(String) {
   case prev {
     // table.col (reversed prev: [Word(col), Dot, Word(table), ...])
-    [Word(col), Dot, Word(table), ..] ->
-      option.Some(table <> "." <> col)
+    [Word(col), Dot, Word(table), ..] -> option.Some(table <> "." <> col)
     // Simple column
     [Word(col), ..] -> option.Some(col)
     [QuotedId(col), ..] -> option.Some(col)
@@ -1006,7 +997,11 @@ pub fn infer_expression_type(item: SelectItem) -> Column {
     [Number(n)] ->
       case string.contains(n, ".") {
         True ->
-          Column(name: item.alias, column_type: query.FloatType, nullable: False)
+          Column(
+            name: item.alias,
+            column_type: query.FloatType,
+            nullable: False,
+          )
         False ->
           Column(name: item.alias, column_type: query.IntType, nullable: False)
       }
@@ -1015,7 +1010,11 @@ pub fn infer_expression_type(item: SelectItem) -> Column {
     [Minus, Number(n)] ->
       case string.contains(n, ".") {
         True ->
-          Column(name: item.alias, column_type: query.FloatType, nullable: False)
+          Column(
+            name: item.alias,
+            column_type: query.FloatType,
+            nullable: False,
+          )
         False ->
           Column(name: item.alias, column_type: query.IntType, nullable: False)
       }
@@ -1036,11 +1035,7 @@ pub fn infer_expression_type(item: SelectItem) -> Column {
           // but Float is a safe superset that avoids silent
           // truncation. Nullable because SUM returns NULL for
           // empty result sets.
-          Column(
-            name: item.alias,
-            column_type: query.FloatType,
-            nullable: True,
-          )
+          Column(name: item.alias, column_type: query.FloatType, nullable: True)
         "ROW_NUMBER" | "RANK" | "DENSE_RANK" | "NTILE" ->
           case tokenize.has_keyword(item.tokens, "OVER") {
             True ->
@@ -1084,11 +1079,7 @@ fn infer_cast_type(alias: String, rest: List(Token)) -> Column {
             "INTEGER" | "INT" | "BIGINT" ->
               Column(name: alias, column_type: query.IntType, nullable: False)
             "REAL" | "FLOAT" | "DOUBLE" ->
-              Column(
-                name: alias,
-                column_type: query.FloatType,
-                nullable: False,
-              )
+              Column(name: alias, column_type: query.FloatType, nullable: False)
             "TEXT" | "VARCHAR" | "CHAR" ->
               Column(name: alias, column_type: StringType, nullable: False)
             "BLOB" ->
@@ -1097,8 +1088,7 @@ fn infer_cast_type(alias: String, rest: List(Token)) -> Column {
                 column_type: query.BitArrayType,
                 nullable: False,
               )
-            _ ->
-              Column(name: alias, column_type: StringType, nullable: True)
+            _ -> Column(name: alias, column_type: StringType, nullable: True)
           }
         _ -> Column(name: alias, column_type: StringType, nullable: True)
       }
@@ -1151,12 +1141,13 @@ fn infer_case_type(alias: String, tokens: List(Token)) -> Column {
             _ -> False
           }
         })
-      let null_count = list.count(branches, fn(b) {
-        case b {
-          [Word(w)] -> string.uppercase(w) == "NULL"
-          _ -> False
-        }
-      })
+      let null_count =
+        list.count(branches, fn(b) {
+          case b {
+            [Word(w)] -> string.uppercase(w) == "NULL"
+            _ -> False
+          }
+        })
       let has_unresolved =
         list.length(types) + null_count != list.length(branches)
       case has_unresolved {
@@ -1180,9 +1171,7 @@ fn infer_case_type(alias: String, tokens: List(Token)) -> Column {
 }
 
 /// Extract THEN and ELSE operand token lists from a CASE expression.
-fn extract_case_branches(
-  tokens: List(Token),
-) -> #(List(List(Token)), Bool) {
+fn extract_case_branches(tokens: List(Token)) -> #(List(List(Token)), Bool) {
   // Skip initial CASE keyword
   let body = case tokens {
     [Word(w), ..rest] ->

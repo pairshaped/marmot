@@ -9,9 +9,26 @@ import marmot/internal/sqlite
 import simplifile
 import sqlight
 
+/// Run a test body with guaranteed cleanup of a temp directory, even if
+/// the body panics on a failed assertion.
+fn with_temp_dir(base: String, body: fn() -> Nil) -> Nil {
+  let result = rescue(body)
+  // Always clean up, regardless of pass/fail
+  let _ = simplifile.delete(base)
+  case result {
+    Ok(Nil) -> Nil
+    Error(msg) -> panic as msg
+  }
+}
+
+@external(erlang, "marmot_test_ffi", "rescue")
+fn rescue(body: fn() -> Nil) -> Result(Nil, String)
+
 pub fn e2e_generate_module_test() {
-  // Setup: create temp directory structure with SQL files
   let base = "test_e2e_tmp"
+  use <- with_temp_dir(base)
+
+  // Setup: create temp directory structure with SQL files
   let sql_dir = base <> "/src/app/sql"
   let assert Ok(_) = simplifile.create_directory_all(sql_dir)
   let assert Ok(_) =
@@ -81,13 +98,13 @@ pub fn e2e_generate_module_test() {
   let output_dir = option.Some(base <> "/src/generated/sql")
   let output_path = project.output_path(sql_dir, output_dir)
   let assert True = string.ends_with(output_path, "_sql.gleam")
-
-  // Cleanup
-  let assert Ok(_) = simplifile.delete(base)
+  Nil
 }
 
 pub fn e2e_multiple_sql_directories_test() {
   let base = "test_e2e_multi"
+  use <- with_temp_dir(base)
+
   let sql_dir1 = base <> "/src/app/sql"
   let sql_dir2 = base <> "/src/other/sql"
   let assert Ok(_) = simplifile.create_directory_all(sql_dir1)
@@ -163,13 +180,13 @@ pub fn e2e_multiple_sql_directories_test() {
     list.any(modules, fn(m) { string.contains(m.1, "find_user") })
   let assert True =
     list.any(modules, fn(m) { string.contains(m.1, "list_items") })
-
-  // Cleanup
-  let assert Ok(_) = simplifile.delete(base)
+  Nil
 }
 
 pub fn e2e_check_stale_detection_test() {
   let base = "test_e2e_check"
+  use <- with_temp_dir(base)
+
   let sql_dir = base <> "/src/app/sql"
   let assert Ok(_) = simplifile.create_directory_all(sql_dir)
   let assert Ok(_) =
@@ -276,13 +293,13 @@ pub fn e2e_check_stale_detection_test() {
     })
   let assert Ok(expected2) = codegen.generate_module(queries2)
   let assert True = expected2 != current_after
-
-  // Cleanup
-  let assert Ok(_) = simplifile.delete(base)
+  Nil
 }
 
 pub fn e2e_configured_output_dir_test() {
   let base = "test_e2e_tmp2"
+  use <- with_temp_dir(base)
+
   let sql_dir = base <> "/src/app/sql"
   let output_dir = base <> "/src/generated"
   let assert Ok(_) = simplifile.create_directory_all(sql_dir)
@@ -298,7 +315,5 @@ pub fn e2e_configured_output_dir_test() {
   // strip trailing /sql -> "app"
   let expected = output_dir <> "/" <> "app_sql.gleam"
   let assert True = output_path == expected
-
-  // Cleanup
-  let assert Ok(_) = simplifile.delete(base)
+  Nil
 }

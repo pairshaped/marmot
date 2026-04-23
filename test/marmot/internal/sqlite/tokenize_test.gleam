@@ -1,16 +1,22 @@
 import gleam/list
 import marmot/internal/sqlite/tokenize.{
   type Token, CloseParen, Comma, Dot, Eq, Ge, Gt, Le, Lt, Minus, Ne,
-  NullOverride, NullableOverride, Number, OpenParen, ParamAnon, ParamNamed,
-  Plus, QuotedId, Semicolon, Slash, Star, StringLit, Word,
+  NullOverride, NullableOverride, Number, OpenParen, ParamAnon, ParamNamed, Plus,
+  QuotedId, Semicolon, Slash, Star, StringLit, Word,
 }
 
 // ---- Basic tokenization ----
 
 pub fn tokenize_simple_select_test() {
   let tokens = tokenize.tokenize("SELECT id, name FROM users")
-  let assert [Word("SELECT"), Word("id"), Comma, Word("name"), Word("FROM"), Word("users")] =
-    tokens
+  let assert [
+    Word("SELECT"),
+    Word("id"),
+    Comma,
+    Word("name"),
+    Word("FROM"),
+    Word("users"),
+  ] = tokens
 }
 
 pub fn tokenize_select_star_test() {
@@ -50,8 +56,17 @@ pub fn tokenize_comparison_operators_test() {
 
 pub fn tokenize_arithmetic_operators_test() {
   let tokens = tokenize.tokenize("a + b - c * d / e")
-  let assert [Word("a"), Plus, Word("b"), Minus, Word("c"), Star, Word("d"), Slash, Word("e")] =
-    tokens
+  let assert [
+    Word("a"),
+    Plus,
+    Word("b"),
+    Minus,
+    Word("c"),
+    Star,
+    Word("d"),
+    Slash,
+    Word("e"),
+  ] = tokens
 }
 
 // ---- String literals ----
@@ -81,8 +96,7 @@ pub fn tokenize_double_quoted_identifier_test() {
 
 pub fn tokenize_backtick_identifier_test() {
   let tokens = tokenize.tokenize("SELECT `col` FROM t")
-  let assert [Word("SELECT"), QuotedId("col"), Word("FROM"), Word("t")] =
-    tokens
+  let assert [Word("SELECT"), QuotedId("col"), Word("FROM"), Word("t")] = tokens
 }
 
 // ---- Numbers ----
@@ -127,8 +141,14 @@ pub fn tokenize_named_param_dollar_test() {
 pub fn tokenize_multiple_params_test() {
   let tokens = tokenize.tokenize("WHERE a = ? AND b = ?")
   let assert [
-    Word("WHERE"), Word("a"), Eq, ParamAnon,
-    Word("AND"), Word("b"), Eq, ParamAnon,
+    Word("WHERE"),
+    Word("a"),
+    Eq,
+    ParamAnon,
+    Word("AND"),
+    Word("b"),
+    Eq,
+    ParamAnon,
   ] = tokens
 }
 
@@ -136,14 +156,24 @@ pub fn tokenize_multiple_params_test() {
 
 pub fn tokenize_nullable_override_test() {
   let tokens = tokenize.tokenize("SELECT name? FROM users")
-  let assert [Word("SELECT"), Word("name"), NullableOverride, Word("FROM"), Word("users")] =
-    tokens
+  let assert [
+    Word("SELECT"),
+    Word("name"),
+    NullableOverride,
+    Word("FROM"),
+    Word("users"),
+  ] = tokens
 }
 
 pub fn tokenize_non_null_override_test() {
   let tokens = tokenize.tokenize("SELECT name! FROM users")
-  let assert [Word("SELECT"), Word("name"), NullOverride, Word("FROM"), Word("users")] =
-    tokens
+  let assert [
+    Word("SELECT"),
+    Word("name"),
+    NullOverride,
+    Word("FROM"),
+    Word("users"),
+  ] = tokens
 }
 
 pub fn tokenize_override_not_confused_with_ne_test() {
@@ -159,8 +189,14 @@ pub fn tokenize_override_not_confused_with_param_test() {
 pub fn tokenize_override_in_comma_list_test() {
   let tokens = tokenize.tokenize("SELECT a?, b! FROM t")
   let assert [
-    Word("SELECT"), Word("a"), NullableOverride, Comma,
-    Word("b"), NullOverride, Word("FROM"), Word("t"),
+    Word("SELECT"),
+    Word("a"),
+    NullableOverride,
+    Comma,
+    Word("b"),
+    NullOverride,
+    Word("FROM"),
+    Word("t"),
   ] = tokens
 }
 
@@ -208,8 +244,13 @@ pub fn tokenize_dot_test() {
 
 pub fn tokenize_semicolon_test() {
   let tokens = tokenize.tokenize("SELECT 1; SELECT 2")
-  let assert [Word("SELECT"), Number("1"), Semicolon, Word("SELECT"), Number("2")] =
-    tokens
+  let assert [
+    Word("SELECT"),
+    Number("1"),
+    Semicolon,
+    Word("SELECT"),
+    Number("2"),
+  ] = tokens
 }
 
 // ---- Complex SQL ----
@@ -218,18 +259,36 @@ pub fn tokenize_insert_test() {
   let tokens =
     tokenize.tokenize("INSERT INTO users (name, email) VALUES (?, ?)")
   let assert [
-    Word("INSERT"), Word("INTO"), Word("users"),
-    OpenParen, Word("name"), Comma, Word("email"), CloseParen,
+    Word("INSERT"),
+    Word("INTO"),
+    Word("users"),
+    OpenParen,
+    Word("name"),
+    Comma,
+    Word("email"),
+    CloseParen,
     Word("VALUES"),
-    OpenParen, ParamAnon, Comma, ParamAnon, CloseParen,
+    OpenParen,
+    ParamAnon,
+    Comma,
+    ParamAnon,
+    CloseParen,
   ] = tokens
 }
 
 pub fn tokenize_update_test() {
   let tokens = tokenize.tokenize("UPDATE users SET name = ? WHERE id = ?")
   let assert [
-    Word("UPDATE"), Word("users"), Word("SET"), Word("name"), Eq, ParamAnon,
-    Word("WHERE"), Word("id"), Eq, ParamAnon,
+    Word("UPDATE"),
+    Word("users"),
+    Word("SET"),
+    Word("name"),
+    Eq,
+    ParamAnon,
+    Word("WHERE"),
+    Word("id"),
+    Eq,
+    ParamAnon,
   ] = tokens
 }
 
@@ -245,7 +304,9 @@ pub fn tokenize_join_test() {
 
 pub fn tokenize_subquery_test() {
   let tokens =
-    tokenize.tokenize("SELECT * FROM users WHERE id IN (SELECT user_id FROM active)")
+    tokenize.tokenize(
+      "SELECT * FROM users WHERE id IN (SELECT user_id FROM active)",
+    )
   let assert True = list.contains(tokens, Word("IN"))
   let assert True = list.contains(tokens, Word("SELECT"))
 }
@@ -253,7 +314,11 @@ pub fn tokenize_subquery_test() {
 pub fn tokenize_coalesce_test() {
   let tokens = tokenize.tokenize("COALESCE(name, 'unknown')")
   let assert [
-    Word("COALESCE"), OpenParen, Word("name"), Comma, StringLit("unknown"),
+    Word("COALESCE"),
+    OpenParen,
+    Word("name"),
+    Comma,
+    StringLit("unknown"),
     CloseParen,
   ] = tokens
 }
@@ -261,23 +326,36 @@ pub fn tokenize_coalesce_test() {
 pub fn tokenize_cast_test() {
   let tokens = tokenize.tokenize("CAST(id AS INTEGER)")
   let assert [
-    Word("CAST"), OpenParen, Word("id"), Word("AS"), Word("INTEGER"),
+    Word("CAST"),
+    OpenParen,
+    Word("id"),
+    Word("AS"),
+    Word("INTEGER"),
     CloseParen,
   ] = tokens
 }
 
 pub fn tokenize_case_expression_test() {
-  let tokens =
-    tokenize.tokenize("CASE WHEN x > 0 THEN 1 ELSE 0 END")
+  let tokens = tokenize.tokenize("CASE WHEN x > 0 THEN 1 ELSE 0 END")
   let assert [
-    Word("CASE"), Word("WHEN"), Word("x"), Gt, Number("0"),
-    Word("THEN"), Number("1"), Word("ELSE"), Number("0"), Word("END"),
+    Word("CASE"),
+    Word("WHEN"),
+    Word("x"),
+    Gt,
+    Number("0"),
+    Word("THEN"),
+    Number("1"),
+    Word("ELSE"),
+    Number("0"),
+    Word("END"),
   ] = tokens
 }
 
 pub fn tokenize_cte_test() {
   let tokens =
-    tokenize.tokenize("WITH active AS (SELECT id FROM users) SELECT * FROM active")
+    tokenize.tokenize(
+      "WITH active AS (SELECT id FROM users) SELECT * FROM active",
+    )
   let assert True = list.contains(tokens, Word("WITH"))
   let first_word = case tokens {
     [Word(w), ..] -> w

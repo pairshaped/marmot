@@ -114,8 +114,7 @@ pub fn introspect_query(
       }
     })
 
-  let join_nullability =
-    opcode.compute_join_nullability(opcodes, cursor_table)
+  let join_nullability = opcode.compute_join_nullability(opcodes, cursor_table)
 
   // Tokenize once for all analysis
   let tokens = tokenize.tokenize(normalized_sql)
@@ -479,8 +478,7 @@ fn extract_insert_select_parameters(
     Error(_) -> []
     Ok(#(_, after_select)) -> {
       // SELECT list ends at FROM
-      let select_tokens =
-        tokenize.take_until_keywords(after_select, ["FROM"])
+      let select_tokens = tokenize.take_until_keywords(after_select, ["FROM"])
       let items = tokenize.split_on_commas(select_tokens)
       let select_params =
         items
@@ -533,8 +531,7 @@ fn extract_insert_select_parameters(
         })
 
       // Tokens from FROM onward for WHERE params
-      let from_onwards =
-        tokenize.drop_until_keyword(after_select, "FROM")
+      let from_onwards = tokenize.drop_until_keyword(after_select, "FROM")
       let where_tables =
         parse.find_all_subquery_tables(from_onwards)
         |> list.filter(fn(t) {

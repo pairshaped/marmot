@@ -1555,10 +1555,7 @@ pub fn introspect_double_quoted_keyword_identifier_in_where_test() {
 pub fn introspect_cast_count_as_integer_test() {
   use db <- sqlight.with_connection(":memory:")
   let assert Ok(_) =
-    sqlight.exec(
-      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY)",
-      on: db,
-    )
+    sqlight.exec("CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY)", on: db)
   let assert Ok(result) =
     sqlite.introspect_query(
       db,
