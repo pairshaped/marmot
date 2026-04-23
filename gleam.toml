@@ -1,5 +1,5 @@
 name = "marmot"
-version = "1.0.2"
+version = "1.1.0"
 description = "Type-safe SQL for SQLite in Gleam. Write .sql files, generate typed functions. Inspired by Squirrel."
 licences = ["MIT"]
 repository = { type = "github", user = "pairshaped", repo = "marmot" }
