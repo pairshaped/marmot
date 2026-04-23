@@ -7,7 +7,7 @@
 Many grapheme-by-grapheme scanner functions use `string.pop_grapheme` and
 `string.drop_start(s, 1)`, which are O(n) per call on Erlang binaries,
 making the overall scan O(n^2). The recent commit `ecbe7ff` fixed this in
-some functions, but many remain:
+some functions, but many remain (now in `sqlite/parse.gleam`):
 
 - `do_find_top_level_keyword`
 - `do_find_keyword_idx`
@@ -18,18 +18,9 @@ some functions, but many remain:
 
 For typical SQL query sizes (under 1KB) this is negligible, but a proper
 tokenizer or byte-offset-based approach would fix it systematically. This
-overlaps with the README's "proper SQL tokenizer" known limitation.
-
-## Deferred from security review (2026-04-20)
-
-### LOW: `validate_output` does not resolve path traversal
-
-`project.gleam:179` checks `string.starts_with(output, "src/")` but does
-not resolve `..` segments, so a path like `src/../../etc/foo` passes
-validation. Since the attacker needs local write access to `gleam.toml` or
-CLI args, and the written content is generated Gleam code (not arbitrary
-data), the practical risk is minimal. A path-canonicalization step before
-the prefix check would close this.
+overlaps with the README's "proper SQL tokenizer" known limitation. A
+tokenizer would also eliminate the duplicated quote/paren-tracking state
+machines across these functions.
 
 ### LOW: Temp file uses predictable name
 
@@ -47,3 +38,14 @@ interpolates it into a Gleam `import` statement with no path validation.
 A crafted `gleam.toml` value could produce an unexpected import path.
 Gleam's module resolver would likely reject invalid paths, but adding a
 check that the module path contains no `..` segments would be defensive.
+
+## Completed (2026-04-23)
+
+- Split `sqlite.gleam` (4185 lines) into three modules:
+  `sqlite.gleam` (orchestration + public API),
+  `sqlite/opcode.gleam` (opcode types and resolution),
+  `sqlite/parse.gleam` (text-based SQL parsing)
+- Fixed `validate_output` path traversal: `resolve_path` now preserves
+  leading `..` segments so `../src/generated` is correctly rejected
+- Added `/* block comment */` handling to `contains_semicolon_outside_strings`
+- Added design-decision comments for SUM() -> FloatType mapping

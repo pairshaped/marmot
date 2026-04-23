@@ -186,6 +186,8 @@ pub fn validate_output(config: Config) -> Result(Nil, Nil) {
 }
 
 /// Resolve `.` and `..` segments in a path without touching the filesystem.
+/// Leading `..` segments that would escape the project root are preserved
+/// so that `validate_output` correctly rejects paths like `../src/generated`.
 fn resolve_path(path: String) -> String {
   path
   |> string.split("/")
@@ -194,8 +196,11 @@ fn resolve_path(path: String) -> String {
       "." -> acc
       ".." ->
         case acc {
+          // Don't pop past already-accumulated ".." (we're above root)
+          ["..", ..] -> ["..", ..acc]
           [_, ..rest] -> rest
-          [] -> acc
+          // Empty stack means we're escaping the project root
+          [] -> [".."]
         }
       _ -> [segment, ..acc]
     }

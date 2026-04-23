@@ -350,11 +350,11 @@ fn do_find_duplicates(
   }
 }
 
-/// Check for semicolons outside of quoted SQL contexts and line comments.
-/// Handles single-quoted strings (with '' escapes), double-quoted identifiers,
-/// and `-- line comments` (which extend to end of line).
+/// Check for semicolons outside of quoted SQL contexts, line comments, and
+/// block comments. Handles single-quoted strings (with '' escapes),
+/// double-quoted identifiers, `-- line comments`, and `/* block comments */`.
 fn contains_semicolon_outside_strings(sql: String) -> Bool {
-  do_check_semicolon(sql, False, False, False)
+  do_check_semicolon(sql, False, False, False, False)
 }
 
 fn do_check_semicolon(
@@ -362,57 +362,124 @@ fn do_check_semicolon(
   in_single_quote: Bool,
   in_double_quote: Bool,
   in_line_comment: Bool,
+  in_block_comment: Bool,
 ) -> Bool {
   case string.pop_grapheme(s) {
     Error(_) -> False
-    // Newline ends any active line comment
+    // Newline ends any active line comment (but not block comments)
     Ok(#("\n", rest)) ->
-      do_check_semicolon(rest, in_single_quote, in_double_quote, False)
-    // Everything else inside a line comment is ignored
+      do_check_semicolon(
+        rest,
+        in_single_quote,
+        in_double_quote,
+        False,
+        in_block_comment,
+      )
+    // Inside a line comment, everything is ignored until newline
     Ok(#(_, rest)) if in_line_comment ->
-      do_check_semicolon(rest, in_single_quote, in_double_quote, True)
+      do_check_semicolon(rest, in_single_quote, in_double_quote, True, False)
+    // Block comment: look for closing */
+    Ok(#("*", rest)) if in_block_comment ->
+      case string.pop_grapheme(rest) {
+        Ok(#("/", rest2)) ->
+          do_check_semicolon(rest2, False, False, False, False)
+        _ -> do_check_semicolon(rest, False, False, False, True)
+      }
+    Ok(#(_, rest)) if in_block_comment ->
+      do_check_semicolon(rest, False, False, False, True)
     Ok(#("'", rest)) ->
       case in_double_quote {
-        True -> do_check_semicolon(rest, in_single_quote, True, False)
+        True -> do_check_semicolon(rest, in_single_quote, True, False, False)
         False ->
           case in_single_quote {
             True ->
               // Check for escaped quote ''
               case string.pop_grapheme(rest) {
                 Ok(#("'", rest2)) ->
-                  do_check_semicolon(rest2, True, False, False)
-                _ -> do_check_semicolon(rest, False, False, False)
+                  do_check_semicolon(rest2, True, False, False, False)
+                _ -> do_check_semicolon(rest, False, False, False, False)
               }
-            False -> do_check_semicolon(rest, True, False, False)
+            False -> do_check_semicolon(rest, True, False, False, False)
           }
       }
     Ok(#("\"", rest)) ->
       case in_single_quote {
-        True -> do_check_semicolon(rest, True, in_double_quote, False)
+        True ->
+          do_check_semicolon(rest, True, in_double_quote, False, False)
         // No explicit "" escape handling needed: toggling twice is a no-op
         // that leaves in_double_quote in the correct state.
-        False -> do_check_semicolon(rest, False, !in_double_quote, False)
+        False -> do_check_semicolon(rest, False, !in_double_quote, False, False)
       }
     // `--` starts a line comment, but only outside quoted contexts
     Ok(#("-", rest)) ->
       case in_single_quote || in_double_quote {
         True ->
-          do_check_semicolon(rest, in_single_quote, in_double_quote, False)
+          do_check_semicolon(
+            rest,
+            in_single_quote,
+            in_double_quote,
+            False,
+            False,
+          )
         False ->
           case string.pop_grapheme(rest) {
-            Ok(#("-", rest2)) -> do_check_semicolon(rest2, False, False, True)
+            Ok(#("-", rest2)) ->
+              do_check_semicolon(rest2, False, False, True, False)
             _ ->
-              do_check_semicolon(rest, in_single_quote, in_double_quote, False)
+              do_check_semicolon(
+                rest,
+                in_single_quote,
+                in_double_quote,
+                False,
+                False,
+              )
+          }
+      }
+    // `/*` starts a block comment, but only outside quoted contexts
+    Ok(#("/", rest)) ->
+      case in_single_quote || in_double_quote {
+        True ->
+          do_check_semicolon(
+            rest,
+            in_single_quote,
+            in_double_quote,
+            False,
+            False,
+          )
+        False ->
+          case string.pop_grapheme(rest) {
+            Ok(#("*", rest2)) ->
+              do_check_semicolon(rest2, False, False, False, True)
+            _ ->
+              do_check_semicolon(
+                rest,
+                in_single_quote,
+                in_double_quote,
+                False,
+                False,
+              )
           }
       }
     Ok(#(";", rest)) ->
       case in_single_quote || in_double_quote {
         True ->
-          do_check_semicolon(rest, in_single_quote, in_double_quote, False)
+          do_check_semicolon(
+            rest,
+            in_single_quote,
+            in_double_quote,
+            False,
+            False,
+          )
         False -> True
       }
     Ok(#(_, rest)) ->
-      do_check_semicolon(rest, in_single_quote, in_double_quote, False)
+      do_check_semicolon(
+        rest,
+        in_single_quote,
+        in_double_quote,
+        False,
+        False,
+      )
   }
 }
 
