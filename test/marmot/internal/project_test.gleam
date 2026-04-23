@@ -140,8 +140,7 @@ pub fn parse_config_flag_without_value_test() {
 }
 
 pub fn parse_config_flag_as_last_arg_test() {
-  let config =
-    project.parse_config("", ["--database"], option.None)
+  let config = project.parse_config("", ["--database"], option.None)
   let assert Config(
     database: option.None,
     output: option.None,

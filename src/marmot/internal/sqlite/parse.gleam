@@ -644,7 +644,13 @@ fn parse_simple_where_condition(tokens: List(Token)) -> List(#(String, String)) 
         }
         option.None -> {
           let col_name = normalize_column_ref(lhs)
-          [#(col_name, col_name)]
+          // Extract all named params from the RHS and map each to the LHS column.
+          // Handles BETWEEN @from AND @to and single-param cases like col = @val.
+          let rhs_params = extract_all_named_params_from_tokens(tokens)
+          case rhs_params {
+            [] -> [#(col_name, col_name)]
+            params -> list.map(params, fn(p) { #(p, col_name) })
+          }
         }
       }
   }
@@ -777,8 +783,7 @@ fn do_find_param_binders(
     [ParamAnon, ..rest] -> {
       let col = extract_column_from_prev(prev)
       case col {
-        option.None ->
-          do_find_param_binders(rest, [ParamAnon, ..prev], acc)
+        option.None -> do_find_param_binders(rest, [ParamAnon, ..prev], acc)
         option.Some(name) -> {
           let bare = strip_table_prefix(name)
           do_find_param_binders(rest, [ParamAnon, ..prev], [
@@ -806,23 +811,16 @@ fn do_find_param_binders(
 /// Look backward in the reversed previous-token list for a column
 /// before a comparison operator.
 fn extract_column_from_prev(prev: List(Token)) -> Option(String) {
-  case prev {
-    // col OP ? -- prev is reversed: [OP, col, ...]
-    // Simple: operator then word
-    [Word(col), ..] -> option.Some(col)
-    [QuotedId(col), ..] -> option.Some(col)
-    // table.col OP ? -- prev: [OP, Word(col), Dot, Word(table), ...]
-    // But OP was already consumed as current token... wait, prev includes
-    // everything before the param. The operator IS in prev.
-    // Actually, prev is: [Eq, Word(col), ...] or [Word("LIKE"), Word(col), ...]
-    // Wait no, we push tokens onto prev in order, so prev is reversed.
-    // If SQL is: col = ?, tokens are [Word("col"), Eq, ParamAnon]
-    // When we hit ParamAnon, prev is [Eq, Word("col")]
-    // So prev[0] = Eq (the operator), prev[1] = Word("col")
-    _ ->
-      case skip_operator_in_prev(prev) {
-        option.Some(after_op) -> extract_column_word(after_op)
-        option.None -> option.None
+  // prev is reversed: for "col = ?", prev is [Eq, Word("col")].
+  // For "col BETWEEN ?", prev is [Word("BETWEEN"), Word("col")].
+  // Always skip the operator first, then extract the column after it.
+  case skip_operator_in_prev(prev) {
+    option.Some(after_op) -> extract_column_word(after_op)
+    option.None ->
+      // No recognized operator; check for quoted identifier
+      case prev {
+        [QuotedId(col), ..] -> option.Some(col)
+        _ -> option.None
       }
   }
 }
@@ -1066,11 +1064,9 @@ pub fn infer_expression_type(item: SelectItem) -> Column {
 
 /// Infer type from CAST(... AS type). `rest` is tokens after the opening paren.
 fn infer_cast_type(alias: String, rest: List(Token)) -> Column {
-  // Find AS keyword inside the CAST parens, take the type after it
-  let inner = case list.reverse(rest) {
-    [CloseParen, ..rev_rest] -> list.reverse(rev_rest)
-    _ -> rest
-  }
+  // Use proper paren-matching to extract only the tokens inside CAST(),
+  // ignoring any trailing expression after the closing paren.
+  let #(inner, _remaining) = tokenize.collect_inside_parens(rest)
   case tokenize.split_at_last_keyword(inner, "AS") {
     Error(_) -> Column(name: alias, column_type: StringType, nullable: True)
     Ok(#(_, type_tokens)) ->
@@ -1097,11 +1093,11 @@ fn infer_cast_type(alias: String, rest: List(Token)) -> Column {
 }
 
 /// Infer COALESCE type from its last argument.
+/// `rest` is everything after the opening paren of COALESCE(. Use proper
+/// paren-matching to extract only the tokens inside the COALESCE call,
+/// ignoring any trailing expression (e.g., `+ 1` in `COALESCE(...) + 1`).
 fn infer_coalesce_type(alias: String, rest: List(Token)) -> Column {
-  let inner = case list.reverse(rest) {
-    [CloseParen, ..rev_rest] -> list.reverse(rev_rest)
-    _ -> rest
-  }
+  let #(inner, _remaining) = tokenize.collect_inside_parens(rest)
   let args = tokenize.split_on_commas(inner)
   case list.last(args) {
     Error(_) -> Column(name: alias, column_type: StringType, nullable: True)

@@ -511,7 +511,7 @@ fn do_split_on_commas(
 
 /// Split token list on AND/OR keywords at paren depth 0.
 pub fn split_on_and_or(tokens: List(Token)) -> List(List(Token)) {
-  do_split_on_and_or(tokens, [], [], 0)
+  do_split_on_and_or(tokens, [], [], 0, False)
 }
 
 fn do_split_on_and_or(
@@ -519,6 +519,7 @@ fn do_split_on_and_or(
   current: List(Token),
   acc: List(List(Token)),
   depth: Int,
+  in_between: Bool,
 ) -> List(List(Token)) {
   case tokens {
     [] ->
@@ -527,21 +528,48 @@ fn do_split_on_and_or(
         _ -> list.reverse([list.reverse(current), ..acc])
       }
     [OpenParen, ..rest] ->
-      do_split_on_and_or(rest, [OpenParen, ..current], acc, depth + 1)
+      do_split_on_and_or(
+        rest,
+        [OpenParen, ..current],
+        acc,
+        depth + 1,
+        in_between,
+      )
     [CloseParen, ..rest] ->
-      do_split_on_and_or(rest, [CloseParen, ..current], acc, depth - 1)
+      do_split_on_and_or(
+        rest,
+        [CloseParen, ..current],
+        acc,
+        depth - 1,
+        in_between,
+      )
     [Word(w), ..rest] -> {
       let upper = string.uppercase(w)
-      case depth == 0 && { upper == "AND" || upper == "OR" } {
-        True ->
+      case upper {
+        // Track BETWEEN so the next AND is consumed as part of the expression
+        "BETWEEN" ->
+          do_split_on_and_or(rest, [Word(w), ..current], acc, depth, True)
+        // AND after BETWEEN is part of the BETWEEN expression, not a separator
+        "AND" if depth == 0 && in_between ->
+          do_split_on_and_or(rest, [Word(w), ..current], acc, depth, False)
+        "AND" | "OR" if depth == 0 ->
           case current {
-            [] -> do_split_on_and_or(rest, [], acc, 0)
-            _ -> do_split_on_and_or(rest, [], [list.reverse(current), ..acc], 0)
+            [] -> do_split_on_and_or(rest, [], acc, 0, False)
+            _ ->
+              do_split_on_and_or(
+                rest,
+                [],
+                [list.reverse(current), ..acc],
+                0,
+                False,
+              )
           }
-        False -> do_split_on_and_or(rest, [Word(w), ..current], acc, depth)
+        _ ->
+          do_split_on_and_or(rest, [Word(w), ..current], acc, depth, in_between)
       }
     }
-    [token, ..rest] -> do_split_on_and_or(rest, [token, ..current], acc, depth)
+    [token, ..rest] ->
+      do_split_on_and_or(rest, [token, ..current], acc, depth, in_between)
   }
 }
 

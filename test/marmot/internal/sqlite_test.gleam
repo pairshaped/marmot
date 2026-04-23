@@ -1602,3 +1602,57 @@ pub fn introspect_cast_subquery_column_as_integer_test() {
   let assert [Column(name: "v", column_type: IntType, nullable: False)] =
     result.columns
 }
+
+pub fn between_named_params_infer_column_type_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE events (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id, name FROM events WHERE created_at BETWEEN @from_ts AND @to_ts",
+    )
+  let assert [
+    Column(name: "id", column_type: IntType, nullable: False),
+    Column(name: "name", column_type: StringType, nullable: False),
+  ] = result.columns
+  let assert [
+    Parameter(name: "from_ts", column_type: IntType, nullable: False),
+    Parameter(name: "to_ts", column_type: IntType, nullable: False),
+  ] = result.parameters
+}
+
+pub fn coalesce_max_plus_literal_returns_int_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE items (
+        id INTEGER NOT NULL PRIMARY KEY,
+        org_id INTEGER NOT NULL,
+        item_type TEXT NOT NULL,
+        season INTEGER,
+        position INTEGER NOT NULL DEFAULT 0
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT COALESCE(MAX(position), 0) + 1 AS next_position FROM items WHERE org_id = @org_id AND item_type = @item_type AND season IS @season",
+    )
+  let assert [
+    Column(name: "next_position", column_type: IntType, nullable: False),
+  ] = result.columns
+  let assert [
+    Parameter(name: "org_id", column_type: IntType, nullable: False),
+    Parameter(name: "item_type", column_type: StringType, nullable: False),
+    Parameter(name: "season", column_type: IntType, nullable: True),
+  ] = result.parameters
+}

@@ -154,8 +154,7 @@ pub fn strip_comments_escaped_quote_before_dash_test() {
 pub fn strip_comments_block_comment_inserts_space_test() {
   // Stripping a block comment between tokens must insert a space to
   // prevent token fusion (e.g., SELECT/**/id must not become SELECTid)
-  let assert "SELECT id" =
-    query.strip_comments("SELECT/**/id")
+  let assert "SELECT id" = query.strip_comments("SELECT/**/id")
 }
 
 pub fn strip_comments_block_comment_multiline_test() {
