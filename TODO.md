@@ -49,3 +49,11 @@ check that the module path contains no `..` segments would be defensive.
   leading `..` segments so `../src/generated` is correctly rejected
 - Added `/* block comment */` handling to `contains_semicolon_outside_strings`
 - Added design-decision comments for SUM() -> FloatType mapping
+- Fixed `find_param_binders` aborting on first unresolvable anonymous param
+- Renamed `strip_line_comments` to `strip_comments` (now handles block comments too)
+- Block comment stripping now inserts a space to prevent token fusion
+- Consolidated duplicated `char_code` helpers into `query.gleam`
+- Fixed unused/misplaced imports in `tokenize_test.gleam`
+- Replaced `os:getenv/0` linear scan with single-var FFI (`marmot_ffi:get_env/1`)
+- Added explanatory comment for float p4 decoder in `opcode.gleam`
+- Added test for `--database` as trailing CLI arg with no value

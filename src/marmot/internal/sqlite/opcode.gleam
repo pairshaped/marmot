@@ -470,6 +470,8 @@ fn list_at(lst: List(a), idx: Int) -> Result(a, Nil) {
 pub fn flexible_string_decoder() -> decode.Decoder(String) {
   decode.one_of(decode.string, [
     decode.map(decode.int, int.to_string),
+    // EXPLAIN may return float p4 values for opcodes like RealAffinity;
+    // the numeric value is not meaningful for our type inference, so discard it.
     decode.map(decode.float, fn(_) { "" }),
     decode.success(""),
   ])

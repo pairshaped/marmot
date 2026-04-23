@@ -139,6 +139,16 @@ pub fn parse_config_flag_without_value_test() {
   ) = config
 }
 
+pub fn parse_config_flag_as_last_arg_test() {
+  let config =
+    project.parse_config("", ["--database"], option.None)
+  let assert Config(
+    database: option.None,
+    output: option.None,
+    query_function: option.None,
+  ) = config
+}
+
 pub fn output_path_default_test() {
   let assert "src/generated/sql/app_sql.gleam" =
     project.output_path("src/app/sql", option.None)

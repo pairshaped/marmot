@@ -959,31 +959,16 @@ fn is_valid_pascal_case_identifier(name: String) -> Bool {
   case string.to_graphemes(name) {
     [] -> False
     [first, ..rest] -> {
-      let first_code = char_code(first)
-      is_upper(first_code)
+      let first_code = query.char_code(first)
+      // First char must be A-Z
+      { first_code >= 65 && first_code <= 90 }
       && list.all(rest, fn(ch) {
-        let code = char_code(ch)
-        is_upper(code) || is_lower(code) || is_ascii_digit(code)
+        let code = query.char_code(ch)
+        // A-Z, a-z, 0-9
+        { code >= 65 && code <= 90 }
+        || { code >= 97 && code <= 122 }
+        || { code >= 48 && code <= 57 }
       })
     }
   }
-}
-
-fn char_code(ch: String) -> Int {
-  case string.to_utf_codepoints(ch) {
-    [cp] -> string.utf_codepoint_to_int(cp)
-    _ -> 0
-  }
-}
-
-fn is_upper(code: Int) -> Bool {
-  code >= 65 && code <= 90
-}
-
-fn is_lower(code: Int) -> Bool {
-  code >= 97 && code <= 122
-}
-
-fn is_ascii_digit(code: Int) -> Bool {
-  code >= 48 && code <= 57
 }

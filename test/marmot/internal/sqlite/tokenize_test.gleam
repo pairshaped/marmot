@@ -1,8 +1,9 @@
 import gleam/list
+import gleam/option
 import marmot/internal/sqlite/tokenize.{
-  type Token, CloseParen, Comma, Dot, Eq, Ge, Gt, Le, Lt, Minus, Ne,
-  NullOverride, NullableOverride, Number, OpenParen, ParamAnon, ParamNamed, Plus,
-  QuotedId, Semicolon, Slash, Star, StringLit, Word,
+  CloseParen, Comma, Dot, Eq, Ge, Gt, Le, Lt, Minus, Ne, NullOverride,
+  NullableOverride, Number, OpenParen, ParamAnon, ParamNamed, Plus, QuotedId,
+  Semicolon, Slash, Star, StringLit, Word,
 }
 
 // ---- Basic tokenization ----
@@ -464,5 +465,3 @@ pub fn token_text_roundtrip_test() {
   let assert "(" = tokenize.token_text(OpenParen)
   let assert "=" = tokenize.token_text(Eq)
 }
-
-import gleam/option

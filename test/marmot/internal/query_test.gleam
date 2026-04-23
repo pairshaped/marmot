@@ -137,16 +137,29 @@ pub fn query_has_no_return_columns_test() {
   let assert False = query.has_return_columns(q)
 }
 
-pub fn strip_line_comments_with_escaped_quotes_test() {
+pub fn strip_comments_with_escaped_quotes_test() {
   // The '' inside the string must not close the string literal, so the
   // -- after it must still be recognized as a comment
   let assert "SELECT 'it''s fine' \n" =
-    query.strip_line_comments("SELECT 'it''s fine' -- a comment\n")
+    query.strip_comments("SELECT 'it''s fine' -- a comment\n")
 }
 
-pub fn strip_line_comments_escaped_quote_before_dash_test() {
+pub fn strip_comments_escaped_quote_before_dash_test() {
   // Ensure the parser stays in the string through the '' escape, so the
   // -- inside the string is NOT treated as a comment
   let assert "SELECT 'it''s -- tricky'" =
-    query.strip_line_comments("SELECT 'it''s -- tricky'")
+    query.strip_comments("SELECT 'it''s -- tricky'")
+}
+
+pub fn strip_comments_block_comment_inserts_space_test() {
+  // Stripping a block comment between tokens must insert a space to
+  // prevent token fusion (e.g., SELECT/**/id must not become SELECTid)
+  let assert "SELECT id" =
+    query.strip_comments("SELECT/**/id")
+}
+
+pub fn strip_comments_block_comment_multiline_test() {
+  // Newlines inside block comments are preserved, comment content is stripped
+  let assert "SELECT \n  id" =
+    query.strip_comments("SELECT /* a\ncomment */ id")
 }

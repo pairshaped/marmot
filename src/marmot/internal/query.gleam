@@ -99,14 +99,19 @@ pub fn sanitize_identifier(name: String) -> String {
   }
 }
 
+/// Convert a single grapheme to its UTF codepoint integer.
+pub fn char_code(c: String) -> Int {
+  case string.to_utf_codepoints(c) {
+    [cp] -> string.utf_codepoint_to_int(cp)
+    _ -> 0
+  }
+}
+
 fn is_identifier_char(c: String) -> Bool {
   case c {
     "_" -> True
     _ -> {
-      let code = case string.to_utf_codepoints(c) {
-        [cp] -> string.utf_codepoint_to_int(cp)
-        _ -> 0
-      }
+      let code = char_code(c)
       // a-z (input is already lowercased), 0-9
       { code >= 97 && code <= 122 } || { code >= 48 && code <= 57 }
     }
@@ -114,10 +119,7 @@ fn is_identifier_char(c: String) -> Bool {
 }
 
 fn is_digit(c: String) -> Bool {
-  let code = case string.to_utf_codepoints(c) {
-    [cp] -> string.utf_codepoint_to_int(cp)
-    _ -> 0
-  }
+  let code = char_code(c)
   code >= 48 && code <= 57
 }
 
@@ -157,10 +159,7 @@ pub fn is_sql_ident_char(c: String) -> Bool {
   case c {
     "_" -> True
     _ -> {
-      let code = case string.to_utf_codepoints(c) {
-        [cp] -> string.utf_codepoint_to_int(cp)
-        _ -> 0
-      }
+      let code = char_code(c)
       // 0-9, A-Z, a-z
       { code >= 48 && code <= 57 }
       || { code >= 65 && code <= 90 }
@@ -172,7 +171,7 @@ pub fn is_sql_ident_char(c: String) -> Bool {
 /// Remove `-- line comments` and `/* block comments */` from SQL, preserving
 /// string literals and the original spacing. Scans grapheme-by-grapheme,
 /// tracking quote state and comment boundaries.
-pub fn strip_line_comments(sql: String) -> String {
+pub fn strip_comments(sql: String) -> String {
   do_strip_comments(string.to_graphemes(sql), [], False, False, False, False)
   |> list.reverse
   |> string.join("")
@@ -201,9 +200,10 @@ fn do_strip_comments(
     // Inside line comment: skip until newline
     [_, ..rest] if in_line_comment ->
       do_strip_comments(rest, acc, in_single, in_double, True, False)
-    // Block comment end
+    // Block comment end: insert a space so adjacent tokens don't fuse
+    // (e.g., SELECT/**/id must not become SELECTid)
     ["*", "/", ..rest] if in_block_comment ->
-      do_strip_comments(rest, acc, False, False, False, False)
+      do_strip_comments(rest, [" ", ..acc], False, False, False, False)
     // Inside block comment: skip
     [_, ..rest] if in_block_comment ->
       do_strip_comments(rest, acc, False, False, False, True)

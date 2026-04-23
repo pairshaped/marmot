@@ -1,6 +1,7 @@
 import gleam/list
 import gleam/option.{type Option}
 import gleam/string
+import marmot/internal/query
 
 // ---- Token type ----
 
@@ -287,20 +288,13 @@ fn is_digit(c: String) -> Bool {
 fn is_alpha_or_underscore(c: String) -> Bool {
   c == "_"
   || {
-    let code = char_code(c)
+    let code = query.char_code(c)
     { code >= 65 && code <= 90 } || { code >= 97 && code <= 122 }
   }
 }
 
 fn is_word_char(c: String) -> Bool {
   is_alpha_or_underscore(c) || is_digit(c)
-}
-
-fn char_code(c: String) -> Int {
-  case string.to_utf_codepoints(c) {
-    [cp] -> string.utf_codepoint_to_int(cp)
-    _ -> 0
-  }
 }
 
 fn join_rev(chars: List(String)) -> String {

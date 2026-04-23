@@ -43,7 +43,7 @@ pub type Binder {
 /// spaces, collapse runs, and trim.
 pub fn normalize_sql_whitespace(sql: String) -> String {
   sql
-  |> query.strip_line_comments
+  |> query.strip_comments
   |> string.replace("\r\n", " ")
   |> string.replace("\r", " ")
   |> string.replace("\n", " ")
@@ -777,7 +777,8 @@ fn do_find_param_binders(
     [ParamAnon, ..rest] -> {
       let col = extract_column_from_prev(prev)
       case col {
-        option.None -> []
+        option.None ->
+          do_find_param_binders(rest, [ParamAnon, ..prev], acc)
         option.Some(name) -> {
           let bare = strip_table_prefix(name)
           do_find_param_binders(rest, [ParamAnon, ..prev], [

@@ -106,21 +106,14 @@ fn is_valid_gleam_name(name: String) -> Bool {
 fn is_lower_or_underscore(c: String) -> Bool {
   c == "_"
   || {
-    let code = char_code(c)
+    let code = query.char_code(c)
     code >= 97 && code <= 122
   }
 }
 
 fn is_ascii_digit(c: String) -> Bool {
-  let code = char_code(c)
+  let code = query.char_code(c)
   code >= 48 && code <= 57
-}
-
-fn char_code(c: String) -> Int {
-  case string.to_utf_codepoints(c) {
-    [cp] -> string.utf_codepoint_to_int(cp)
-    _ -> 0
-  }
 }
 
 /// Sanitize a database column or parameter name for use in generated Gleam code.
@@ -648,10 +641,10 @@ fn column_decoder(col: Column) -> String {
 
 fn escape_sql(sql: String) -> String {
   sql
-  // Strip line comments BEFORE collapsing newlines, otherwise a leading
+  // Strip comments BEFORE collapsing newlines, otherwise a leading
   // `-- comment\nSELECT ...` becomes `-- comment SELECT ...` which comments
-  // out the actual SQL at runtime. (Block comments /* ... */ stay.)
-  |> query.strip_line_comments
+  // out the actual SQL at runtime.
+  |> query.strip_comments
   |> string.replace("\\", "\\\\")
   |> string.replace("\"", "\\\"")
   |> string.replace("\r\n", " ")
