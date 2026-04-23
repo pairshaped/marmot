@@ -1,5 +1,5 @@
 -module(marmot_ffi).
--export([run_executable/2, find_executable/1, get_env/1]).
+-export([run_executable/2, find_executable/1, get_env/1, make_tmp_file/2]).
 
 %% Run an executable with args using open_port (no shell interpretation).
 %% Waits for the port to close and returns the exit status as an integer.
@@ -24,6 +24,17 @@ get_env(Name) ->
     case os:getenv(unicode:characters_to_list(Name)) of
         false -> none;
         Value -> {some, unicode:characters_to_binary(Value)}
+    end.
+
+%% Create a temp file with a random name and write Content to it atomically.
+%% Uses crypto:strong_rand_bytes for an unpredictable suffix and exclusive
+%% mode to prevent symlink races. Returns {ok, Path} or {error, Reason}.
+make_tmp_file(Dir, Content) ->
+    Suffix = binary:encode_hex(crypto:strong_rand_bytes(8)),
+    Path = <<Dir/binary, "/marmot_fmt_", Suffix/binary, ".gleam">>,
+    case file:write_file(Path, Content, [exclusive]) of
+        ok -> {ok, Path};
+        {error, Reason} -> {error, atom_to_binary(Reason)}
     end.
 
 %% Find an executable on PATH. Returns {some, Path} or none.

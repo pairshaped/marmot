@@ -354,20 +354,15 @@ fn contains_semicolon_outside_strings(sql: String) -> Bool {
 /// Run `gleam format` on generated code. Falls back to the original string
 /// if formatting fails (e.g., gleam not on PATH) and prints a warning.
 fn format_gleam(code: String) -> String {
-  let suffix =
-    int.to_string(int.absolute_value(unique_integer()))
-    <> "_"
-    <> int.to_string(random_integer(999_999_999))
   let tmp_dir = get_tmp_dir()
-  let tmp = tmp_dir <> "/marmot_fmt_" <> suffix <> ".gleam"
-  case simplifile.write(tmp, code) {
+  case make_tmp_file(tmp_dir, code) {
     Error(_) -> {
       io.println_error(
         "warning: Could not write temp file for formatting, skipping gleam format",
       )
       code
     }
-    Ok(_) -> {
+    Ok(tmp) -> {
       let exit_code = run_executable("gleam", ["format", tmp])
       let formatted = case exit_code {
         0 ->
@@ -433,14 +428,13 @@ fn init_stop(code: Int) -> Nil
 @external(erlang, "erlang", "halt")
 fn erlang_halt(code: Int) -> Nil
 
-@external(erlang, "erlang", "unique_integer")
-fn unique_integer() -> Int
-
-@external(erlang, "rand", "uniform")
-fn random_integer(max: Int) -> Int
-
 @external(erlang, "timer", "sleep")
 fn timer_sleep(ms: Int) -> Nil
+
+/// Create a temp file with a cryptographically random name and write content
+/// atomically using exclusive mode (prevents symlink races).
+@external(erlang, "marmot_ffi", "make_tmp_file")
+fn make_tmp_file(dir: String, content: String) -> Result(String, String)
 
 /// Look up a single environment variable by name. The FFI handles
 /// binary-to-charlist conversion for OTP 27+ compatibility.

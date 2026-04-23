@@ -22,22 +22,6 @@ overlaps with the README's "proper SQL tokenizer" known limitation. A
 tokenizer would also eliminate the duplicated quote/paren-tracking state
 machines across these functions.
 
-### LOW: Temp file uses predictable name
-
-`marmot.gleam:422-424` builds the temp file path with
-`erlang:unique_integer()`, which is monotonic and guessable. On shared
-systems another local user could pre-create a symlink at the expected path.
-Risk is low because marmot is a single-user dev tool and the content is
-generated Gleam code. Using `mkstemp`-equivalent (e.g., a random suffix or
-Erlang's `file:mktemp`) would eliminate the race.
-
-### INFO: `query_function` config has no path validation
-
-`codegen.gleam:36` (`parse_query_function`) splits the config value and
-interpolates it into a Gleam `import` statement with no path validation.
-A crafted `gleam.toml` value could produce an unexpected import path.
-Gleam's module resolver would likely reject invalid paths, but adding a
-check that the module path contains no `..` segments would be defensive.
 
 ## Completed (2026-04-23)
 
@@ -57,3 +41,7 @@ check that the module path contains no `..` segments would be defensive.
 - Replaced `os:getenv/0` linear scan with single-var FFI (`marmot_ffi:get_env/1`)
 - Added explanatory comment for float p4 decoder in `opcode.gleam`
 - Added test for `--database` as trailing CLI arg with no value
+- Replaced predictable temp file names with `crypto:strong_rand_bytes` +
+  exclusive file creation via `marmot_ffi:make_tmp_file/2`
+- `query_function` path validation already done (rejects `..` segments,
+  validates identifiers)
