@@ -285,7 +285,7 @@ fn process_sql_file(
   ))
 }
 
-fn validate_sql(trimmed: String, file_path: String) -> Result(String, Nil) {
+pub fn validate_sql(trimmed: String, file_path: String) -> Result(String, Nil) {
   case trimmed {
     "" -> {
       io.println_error(error.to_string(error.EmptySqlFile(path: file_path)))
@@ -312,7 +312,7 @@ fn validate_sql(trimmed: String, file_path: String) -> Result(String, Nil) {
   }
 }
 
-fn check_duplicate_columns(
+pub fn check_duplicate_columns(
   columns: List(query.Column),
   file_path: String,
 ) -> Result(Nil, Nil) {
@@ -348,7 +348,7 @@ fn find_duplicates(names: List(String)) -> List(String) {
 /// Check for semicolons outside of quoted SQL contexts, line comments, and
 /// block comments. Delegates to the tokenizer which already handles all
 /// quoting and comment styles correctly.
-fn contains_semicolon_outside_strings(sql: String) -> Bool {
+pub fn contains_semicolon_outside_strings(sql: String) -> Bool {
   tokenize.tokenize(sql)
   |> list.any(fn(t) { t == tokenize.Semicolon })
 }

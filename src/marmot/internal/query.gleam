@@ -1,4 +1,5 @@
 import gleam/bool
+import gleam/dict.{type Dict}
 import gleam/list
 import gleam/option.{type Option}
 import gleam/string
@@ -107,7 +108,7 @@ pub fn char_code(c: String) -> Int {
   }
 }
 
-fn is_identifier_char(c: String) -> Bool {
+pub fn is_identifier_char(c: String) -> Bool {
   case c {
     "_" -> True
     _ -> {
@@ -118,7 +119,7 @@ fn is_identifier_char(c: String) -> Bool {
   }
 }
 
-fn is_digit(c: String) -> Bool {
+pub fn is_digit(c: String) -> Bool {
   let code = char_code(c)
   code >= 48 && code <= 57
 }
@@ -151,6 +152,49 @@ fn to_pascal_case(snake: String) -> String {
 
 pub fn has_return_columns(query: Query) -> Bool {
   query.columns != []
+}
+
+/// Sentinel column used when column metadata cannot be resolved.
+pub fn unknown_column() -> Column {
+  Column(name: "unknown", column_type: StringType, nullable: True)
+}
+
+/// Sentinel parameter used when parameter metadata cannot be resolved.
+pub fn unknown_param() -> Parameter {
+  Parameter(name: "param", column_type: StringType, nullable: False)
+}
+
+/// Look up a column by exact name from table schemas.
+pub fn find_column(
+  table_schemas: Dict(String, List(Column)),
+  table: String,
+  col_name: String,
+) -> Result(Column, Nil) {
+  case dict.get(table_schemas, table) {
+    Ok(cols) ->
+      case list.find(cols, fn(c) { c.name == col_name }) {
+        Ok(col) -> Ok(col)
+        Error(_) -> Error(Nil)
+      }
+    Error(_) -> Error(Nil)
+  }
+}
+
+/// Look up a column by case-insensitive name from table schemas.
+pub fn find_column_ci(
+  table_schemas: Dict(String, List(Column)),
+  table: String,
+  col_name: String,
+) -> Result(Column, Nil) {
+  let lower = string.lowercase(col_name)
+  case dict.get(table_schemas, table) {
+    Ok(cols) ->
+      case list.find(cols, fn(c) { string.lowercase(c.name) == lower }) {
+        Ok(col) -> Ok(col)
+        Error(_) -> Error(Nil)
+      }
+    Error(_) -> Error(Nil)
+  }
 }
 
 /// Check if a character is a valid SQL identifier character (letters, digits,

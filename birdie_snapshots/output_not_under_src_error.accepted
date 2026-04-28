@@ -1,0 +1,13 @@
+---
+version: 1.5.5
+title: output not under src error
+file: ./test/marmot/internal/error_test.gleam
+test_name: output_not_under_src_error_test
+---
+error: Output directory must be under src/
+  ┌─ gleam.toml
+  │
+  │ output = "generated/sql"
+  │
+  hint: Gleam compiles modules from src/, so generated code must live there.
+        For example: output = "src/generated/sql"

@@ -1,0 +1,13 @@
+---
+version: 1.5.5
+title: sql error with no such column hint
+file: ./test/marmot/internal/error_test.gleam
+test_name: sql_error_no_such_column_hint_test
+---
+error: SQL error
+  ┌─ src/app/sql/find_user.sql
+  │
+  │ no such column: email
+  │
+  hint: Check that the column name matches your schema exactly.
+        Column names are case-sensitive in some contexts.

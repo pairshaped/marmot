@@ -1,6 +1,8 @@
 ---
 version: 1.5.5
 title: codegen date and timestamp module
+file: ./test/marmot/internal/codegen_test.gleam
+test_name: codegen_date_and_timestamp_module_test
 ---
 import gleam/dynamic/decode
 import gleam/int

@@ -1,0 +1,12 @@
+---
+version: 1.5.5
+title: invalid filename error
+file: ./test/marmot/internal/error_test.gleam
+test_name: invalid_filename_error_test
+---
+error: Invalid filename
+  ┌─ src/app/sql/123query.sql
+  │
+  │ Filename produces no valid Gleam identifier
+  │
+  hint: Rename the file to use letters, digits, or underscores

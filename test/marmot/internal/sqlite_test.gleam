@@ -1656,3 +1656,40 @@ pub fn coalesce_max_plus_literal_returns_int_test() {
     Parameter(name: "season", column_type: IntType, nullable: True),
   ] = result.parameters
 }
+
+// ---- Error path tests ----
+
+pub fn introspect_columns_nonexistent_table_test() {
+  // SQLite PRAGMA table_info returns empty set for nonexistent tables
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok([]) = sqlite.introspect_columns(db, "nonexistent_table")
+}
+
+pub fn introspect_query_syntax_error_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let result = sqlite.introspect_query(db, "THIS IS NOT VALID SQL")
+  let assert Error(_) = result
+}
+
+pub fn introspect_query_empty_sql_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let result = sqlite.introspect_query(db, "")
+  let assert Error(_) = result
+}
+
+pub fn parse_returns_annotation_invalid_test() {
+  let assert Error(_) = sqlite.parse_returns_annotation(
+    "-- returns: NotARowType\nSELECT 1",
+  )
+}
+
+pub fn parse_returns_annotation_valid_test() {
+  let assert Ok(option.Some("OrgRow")) = sqlite.parse_returns_annotation(
+    "-- returns: OrgRow\nSELECT id FROM orgs",
+  )
+}
+
+pub fn parse_returns_annotation_missing_test() {
+  let assert Ok(option.None) =
+    sqlite.parse_returns_annotation("SELECT id FROM orgs")
+}

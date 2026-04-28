@@ -3,7 +3,7 @@ import gleam/dynamic/decode
 import gleam/int
 import gleam/list
 import marmot/internal/query.{
-  type Column, type Parameter, Column, Parameter, StringType,
+  type Column, type Parameter, Column, Parameter,
 }
 import marmot/internal/sqlite/parse
 
@@ -203,7 +203,7 @@ pub fn find_column_for_register(
       case column_op {
         Ok(op) -> resolve_column(op.p1, op.p2, cursor_table, table_schemas)
         Error(_) ->
-          Column(name: "unknown", column_type: StringType, nullable: True)
+          query.unknown_column()
       }
     }
   }
@@ -218,13 +218,8 @@ fn resolve_rowid_column(
 ) -> Column {
   case dict.get(pk_columns, table) {
     Ok(pk_name) ->
-      case dict.get(table_schemas, table) {
-        Ok(table_cols) ->
-          case list.find(table_cols, fn(c) { c.name == pk_name }) {
-            Ok(col) -> col
-            Error(_) ->
-              Column(name: pk_name, column_type: query.IntType, nullable: False)
-          }
+      case query.find_column(table_schemas, table, pk_name) {
+        Ok(col) -> col
         Error(_) ->
           Column(name: pk_name, column_type: query.IntType, nullable: False)
       }
@@ -247,12 +242,12 @@ pub fn resolve_column(
           case parse.list_at(table_cols, col_idx) {
             Ok(col) -> col
             Error(_) ->
-              Column(name: "unknown", column_type: StringType, nullable: True)
+              query.unknown_column()
           }
         Error(_) ->
-          Column(name: "unknown", column_type: StringType, nullable: True)
+          query.unknown_column()
       }
-    Error(_) -> Column(name: "unknown", column_type: StringType, nullable: True)
+    Error(_) -> query.unknown_column()
   }
 }
 
@@ -337,7 +332,7 @@ pub fn infer_parameter_type(
               Parameter(name: "id", column_type: query.IntType, nullable: False)
           }
         Error(_) ->
-          Parameter(name: "param", column_type: StringType, nullable: False)
+          query.unknown_param()
       }
     }
   }
@@ -372,7 +367,7 @@ fn find_nearest_column_source(
     Ok(cop) ->
       resolve_column_to_parameter(cop.p1, cop.p2, cursor_table, table_schemas)
     Error(_) ->
-      Parameter(name: "param", column_type: StringType, nullable: False)
+      query.unknown_param()
   }
 }
 
@@ -430,13 +425,13 @@ fn resolve_column_to_parameter(
                 nullable: col.nullable,
               )
             Error(_) ->
-              Parameter(name: "param", column_type: StringType, nullable: False)
+              query.unknown_param()
           }
         Error(_) ->
-          Parameter(name: "param", column_type: StringType, nullable: False)
+          query.unknown_param()
       }
     Error(_) ->
-      Parameter(name: "param", column_type: StringType, nullable: False)
+      query.unknown_param()
   }
 }
 

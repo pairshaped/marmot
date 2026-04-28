@@ -85,6 +85,27 @@ pub fn invalid_returns_annotation_error_test() {
   |> birdie.snap(title: "invalid returns annotation error")
 }
 
+pub fn output_not_under_src_error_test() {
+  error.OutputNotUnderSrc(output: "generated/sql")
+  |> error.to_string
+  |> birdie.snap(title: "output not under src error")
+}
+
+pub fn invalid_filename_error_test() {
+  error.InvalidFilename(path: "src/app/sql/123query.sql")
+  |> error.to_string
+  |> birdie.snap(title: "invalid filename error")
+}
+
+pub fn sql_error_no_such_column_hint_test() {
+  error.SqlError(
+    path: "src/app/sql/find_user.sql",
+    message: "no such column: email",
+  )
+  |> error.to_string
+  |> birdie.snap(title: "sql error with no such column hint")
+}
+
 pub fn shared_type_mismatch_message_test() {
   let conflict_a = #("src/server/orgs/sql/get_org_by_id.sql", [
     Column(name: "id", column_type: IntType, nullable: False),

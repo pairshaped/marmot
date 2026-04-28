@@ -1,0 +1,28 @@
+---
+version: 1.5.5
+title: codegen date parameter
+file: ./test/marmot/internal/codegen_test.gleam
+test_name: codegen_date_param_test
+---
+pub type FindByDateRow {
+  FindByDateRow(
+    id: Int,
+    event_date: calendar.Date,
+  )
+}
+
+pub fn find_by_date(db db: sqlight.Connection, event_date event_date: calendar.Date) -> Result(List(FindByDateRow), sqlight.Error) {
+  sqlight.query(
+    "SELECT id, event_date FROM events WHERE event_date = ?",
+    on: db,
+    with: [sqlight.text(date_to_string(event_date))],
+    expecting: {
+      use id <- decode.field(0, decode.int)
+      use event_date <- decode.field(1, date_decoder())
+      decode.success(FindByDateRow(
+        id:,
+        event_date:,
+      ))
+    },
+  )
+}

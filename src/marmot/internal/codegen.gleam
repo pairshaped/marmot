@@ -92,22 +92,9 @@ fn is_valid_gleam_name(name: String) -> Bool {
   case string.to_graphemes(name) {
     [] -> False
     [first, ..rest] ->
-      is_lower_or_underscore(first)
-      && list.all(rest, fn(c) { is_lower_or_underscore(c) || is_ascii_digit(c) })
+      query.is_identifier_char(first) && !query.is_digit(first)
+      && list.all(rest, query.is_identifier_char)
   }
-}
-
-fn is_lower_or_underscore(c: String) -> Bool {
-  c == "_"
-  || {
-    let code = query.char_code(c)
-    code >= 97 && code <= 122
-  }
-}
-
-fn is_ascii_digit(c: String) -> Bool {
-  let code = query.char_code(c)
-  code >= 48 && code <= 57
 }
 
 /// Sanitize a database column or parameter name for use in generated Gleam code.
@@ -337,13 +324,24 @@ fn is_upper_char(ch: String) -> Bool {
 
 fn generate_shared_decoder(type_name: String, columns: List(Column)) -> String {
   let decoder_name = shared_decoder_name(type_name)
+  "fn "
+  <> decoder_name
+  <> "() -> decode.Decoder("
+  <> type_name
+  <> ") {\n"
+  <> decoder_body(type_name, columns, "  ")
+  <> "}"
+}
+
+fn decoder_body(type_name: String, columns: List(Column), indent: String) -> String {
   let fields =
     columns
     |> list.index_map(fn(col, idx) {
       let idx_str = int.to_string(idx)
       let decoder = column_decoder(col)
       let name = decoder_var_name(col)
-      "  use "
+      indent
+      <> "use "
       <> name
       <> " <- decode.field("
       <> idx_str
@@ -361,37 +359,35 @@ fn generate_shared_decoder(type_name: String, columns: List(Column)) -> String {
         TimestampType ->
           case col.nullable {
             True ->
-              "    "
+              indent
+              <> "  "
               <> name
               <> ": option.map("
               <> name
               <> "_raw, timestamp.from_unix_seconds),"
             False ->
-              "    "
+              indent
+              <> "  "
               <> name
               <> ": timestamp.from_unix_seconds("
               <> name
               <> "_raw),"
           }
-        _ -> "    " <> name <> ":,"
+        _ -> indent <> "  " <> name <> ":,"
       }
     })
     |> string.join("\n")
 
-  "fn "
-  <> decoder_name
-  <> "() -> decode.Decoder("
-  <> type_name
-  <> ") {\n"
-  <> fields
+  fields
   <> "\n"
-  <> "  decode.success("
+  <> indent
+  <> "decode.success("
   <> type_name
   <> "(\n"
   <> constructor_args
   <> "\n"
-  <> "  ))\n"
-  <> "}"
+  <> indent
+  <> "))\n"
 }
 
 fn generate_shared_query_function(
@@ -560,55 +556,7 @@ fn sqlight_encoder(name: String, col_type: ColumnType, nullable: Bool) -> String
 
 fn generate_decoder(q: Query) -> String {
   let type_name = query.row_type_name(q.name)
-  let fields =
-    q.columns
-    |> list.index_map(fn(col, idx) {
-      let idx_str = int.to_string(idx)
-      let decoder = column_decoder(col)
-      let name = decoder_var_name(col)
-      "      use "
-      <> name
-      <> " <- decode.field("
-      <> idx_str
-      <> ", "
-      <> decoder
-      <> ")"
-    })
-    |> string.join("\n")
-
-  let constructor_args =
-    q.columns
-    |> list.map(fn(col) {
-      let name = sanitize_name(col.name)
-      case col.column_type {
-        TimestampType ->
-          case col.nullable {
-            True ->
-              "        "
-              <> name
-              <> ": option.map("
-              <> name
-              <> "_raw, timestamp.from_unix_seconds),"
-            False ->
-              "        "
-              <> name
-              <> ": timestamp.from_unix_seconds("
-              <> name
-              <> "_raw),"
-          }
-        _ -> "        " <> name <> ":,"
-      }
-    })
-    |> string.join("\n")
-
-  fields
-  <> "\n"
-  <> "      decode.success("
-  <> type_name
-  <> "(\n"
-  <> constructor_args
-  <> "\n"
-  <> "      ))\n"
+  decoder_body(type_name, q.columns, "      ")
 }
 
 fn decoder_var_name(col: Column) -> String {

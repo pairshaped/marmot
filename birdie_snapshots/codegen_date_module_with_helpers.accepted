@@ -1,6 +1,8 @@
 ---
 version: 1.5.5
 title: codegen date module with helpers
+file: ./test/marmot/internal/codegen_test.gleam
+test_name: codegen_date_module_test
 ---
 import gleam/dynamic/decode
 import gleam/int

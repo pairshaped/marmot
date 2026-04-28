@@ -745,3 +745,77 @@ pub fn generate_module_returns_error_on_shared_type_mismatch_test() {
   let assert Error(_) =
     codegen.generate_module_with_config([q1, q2], option.None)
 }
+
+pub fn codegen_nullable_timestamp_param_test() {
+  let q =
+    Query(
+      name: "find_by_deleted",
+      sql: "SELECT id, deleted_at FROM users WHERE deleted_at = ?",
+      path: "src/app/sql/find_by_deleted.sql",
+      parameters: [
+        Parameter(
+          name: "deleted_at",
+          column_type: TimestampType,
+          nullable: True,
+        ),
+      ],
+      columns: [
+        Column(name: "id", column_type: IntType, nullable: False),
+        Column(name: "deleted_at", column_type: TimestampType, nullable: True),
+      ],
+      custom_type_name: option.None,
+    )
+  codegen.generate_function(q)
+  |> birdie.snap(title: "codegen nullable timestamp parameter")
+}
+
+pub fn codegen_date_param_test() {
+  let q =
+    Query(
+      name: "find_by_date",
+      sql: "SELECT id, event_date FROM events WHERE event_date = ?",
+      path: "src/app/sql/find_by_date.sql",
+      parameters: [
+        Parameter(name: "event_date", column_type: DateType, nullable: False),
+      ],
+      columns: [
+        Column(name: "id", column_type: IntType, nullable: False),
+        Column(name: "event_date", column_type: DateType, nullable: False),
+      ],
+      custom_type_name: option.None,
+    )
+  codegen.generate_function(q)
+  |> birdie.snap(title: "codegen date parameter")
+}
+
+pub fn codegen_bool_param_test() {
+  let q =
+    Query(
+      name: "find_active",
+      sql: "SELECT id FROM users WHERE is_active = ?",
+      path: "src/app/sql/find_active.sql",
+      parameters: [
+        Parameter(name: "is_active", column_type: BoolType, nullable: False),
+      ],
+      columns: [Column(name: "id", column_type: IntType, nullable: False)],
+      custom_type_name: option.None,
+    )
+  codegen.generate_function(q)
+  |> birdie.snap(title: "codegen boolean parameter")
+}
+
+pub fn codegen_blob_param_test() {
+  let q =
+    Query(
+      name: "find_by_hash",
+      sql: "SELECT id FROM files WHERE hash = ?",
+      path: "src/app/sql/find_by_hash.sql",
+      parameters: [
+        Parameter(name: "hash", column_type: BitArrayType, nullable: False),
+      ],
+      columns: [Column(name: "id", column_type: IntType, nullable: False)],
+      custom_type_name: option.None,
+    )
+  codegen.generate_function(q)
+  |> birdie.snap(title: "codegen blob parameter")
+}

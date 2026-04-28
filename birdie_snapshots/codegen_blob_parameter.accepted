@@ -1,0 +1,25 @@
+---
+version: 1.5.5
+title: codegen blob parameter
+file: ./test/marmot/internal/codegen_test.gleam
+test_name: codegen_blob_param_test
+---
+pub type FindByHashRow {
+  FindByHashRow(
+    id: Int,
+  )
+}
+
+pub fn find_by_hash(db db: sqlight.Connection, hash hash: BitArray) -> Result(List(FindByHashRow), sqlight.Error) {
+  sqlight.query(
+    "SELECT id FROM files WHERE hash = ?",
+    on: db,
+    with: [sqlight.blob(hash)],
+    expecting: {
+      use id <- decode.field(0, decode.int)
+      decode.success(FindByHashRow(
+        id:,
+      ))
+    },
+  )
+}

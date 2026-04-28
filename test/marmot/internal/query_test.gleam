@@ -1,4 +1,6 @@
+import gleam/dict
 import gleam/option
+import gleam/string
 import marmot/internal/query.{
   BitArrayType, BoolType, Column, DateType, FloatType, IntType, Parameter, Query,
   StringType, TimestampType,
@@ -162,4 +164,120 @@ pub fn strip_comments_block_comment_multiline_test() {
   // only the space inserted at the closing */ to prevent token fusion
   let assert "SELECT   id" =
     query.strip_comments("SELECT /* a\ncomment */ id")
+}
+
+pub fn strip_comments_unterminated_block_comment_test() {
+  // Unterminated block comment consumes everything to end of input
+  let assert "SELECT " = query.strip_comments("SELECT /* never ends")
+}
+
+pub fn strip_comments_carriage_return_test() {
+  // \r is not special to strip_comments; only \n is a newline
+  let result = query.strip_comments("SELECT 1\r\nFROM users")
+  let assert True = string.contains(result, "SELECT 1")
+  let assert True = string.contains(result, "FROM users")
+}
+
+// ---- sanitize_identifier direct tests ----
+
+pub fn sanitize_identifier_empty_test() {
+  let assert "" = query.sanitize_identifier("")
+}
+
+pub fn sanitize_identifier_leading_digit_test() {
+  let assert "_123abc" = query.sanitize_identifier("123abc")
+}
+
+pub fn sanitize_identifier_special_chars_test() {
+  // Special chars are stripped (not replaced with underscore)
+  let assert "helloworld" = query.sanitize_identifier("hello@#$world")
+}
+
+pub fn sanitize_identifier_uppercase_test() {
+  let assert "hello" = query.sanitize_identifier("HELLO")
+}
+
+pub fn sanitize_identifier_hyphens_and_spaces_test() {
+  let assert "my_col_name" = query.sanitize_identifier("my-col name")
+}
+
+pub fn sanitize_identifier_unicode_test() {
+  // Non-ASCII characters should be stripped
+  let assert "voil" = query.sanitize_identifier("voilà")
+}
+
+// ---- is_identifier_char and is_digit tests ----
+
+pub fn is_identifier_char_underscore_test() {
+  let assert True = query.is_identifier_char("_")
+}
+
+pub fn is_identifier_char_letter_test() {
+  let assert True = query.is_identifier_char("a")
+  let assert True = query.is_identifier_char("z")
+}
+
+pub fn is_identifier_char_digit_test() {
+  let assert True = query.is_identifier_char("5")
+  let assert True = query.is_identifier_char("0")
+  let assert True = query.is_identifier_char("9")
+}
+
+pub fn is_identifier_char_rejects_special_test() {
+  let assert False = query.is_identifier_char("-")
+  let assert False = query.is_identifier_char("@")
+  let assert False = query.is_identifier_char("!")
+}
+
+pub fn is_digit_test() {
+  let assert True = query.is_digit("0")
+  let assert True = query.is_digit("5")
+  let assert True = query.is_digit("9")
+  let assert False = query.is_digit("a")
+  let assert False = query.is_digit("_")
+}
+
+pub fn is_digit_accepts_only_ascii_test() {
+  // Non-ASCII digits are rejected
+  let assert False = query.is_digit("٠")
+}
+
+// ---- find_column tests ----
+
+pub fn find_column_found_test() {
+  let schemas = dict.from_list([#(
+    "users",
+    [Column(name: "id", column_type: IntType, nullable: False)],
+  )])
+  let assert Ok(Column(name: "id", column_type: IntType, nullable: False)) =
+    query.find_column(schemas, "users", "id")
+}
+
+pub fn find_column_table_not_found_test() {
+  let schemas = dict.new()
+  let assert Error(Nil) = query.find_column(schemas, "users", "id")
+}
+
+pub fn find_column_column_not_found_test() {
+  let schemas = dict.from_list([#(
+    "users",
+    [Column(name: "id", column_type: IntType, nullable: False)],
+  )])
+  let assert Error(Nil) = query.find_column(schemas, "users", "name")
+}
+
+pub fn find_column_ci_case_insensitive_test() {
+  let schemas = dict.from_list([#(
+    "users",
+    [Column(name: "UserId", column_type: IntType, nullable: False)],
+  )])
+  let assert Ok(_) = query.find_column_ci(schemas, "users", "userid")
+}
+
+pub fn collapse_spaces_multiple_spaces_test() {
+  let assert "a b c" = query.collapse_spaces("a   b    c")
+}
+
+pub fn collapse_spaces_leading_trailing_test() {
+  let assert "a b" = query.collapse_spaces("  a b  ")
 }

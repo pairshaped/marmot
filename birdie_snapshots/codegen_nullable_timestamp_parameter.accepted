@@ -1,0 +1,28 @@
+---
+version: 1.5.5
+title: codegen nullable timestamp parameter
+file: ./test/marmot/internal/codegen_test.gleam
+test_name: codegen_nullable_timestamp_param_test
+---
+pub type FindByDeletedRow {
+  FindByDeletedRow(
+    id: Int,
+    deleted_at: Option(timestamp.Timestamp),
+  )
+}
+
+pub fn find_by_deleted(db db: sqlight.Connection, deleted_at deleted_at: Option(timestamp.Timestamp)) -> Result(List(FindByDeletedRow), sqlight.Error) {
+  sqlight.query(
+    "SELECT id, deleted_at FROM users WHERE deleted_at = ?",
+    on: db,
+    with: [sqlight.nullable(sqlight.int, option.map(deleted_at, timestamp_to_int))],
+    expecting: {
+      use id <- decode.field(0, decode.int)
+      use deleted_at_raw <- decode.field(1, decode.optional(decode.int))
+      decode.success(FindByDeletedRow(
+        id:,
+        deleted_at: option.map(deleted_at_raw, timestamp.from_unix_seconds),
+      ))
+    },
+  )
+}

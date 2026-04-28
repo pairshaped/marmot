@@ -465,3 +465,131 @@ pub fn token_text_roundtrip_test() {
   let assert "(" = tokenize.token_text(OpenParen)
   let assert "=" = tokenize.token_text(Eq)
 }
+
+// ---- Untested public functions ----
+
+pub fn tokens_to_text_test() {
+  let tokens = tokenize.tokenize("SELECT id, name FROM users")
+  let text = tokenize.tokens_to_text(tokens)
+  let assert "SELECT id , name FROM users" = text
+}
+
+pub fn tokens_to_text_with_params_test() {
+  let tokens = tokenize.tokenize("SELECT id FROM users WHERE id = ?")
+  let text = tokenize.tokens_to_text(tokens)
+  let assert "SELECT id FROM users WHERE id = ?" = text
+}
+
+pub fn is_keyword_test() {
+  let assert True = tokenize.is_keyword(Word("SELECT"), "select")
+  let assert True = tokenize.is_keyword(Word("FROM"), "FROM")
+  let assert False = tokenize.is_keyword(Word("TABLE"), "FROM")
+  let assert False = tokenize.is_keyword(Comma, "FROM")
+}
+
+pub fn split_at_last_keyword_test() {
+  let tokens = tokenize.tokenize("SELECT a AS b AS c FROM users")
+  let assert Ok(#(before, after)) =
+    tokenize.split_at_last_keyword(tokens, "AS")
+  let assert "SELECT a AS b" = tokenize.tokens_to_text(before)
+  let assert "c FROM users" = tokenize.tokens_to_text(after)
+}
+
+pub fn split_at_last_keyword_not_found_test() {
+  let tokens = tokenize.tokenize("SELECT id FROM users")
+  let assert Error(_) = tokenize.split_at_last_keyword(tokens, "WHERE")
+}
+
+pub fn drop_until_keyword_test() {
+  let tokens = tokenize.tokenize("SELECT id, name FROM users WHERE id = ?")
+  let rest = tokenize.drop_until_keyword(tokens, "FROM")
+  let assert "FROM users WHERE id = ?" = tokenize.tokens_to_text(rest)
+}
+
+pub fn drop_until_keyword_not_found_test() {
+  let tokens = tokenize.tokenize("SELECT id FROM users")
+  let rest = tokenize.drop_until_keyword(tokens, "WHERE")
+  let assert [] = rest
+}
+
+pub fn skip_matching_paren_test() {
+  let tokens = tokenize.tokenize("SELECT (a, (b, c), d) FROM users")
+  let after_select = list.drop(tokens, 1)
+  // Consume the open paren then skip to matching close
+  case after_select {
+    [OpenParen, ..rest] -> {
+      let remaining = tokenize.skip_matching_paren(rest, 1)
+      let text = tokenize.tokens_to_text(remaining)
+      let assert "FROM users" = text
+    }
+    _ -> panic as "expected open paren"
+  }
+}
+
+pub fn skip_matching_paren_depth_zero_test() {
+  let tokens = tokenize.tokenize("FROM users")
+  let result = tokenize.skip_matching_paren(tokens, 0)
+  let assert "FROM users" = tokenize.tokens_to_text(result)
+}
+
+pub fn first_word_simple_test() {
+  let tokens = tokenize.tokenize("SELECT id FROM users")
+  let assert "SELECT" = tokenize.first_word(tokens)
+}
+
+pub fn first_word_quoted_test() {
+  let tokens = [
+    tokenize.QuotedId("my column"),
+    tokenize.Word("other"),
+  ]
+  let assert "my column" = tokenize.first_word(tokens)
+}
+
+pub fn first_word_empty_test() {
+  let assert "" = tokenize.first_word([])
+}
+
+pub fn first_word_skips_non_text_test() {
+  // First non-Word/QuotedId token is skipped
+  let tokens = [tokenize.Comma, tokenize.Word("SELECT")]
+  let assert "SELECT" = tokenize.first_word(tokens)
+}
+
+// ---- Edge case tokenization ----
+
+pub fn tokenize_empty_string_test() {
+  let assert [] = tokenize.tokenize("")
+}
+
+pub fn tokenize_unicode_identifier_test() {
+  // Non-ASCII chars like é break the word — tokenizer only handles ASCII
+  let tokens = tokenize.tokenize("SELECT café FROM menu")
+  let assert "caf FROM menu" =
+    tokenize.tokens_to_text(list.drop(tokens, 1))
+  // The é character is dropped during tokenization
+}
+
+pub fn tokenize_hex_literal_test() {
+  // x'deadbeef' tokenizes as Word("x") + StringLit("deadbeef")
+  let tokens = tokenize.tokenize("SELECT x'deadbeef'")
+  case tokens {
+    [_, Word("x"), StringLit("deadbeef")] -> Nil
+    _ -> panic as "unexpected token pattern"
+  }
+}
+
+pub fn tokenize_newline_in_string_test() {
+  let tokens = tokenize.tokenize("SELECT 'line1\nline2'")
+  // StringLit preserves newline in string content
+  case tokens {
+    [_, StringLit("line1\nline2")] -> Nil
+    _ -> panic as "expected string with newline"
+  }
+}
+
+pub fn tokenize_carriage_return_in_sql_test() {
+  // Carriage returns are treated as whitespace — they don't break tokenization
+  let tokens = tokenize.tokenize("SELECT\r\nid\r\nFROM\r\nusers")
+  let assert ["SELECT", "id", "FROM", "users"] =
+    tokens |> list.map(tokenize.token_text)
+}

@@ -73,7 +73,7 @@ pub fn introspect_query(
 
   // Get EXPLAIN output (strip Marmot-specific `!`/`?` suffixes from aliases
   // before handing to SQLite)
-  let sanitized_sql = parse.strip_nullability_suffixes(sql)
+  let sanitized_sql = parse.strip_nullability_suffixes(normalized_sql)
   let explain_sql = "EXPLAIN " <> sanitized_sql
   let decoder = {
     use addr <- decode.field(0, decode.int)
@@ -153,8 +153,7 @@ pub fn introspect_query(
   // Determine parameters. Tokenize the suffix-stripped SQL separately
   // so `col_name?` and `col_name!` aliases produce ParamAnon/NullableOverride
   // correctly in each context.
-  let param_sql = parse.strip_nullability_suffixes(normalized_sql)
-  let param_tokens = tokenize.tokenize(param_sql)
+  let param_tokens = tokenize.tokenize(sanitized_sql)
   let parameters =
     extract_parameters(
       opcodes,
@@ -270,29 +269,21 @@ fn resolve_select_item(
   join_nullability: JoinNullability,
 ) -> Column {
   case list.drop(select_items, idx) |> list.first {
-    Error(_) -> Column(name: "unknown", column_type: StringType, nullable: True)
+    Error(_) -> query.unknown_column()
     Ok(item) -> {
       let resolved =
         list.find_map(from_tables, fn(table) {
           case item.bare_column {
             option.Some(col_name) ->
-              case dict.get(table_schemas, table) {
-                Ok(cols) -> {
-                  let lower = string.lowercase(col_name)
-                  case
-                    list.find(cols, fn(c) { string.lowercase(c.name) == lower })
+              case query.find_column_ci(table_schemas, table, col_name) {
+                Ok(col) -> {
+                  let nullable = case
+                    dict.has_key(join_nullability.nullable_tables, table)
                   {
-                    Ok(col) -> {
-                      let nullable = case
-                        dict.has_key(join_nullability.nullable_tables, table)
-                      {
-                        True -> True
-                        False -> col.nullable
-                      }
-                      Ok(Column(..col, name: item.alias, nullable: nullable))
-                    }
-                    Error(_) -> Error(Nil)
+                    True -> True
+                    False -> col.nullable
                   }
+                  Ok(Column(..col, name: item.alias, nullable: nullable))
                 }
                 Error(_) -> Error(Nil)
               }
@@ -324,25 +315,13 @@ fn extract_returning_columns(
         Error(_) -> []
       }
     cols ->
-      case dict.get(table_schemas, table_name) {
-        Ok(table_cols) ->
-          list.map(cols, fn(col_name) {
-            let lower_name = string.lowercase(col_name)
-            case
-              list.find(table_cols, fn(c) {
-                string.lowercase(c.name) == lower_name
-              })
-            {
-              Ok(col) -> Column(..col, name: col_name)
-              Error(_) ->
-                Column(name: col_name, column_type: StringType, nullable: True)
-            }
-          })
-        Error(_) ->
-          list.map(cols, fn(col_name) {
+      list.map(cols, fn(col_name) {
+        case query.find_column_ci(table_schemas, table_name, col_name) {
+          Ok(col) -> Column(..col, name: col_name)
+          Error(_) ->
             Column(name: col_name, column_type: StringType, nullable: True)
-          })
-      }
+        }
+      })
   }
 }
 
@@ -440,25 +419,18 @@ fn extract_insert_parameters(
       })
   }
 
-  case dict.get(table_schemas, table) {
-    Ok(table_cols) ->
-      list.map(bound_columns, fn(col_name) {
-        case list.find(table_cols, fn(c) { c.name == col_name }) {
-          Ok(col) ->
-            Parameter(
-              name: col_name,
-              column_type: col.column_type,
-              nullable: col.nullable,
-            )
-          Error(_) ->
-            Parameter(name: col_name, column_type: StringType, nullable: False)
-        }
-      })
-    Error(_) ->
-      list.map(bound_columns, fn(col_name) {
+  list.map(bound_columns, fn(col_name) {
+    case query.find_column(table_schemas, table, col_name) {
+      Ok(col) ->
+        Parameter(
+          name: col_name,
+          column_type: col.column_type,
+          nullable: col.nullable,
+        )
+      Error(_) ->
         Parameter(name: col_name, column_type: StringType, nullable: False)
-      })
-  }
+    }
+  })
 }
 
 /// For INSERT ... SELECT, match parameters positionally
@@ -564,14 +536,7 @@ fn extract_insert_select_parameters(
           case
             list.find_map(names_to_try, fn(name) {
               list.find_map(where_tables, fn(table) {
-                case dict.get(table_schemas, table) {
-                  Ok(cols) ->
-                    case list.find(cols, fn(c) { c.name == name }) {
-                      Ok(col) -> Ok(col)
-                      Error(_) -> Error(Nil)
-                    }
-                  Error(_) -> Error(Nil)
-                }
+                query.find_column(table_schemas, table, name)
               })
             })
           {
@@ -644,14 +609,7 @@ fn resolve_binder_type(
       }
       let found =
         list.find_map(all_tables, fn(table) {
-          case dict.get(table_schemas, table) {
-            Ok(cols) ->
-              case list.find(cols, fn(c) { c.name == bare }) {
-                Ok(col) -> Ok(col)
-                Error(_) -> Error(Nil)
-              }
-            Error(_) -> Error(Nil)
-          }
+          query.find_column(table_schemas, table, bare)
         })
       case found {
         Ok(c) -> Ok(c)

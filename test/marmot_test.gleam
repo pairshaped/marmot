@@ -4,6 +4,7 @@ import gleam/list
 import gleam/option
 import gleam/string
 import gleeunit
+import marmot
 import marmot/internal/codegen
 import marmot/internal/query
 import marmot/internal/sqlite
@@ -124,4 +125,90 @@ pub fn snapshot_shared_row_types_output_test() {
     codegen.generate_module_with_config(queries, option.None)
   output
   |> birdie.snap(title: "shared_row_types_two_queries")
+}
+
+// ---- marmot module unit tests ----
+
+pub fn validate_sql_empty_test() {
+  let assert Error(Nil) = marmot.validate_sql("", "test.sql")
+}
+
+pub fn validate_sql_valid_test() {
+  let assert Ok("SELECT 1") = marmot.validate_sql("SELECT 1", "test.sql")
+}
+
+pub fn validate_sql_trailing_semicolon_test() {
+  let assert Ok("SELECT 1") = marmot.validate_sql("SELECT 1;", "test.sql")
+}
+
+pub fn validate_sql_multiple_statements_test() {
+  let assert Error(Nil) =
+    marmot.validate_sql("SELECT 1; SELECT 2", "test.sql")
+}
+
+pub fn validate_sql_semicolon_in_string_test() {
+  // Semicolons inside string literals should not trigger the multiple-queries check
+  let assert Ok("SELECT 'hello;world'") =
+    marmot.validate_sql("SELECT 'hello;world'", "test.sql")
+}
+
+pub fn validate_sql_semicolon_in_comment_test() {
+  let assert Ok("SELECT 1 -- comment; still a comment") =
+    marmot.validate_sql("SELECT 1 -- comment; still a comment", "test.sql")
+}
+
+pub fn contains_semicolon_outside_strings_none_test() {
+  let assert False = marmot.contains_semicolon_outside_strings("SELECT 1")
+}
+
+pub fn contains_semicolon_outside_strings_simple_test() {
+  let assert True = marmot.contains_semicolon_outside_strings("SELECT 1; SELECT 2")
+}
+
+pub fn contains_semicolon_outside_strings_in_string_test() {
+  let assert False =
+    marmot.contains_semicolon_outside_strings("SELECT 'hello;world'")
+}
+
+pub fn contains_semicolon_outside_strings_in_double_quoted_test() {
+  let assert False =
+    marmot.contains_semicolon_outside_strings("SELECT \"hello;world\"")
+}
+
+pub fn contains_semicolon_outside_strings_in_line_comment_test() {
+  let assert False =
+    marmot.contains_semicolon_outside_strings("SELECT 1 -- a; comment")
+}
+
+pub fn contains_semicolon_outside_strings_in_block_comment_test() {
+  let assert False =
+    marmot.contains_semicolon_outside_strings("SELECT /* a; comment */ 1")
+}
+
+pub fn check_duplicate_columns_no_duplicates_test() {
+  let cols = [
+    query.Column(name: "id", column_type: query.IntType, nullable: False),
+    query.Column(name: "name", column_type: query.StringType, nullable: True),
+  ]
+  let assert Ok(Nil) = marmot.check_duplicate_columns(cols, "test.sql")
+}
+
+pub fn check_duplicate_columns_has_duplicates_test() {
+  let cols = [
+    query.Column(name: "id", column_type: query.IntType, nullable: False),
+    query.Column(name: "name", column_type: query.StringType, nullable: True),
+    query.Column(name: "id", column_type: query.IntType, nullable: False),
+  ]
+  let assert Error(Nil) = marmot.check_duplicate_columns(cols, "test.sql")
+}
+
+pub fn check_duplicate_columns_empty_test() {
+  let assert Ok(Nil) = marmot.check_duplicate_columns([], "test.sql")
+}
+
+pub fn check_duplicate_columns_single_test() {
+  let cols = [
+    query.Column(name: "id", column_type: query.IntType, nullable: False),
+  ]
+  let assert Ok(Nil) = marmot.check_duplicate_columns(cols, "test.sql")
 }
