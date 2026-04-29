@@ -59,7 +59,12 @@ pub fn introspect_columns(
   Ok(columns)
 }
 
-/// Introspect a query using EXPLAIN to determine result columns and parameters
+/// Introspect a query using EXPLAIN to determine result columns and parameters.
+///
+/// This is a pipeline: each step delegates to a single-purpose helper. Kept as
+/// one function because splitting would scatter the data flow (normalized_sql,
+/// opcodes, cursor_table, join_nullability, tokens) across functions called
+/// from exactly one call site.
 pub fn introspect_query(
   db: Connection,
   sql: String,

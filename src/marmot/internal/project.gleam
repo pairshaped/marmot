@@ -30,6 +30,7 @@ pub fn parse_config(
   {
     Ok(parsed) -> {
       warn_unknown_config_keys(parsed)
+      warn_marmot_section(parsed)
       #(
         tom.get_string(parsed, ["tools", "marmot", "database"])
           |> result.map(option.Some)
@@ -233,6 +234,17 @@ fn warn_unknown_config_keys(parsed: dict.Dict(String, tom.Toml)) -> Nil {
           )
       }
     }
+    Error(_) -> Nil
+  }
+}
+
+fn warn_marmot_section(parsed: dict.Dict(String, tom.Toml)) -> Nil {
+  case tom.get_table(parsed, ["marmot"]) {
+    Ok(_) ->
+      io.println_error(
+        "warning: Found [marmot] section in gleam.toml. "
+        <> "Marmot configuration belongs under [tools.marmot].",
+      )
     Error(_) -> Nil
   }
 }

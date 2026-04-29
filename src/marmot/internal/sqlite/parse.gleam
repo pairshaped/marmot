@@ -9,6 +9,12 @@ import marmot/internal/sqlite/tokenize.{
 }
 
 // ---- Types ----
+//
+// This file intentionally keeps all SQL text analysis in one module. The
+// functions are stateless transformers on the same Token type; splitting
+// would require sharing StatementType, SelectItem, Binder, and
+// NullabilityOverride across sub-modules (making private helpers pub) for
+// no reduction in coupling.
 
 pub type StatementType {
   Select
@@ -60,6 +66,12 @@ pub fn normalize_sql_whitespace(sql: String) -> String {
 /// comments are already stripped by `query.strip_comments` before this
 /// function is called. Suffixes inside string literals are protected by
 /// the in_single/in_double tracking.
+///
+/// The grapheme-level `!`/`?` detection is safe because the input has already
+/// been whitespace-normalized: `?` placeholders always follow an operator
+/// or keyword (non-ident-char preceding context), so they pass through
+/// unchanged. Nullability suffixes follow an ident char and a boundary,
+/// which is the only case this function strips.
 pub fn strip_nullability_suffixes(sql: String) -> String {
   let graphemes = string.to_graphemes(sql)
   do_strip_suffixes(graphemes, [], "", False, False)

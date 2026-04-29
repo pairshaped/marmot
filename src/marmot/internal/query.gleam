@@ -237,7 +237,9 @@ fn do_strip_comments(
     [_, ..rest] if in_line_comment ->
       do_strip_comments(rest, acc, in_single, in_double, True, False)
     // Block comment end: insert a space so adjacent tokens don't fuse
-    // (e.g., SELECT/**/id must not become SELECTid).
+    // (e.g., SELECT/**/id must not become SELECTid). Consecutive block
+    // comments can produce double spaces; harmless since whitespace is
+    // normalized downstream.
     // Preserve in_single/in_double since quote state is independent of comments.
     ["*", "/", ..rest] if in_block_comment ->
       do_strip_comments(rest, [" ", ..acc], in_single, in_double, False, False)

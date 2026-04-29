@@ -195,7 +195,10 @@ fn warn_subdirectories(sql_dir: String) -> Nil {
           )
       }
     }
-    Error(_) -> Nil
+    Error(_) ->
+      io.println_error(
+        "warning: Could not read directory " <> sql_dir,
+      )
   }
 }
 
@@ -377,6 +380,12 @@ fn format_gleam(code: String) -> String {
               code
             }
           }
+        -1 -> {
+          io.println_error(
+            "warning: gleam not found on PATH, skipping format",
+          )
+          code
+        }
         _ -> {
           io.println_error(
             "warning: gleam format failed (exit code "
