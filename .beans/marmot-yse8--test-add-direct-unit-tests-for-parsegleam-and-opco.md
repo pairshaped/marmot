@@ -1,11 +1,11 @@
 ---
 # marmot-yse8
 title: 'Test: Add direct unit tests for parse.gleam and opcode.gleam'
-status: todo
+status: in-progress
 type: task
 priority: high
 created_at: 2026-04-28T21:32:33Z
-updated_at: 2026-04-29T16:03:59Z
+updated_at: 2026-04-29T17:13:45Z
 ---
 
 Critical untested functions (all tested only indirectly via introspect_query):

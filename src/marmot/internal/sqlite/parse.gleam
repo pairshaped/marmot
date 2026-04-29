@@ -1069,7 +1069,7 @@ pub fn infer_expression_type(item: SelectItem) -> Column {
 }
 
 /// Infer type from CAST(... AS type). `rest` is tokens after the opening paren.
-fn infer_cast_type(alias: String, rest: List(Token)) -> Column {
+@internal pub fn infer_cast_type(alias: String, rest: List(Token)) -> Column {
   // Use proper paren-matching to extract only the tokens inside CAST(),
   // ignoring any trailing expression after the closing paren.
   let #(inner, _remaining) = tokenize.collect_inside_parens(rest)
@@ -1102,7 +1102,7 @@ fn infer_cast_type(alias: String, rest: List(Token)) -> Column {
 /// `rest` is everything after the opening paren of COALESCE(. Use proper
 /// paren-matching to extract only the tokens inside the COALESCE call,
 /// ignoring any trailing expression (e.g., `+ 1` in `COALESCE(...) + 1`).
-fn infer_coalesce_type(alias: String, rest: List(Token)) -> Column {
+@internal pub fn infer_coalesce_type(alias: String, rest: List(Token)) -> Column {
   let #(inner, _remaining) = tokenize.collect_inside_parens(rest)
   let args = tokenize.split_on_commas(inner)
   case list.last(args) {
@@ -1117,7 +1117,7 @@ fn infer_coalesce_type(alias: String, rest: List(Token)) -> Column {
 }
 
 /// Infer CASE expression type from THEN/ELSE branches.
-fn infer_case_type(alias: String, tokens: List(Token)) -> Column {
+@internal pub fn infer_case_type(alias: String, tokens: List(Token)) -> Column {
   let #(branches, has_else) = extract_case_branches(tokens)
   case branches {
     [] -> Column(name: alias, column_type: StringType, nullable: True)
