@@ -1657,6 +1657,468 @@ pub fn coalesce_max_plus_literal_returns_int_test() {
   ] = result.parameters
 }
 
+// ---- SELECT DISTINCT ----
+
+pub fn introspect_select_distinct_single_column_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, status TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(_) =
+    sqlight.exec("INSERT INTO t (id, status) VALUES (1, 'active'), (2, 'active')", on: db)
+  let assert Ok(result) =
+    sqlite.introspect_query(db, "SELECT DISTINCT status FROM t")
+  let assert [
+    Column(name: "status", column_type: StringType, nullable: False),
+  ] = result.columns
+}
+
+pub fn introspect_select_distinct_multiple_columns_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, status TEXT NOT NULL, priority INTEGER NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(db, "SELECT DISTINCT status, priority FROM t")
+  let assert [
+    Column(name: "status", column_type: StringType, nullable: False),
+    Column(name: "priority", column_type: IntType, nullable: False),
+  ] = result.columns
+}
+
+pub fn introspect_select_distinct_with_where_param_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, status TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT DISTINCT status FROM t WHERE id > ?",
+    )
+  let assert [
+    Column(name: "status", column_type: StringType, nullable: False),
+  ] = result.columns
+  let assert [
+    Parameter(name: "id", column_type: IntType, nullable: False),
+  ] = result.parameters
+}
+
+pub fn introspect_select_distinct_with_order_by_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT DISTINCT name FROM t ORDER BY name",
+    )
+  let assert [
+    Column(name: "name", column_type: StringType, nullable: False),
+  ] = result.columns
+}
+
+// ---- GROUP BY ----
+
+pub fn introspect_group_by_with_count_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, status TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT status, COUNT(*) AS cnt FROM t GROUP BY status",
+    )
+  let assert [
+    Column(name: "status", column_type: StringType, nullable: False),
+    Column(name: "cnt", column_type: IntType, nullable: False),
+  ] = result.columns
+}
+
+pub fn introspect_group_by_multiple_columns_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, region TEXT NOT NULL, category TEXT NOT NULL, amount INTEGER NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT region, category, SUM(amount) AS total FROM t GROUP BY region, category",
+    )
+  let assert [
+    Column(name: "region", column_type: StringType, nullable: False),
+    Column(name: "category", column_type: StringType, nullable: False),
+    Column(name: "total", column_type: FloatType, nullable: True),
+  ] = result.columns
+}
+
+pub fn introspect_group_by_with_where_param_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, status TEXT NOT NULL, count INTEGER NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT status, SUM(count) AS total FROM t WHERE status = ? GROUP BY status",
+    )
+  let assert [
+    Column(name: "status", column_type: StringType, nullable: False),
+    Column(name: "total", column_type: FloatType, nullable: True),
+  ] = result.columns
+  let assert [
+    Parameter(name: "status", column_type: StringType, nullable: False),
+  ] = result.parameters
+}
+
+pub fn introspect_group_by_with_having_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, status TEXT NOT NULL, count INTEGER NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT status, SUM(count) AS total FROM t GROUP BY status HAVING SUM(count) > ?",
+    )
+  let assert [
+    Column(name: "status", column_type: StringType, nullable: False),
+    Column(name: "total", column_type: FloatType, nullable: True),
+  ] = result.columns
+  let assert [
+    Parameter(name: "count", column_type: IntType, nullable: False),
+  ] = result.parameters
+}
+
+pub fn introspect_group_by_with_multiple_aggregates_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, grp TEXT NOT NULL, val INTEGER NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT grp, COUNT(*) AS cnt, AVG(val) AS avg_val, MAX(val) AS max_val FROM t GROUP BY grp",
+    )
+  let assert [
+    Column(name: "grp", column_type: StringType, nullable: False),
+    Column(name: "cnt", column_type: IntType, nullable: False),
+    Column(name: "avg_val", column_type: FloatType, nullable: True),
+    Column(name: "max_val", column_type: IntType, nullable: True),
+  ] = result.columns
+}
+
+// ---- UNION / INTERSECT / EXCEPT ----
+
+pub fn introspect_union_select_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE active (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE archived (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id, name FROM active UNION SELECT id, name FROM archived",
+    )
+  let assert [
+    Column(name: "id", column_type: IntType, nullable: False),
+    Column(name: "name", column_type: StringType, nullable: False),
+  ] = result.columns
+}
+
+pub fn introspect_union_all_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t1 (id INTEGER NOT NULL PRIMARY KEY, val TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t2 (id INTEGER NOT NULL PRIMARY KEY, val TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id, val FROM t1 UNION ALL SELECT id, val FROM t2",
+    )
+  let assert [
+    Column(name: "id", column_type: IntType, nullable: False),
+    Column(name: "val", column_type: StringType, nullable: False),
+  ] = result.columns
+}
+
+pub fn introspect_union_with_where_param_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t1 (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t2 (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id, name FROM t1 WHERE name = ? UNION SELECT id, name FROM t2 WHERE name = ?",
+    )
+  let assert [
+    Column(name: "id", column_type: IntType, nullable: False),
+    Column(name: "name", column_type: StringType, nullable: False),
+  ] = result.columns
+}
+
+pub fn introspect_intersect_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t1 (id INTEGER NOT NULL PRIMARY KEY)",
+      on: db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t2 (id INTEGER NOT NULL PRIMARY KEY)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id FROM t1 INTERSECT SELECT id FROM t2",
+    )
+  let assert [
+    Column(name: "id", column_type: IntType, nullable: False),
+  ] = result.columns
+}
+
+pub fn introspect_except_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t1 (id INTEGER NOT NULL PRIMARY KEY)",
+      on: db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t2 (id INTEGER NOT NULL PRIMARY KEY)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id FROM t1 EXCEPT SELECT id FROM t2",
+    )
+  let assert [
+    Column(name: "id", column_type: IntType, nullable: False),
+  ] = result.columns
+}
+
+pub fn introspect_compound_query_as_subquery_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t1 (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t2 (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id, name FROM (SELECT id, name FROM t1 UNION SELECT id, name FROM t2) WHERE name = ?",
+    )
+  // Column names are correctly parsed (proving UNION doesn't break the
+  // outer SELECT list). Types fall back to StringType because subquery
+  // FROM clauses aren't in the table schema — a pre-existing limitation.
+  let assert [
+    Column(name: "id", column_type: StringType, nullable: True),
+    Column(name: "name", column_type: StringType, nullable: True),
+  ] = result.columns
+  let assert [
+    Parameter(name: "name", column_type: StringType, nullable: False),
+  ] = result.parameters
+}
+
+// ---- UPSERT / ON CONFLICT ----
+
+pub fn introspect_upsert_do_nothing_returning_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, val TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "INSERT INTO t (id, val) VALUES (?, ?) ON CONFLICT(id) DO NOTHING RETURNING id, val",
+    )
+  let assert [
+    Column(name: "id", column_type: IntType, nullable: False),
+    Column(name: "val", column_type: StringType, nullable: False),
+  ] = result.columns
+  let assert [
+    Parameter(name: "id", column_type: IntType, nullable: False),
+    Parameter(name: "val", column_type: StringType, nullable: False),
+  ] = result.parameters
+}
+
+pub fn introspect_upsert_do_update_returning_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, val TEXT NOT NULL, updated_at INTEGER NOT NULL DEFAULT 0)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "INSERT INTO t (id, val, updated_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET val = ?, updated_at = ? RETURNING id, val, updated_at",
+    )
+  let assert [
+    Column(name: "id", column_type: IntType, nullable: False),
+    Column(name: "val", column_type: StringType, nullable: False),
+    Column(name: "updated_at", column_type: IntType, nullable: False),
+  ] = result.columns
+}
+
+pub fn introspect_upsert_do_update_with_named_params_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, val TEXT NOT NULL, counter INTEGER NOT NULL DEFAULT 1)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "INSERT INTO t (id, val, counter) VALUES (@id, @val, @counter) ON CONFLICT(id) DO UPDATE SET val = @val, counter = @counter",
+    )
+  // verify parameter count and types are correct
+  let assert 3 = list.length(result.parameters)
+  let assert [
+    Parameter(name: "id", column_type: IntType, nullable: False),
+    Parameter(name: "val", column_type: StringType, nullable: False),
+    Parameter(name: "counter", column_type: IntType, nullable: False),
+  ] = result.parameters
+}
+
+pub fn introspect_upsert_do_update_set_with_where_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, val TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 0)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "INSERT INTO t (id, val, version) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET val = ?, version = ? WHERE version < ? RETURNING id, val, version",
+    )
+  let assert [
+    Column(name: "id", column_type: IntType, nullable: False),
+    Column(name: "val", column_type: StringType, nullable: False),
+    Column(name: "version", column_type: IntType, nullable: False),
+  ] = result.columns
+}
+
+pub fn introspect_upsert_do_nothing_no_returning_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, val TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "INSERT INTO t (id, val) VALUES (?, ?) ON CONFLICT(id) DO NOTHING",
+    )
+  let assert 2 = list.length(result.parameters)
+  let assert [
+    Parameter(name: "id", column_type: IntType, nullable: False),
+    Parameter(name: "val", column_type: StringType, nullable: False),
+  ] = result.parameters
+}
+
+pub fn introspect_upsert_no_conflict_target_test() {
+  // ON CONFLICT with no conflict target — fires on any uniqueness violation
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, val TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "INSERT INTO t (id, val) VALUES (?, ?) ON CONFLICT DO NOTHING",
+    )
+  let assert [
+    Parameter(name: "id", column_type: IntType, nullable: False),
+    Parameter(name: "val", column_type: StringType, nullable: False),
+  ] = result.parameters
+}
+
+pub fn introspect_upsert_insert_select_test() {
+  // INSERT ... SELECT with ON CONFLICT — requires WHERE true to disambiguate ON
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY, val TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE src (id INTEGER NOT NULL PRIMARY KEY, val TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(_) =
+    sqlight.exec("INSERT INTO src (id, val) VALUES (1, 'hello')", on: db)
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "INSERT INTO t (id, val) SELECT id, val FROM src WHERE true ON CONFLICT(id) DO UPDATE SET val = excluded.val RETURNING id, val",
+    )
+  let assert [
+    Column(name: "id", column_type: IntType, nullable: False),
+    Column(name: "val", column_type: StringType, nullable: False),
+  ] = result.columns
+}
+
 // ---- Error path tests ----
 
 pub fn introspect_columns_nonexistent_table_test() {

@@ -158,7 +158,8 @@ pub fn parse_select_items(tokens: List(Token)) -> List(SelectItem) {
     _ -> {
       let select_tokens =
         tokenize.take_until_keywords(after_select, [
-          "FROM", "WHERE", "GROUP", "ORDER", "LIMIT",
+          "FROM", "WHERE", "GROUP", "HAVING", "ORDER", "LIMIT",
+          "UNION", "INTERSECT", "EXCEPT",
         ])
       tokenize.split_on_commas(select_tokens)
       |> list.map(parse_select_item)
@@ -341,6 +342,7 @@ pub fn parse_from_tables(tokens: List(Token)) -> List(String) {
       let from_part =
         tokenize.take_until_keywords(from_tokens, [
           "WHERE", "GROUP", "HAVING", "ORDER", "LIMIT", "RETURNING",
+          "UNION", "INTERSECT", "EXCEPT",
         ])
       extract_table_names_from_from(from_part)
     }
@@ -1029,6 +1031,16 @@ pub fn infer_expression_type(item: SelectItem) -> Column {
           // truncation. Nullable because SUM returns NULL for
           // empty result sets.
           Column(name: item.alias, column_type: query.FloatType, nullable: True)
+        "AVG" ->
+          // AVG always returns REAL in SQLite. Nullable because AVG
+          // returns NULL for an empty result set.
+          Column(name: item.alias, column_type: query.FloatType, nullable: True)
+        "MAX" | "MIN" ->
+          // MAX/MIN return the same type as their argument. Without opcode
+          // analysis we can't determine the argument type, so we default to
+          // the most common case (numeric). The opcode fallback will refine
+          // this for cases where the argument type is knowable.
+          Column(name: item.alias, column_type: query.IntType, nullable: True)
         "ROW_NUMBER" | "RANK" | "DENSE_RANK" | "NTILE" ->
           case tokenize.has_keyword(item.tokens, "OVER") {
             True ->
