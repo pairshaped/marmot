@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: integer column
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_integer_column_test
+---
+[Column("id", IntType, False)]

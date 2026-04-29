@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: upsert do update set with where
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_upsert_do_update_set_with_where_test
+---
+QueryInfo([Column("id", IntType, False), Column("val", StringType, False), Column("version", IntType, False)], [Parameter("param", StringType, False), Parameter("param_2", StringType, False), Parameter("param_3", StringType, False), Parameter("param_4", StringType, False), Parameter("param_5", StringType, False), Parameter("version", IntType, False)])

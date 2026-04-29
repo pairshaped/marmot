@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: select distinct single column
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_select_distinct_single_column_test
+---
+QueryInfo([Column("status", StringType, False)], [])

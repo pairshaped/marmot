@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: subquery in where
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_subquery_in_where_test
+---
+QueryInfo([Column("id", IntType, False), Column("name", StringType, False)], [Parameter("reason", StringType, False)])

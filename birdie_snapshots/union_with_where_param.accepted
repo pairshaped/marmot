@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: union with where param
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_union_with_where_param_test
+---
+QueryInfo([Column("id", IntType, False), Column("name", StringType, False)], [Parameter("name", StringType, False), Parameter("name_2", StringType, False)])

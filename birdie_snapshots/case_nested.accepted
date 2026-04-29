@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: case nested
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_case_nested_test
+---
+QueryInfo([Column("val", StringType, True)], [])

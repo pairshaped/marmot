@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: all types
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_all_types_test
+---
+[Column("a", IntType, False), Column("b", FloatType, False), Column("c", StringType, False), Column("d", BitArrayType, False), Column("e", BoolType, False), Column("f", TimestampType, False), Column("g", DateType, False)]

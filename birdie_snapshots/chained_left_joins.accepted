@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: chained left joins
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_chained_left_joins_test
+---
+QueryInfo([Column("a_val", StringType, False), Column("b_val", StringType, True), Column("c_val", StringType, True)], [])

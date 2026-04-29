@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: coalesce max plus literal returns int
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: coalesce_max_plus_literal_returns_int_test
+---
+QueryInfo([Column("next_position", IntType, False)], [Parameter("org_id", IntType, False), Parameter("item_type", StringType, False), Parameter("season", IntType, True)])

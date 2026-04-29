@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: row number returns int
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_row_number_returns_int_test
+---
+QueryInfo([Column("id", IntType, False), Column("position", IntType, False)], [])

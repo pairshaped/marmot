@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: returning cast as alias
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_returning_cast_as_alias_test
+---
+QueryInfo([Column("id_text", StringType, True)], [Parameter("val", StringType, False)])

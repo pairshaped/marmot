@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: group by with having
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_group_by_with_having_test
+---
+QueryInfo([Column("status", StringType, False), Column("total", FloatType, True)], [Parameter("count", IntType, False)])

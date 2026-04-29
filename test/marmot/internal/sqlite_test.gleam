@@ -1,9 +1,7 @@
+import birdie
 import gleam/list
 import gleam/option
-import marmot/internal/query.{
-  BitArrayType, BoolType, Column, DateType, FloatType, IntType, Parameter,
-  StringType, TimestampType,
-}
+import gleam/string
 import marmot/internal/sqlite
 import sqlight
 
@@ -12,8 +10,7 @@ pub fn introspect_integer_column_test() {
   let assert Ok(_) =
     sqlight.exec("CREATE TABLE t (id INTEGER NOT NULL PRIMARY KEY)", on: db)
   let assert Ok(columns) = sqlite.introspect_columns(db, "t")
-  let assert [Column(name: "id", column_type: IntType, nullable: False)] =
-    columns
+  columns |> string.inspect |> birdie.snap(title: "integer column")
 }
 
 pub fn introspect_all_types_test() {
@@ -32,16 +29,7 @@ pub fn introspect_all_types_test() {
       on: db,
     )
   let assert Ok(columns) = sqlite.introspect_columns(db, "t")
-  let assert 7 = list.length(columns)
-  let assert [
-    Column(name: "a", column_type: IntType, nullable: False),
-    Column(name: "b", column_type: FloatType, nullable: False),
-    Column(name: "c", column_type: StringType, nullable: False),
-    Column(name: "d", column_type: BitArrayType, nullable: False),
-    Column(name: "e", column_type: BoolType, nullable: False),
-    Column(name: "f", column_type: TimestampType, nullable: False),
-    Column(name: "g", column_type: DateType, nullable: False),
-  ] = columns
+  columns |> string.inspect |> birdie.snap(title: "all types")
 }
 
 pub fn introspect_nullable_column_test() {
@@ -55,10 +43,7 @@ pub fn introspect_nullable_column_test() {
       on: db,
     )
   let assert Ok(columns) = sqlite.introspect_columns(db, "t")
-  let assert [
-    Column(name: "a", column_type: IntType, nullable: False),
-    Column(name: "b", column_type: StringType, nullable: True),
-  ] = columns
+  columns |> string.inspect |> birdie.snap(title: "nullable column")
 }
 
 pub fn introspect_query_select_test() {
@@ -77,13 +62,7 @@ pub fn introspect_query_select_test() {
       db,
       "SELECT id, username FROM users WHERE email = ?",
     )
-  let assert [
-    Column(name: "id", column_type: IntType, nullable: False),
-    Column(name: "username", column_type: StringType, nullable: False),
-  ] = result.columns
-  let assert [
-    Parameter(name: "email", column_type: StringType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "select id, username with email param")
 }
 
 pub fn introspect_query_insert_returning_test() {
@@ -102,14 +81,7 @@ pub fn introspect_query_insert_returning_test() {
       db,
       "INSERT INTO users (username, created_at) VALUES (?, ?) RETURNING id, created_at",
     )
-  let assert [
-    Column(name: "id", column_type: IntType, nullable: False),
-    Column(name: "created_at", column_type: TimestampType, nullable: False),
-  ] = result.columns
-  let assert [
-    Parameter(name: "username", column_type: StringType, nullable: False),
-    Parameter(name: "created_at", column_type: TimestampType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "insert returning")
 }
 
 pub fn introspect_insert_with_nullable_column_param_test() {
@@ -129,11 +101,7 @@ pub fn introspect_insert_with_nullable_column_param_test() {
       db,
       "INSERT INTO users (username, bio, created_at) VALUES (@username, @bio, @created_at)",
     )
-  let assert [
-    Parameter(name: "username", column_type: StringType, nullable: False),
-    Parameter(name: "bio", column_type: StringType, nullable: True),
-    Parameter(name: "created_at", column_type: IntType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "insert with nullable column param")
 }
 
 pub fn introspect_query_no_return_test() {
@@ -145,9 +113,7 @@ pub fn introspect_query_no_return_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(db, "DELETE FROM users WHERE id = ?")
-  let assert [] = result.columns
-  let assert [Parameter(name: "id", column_type: IntType, nullable: False)] =
-    result.parameters
+  result |> string.inspect |> birdie.snap(title: "query no return")
 }
 
 pub fn introspect_query_no_params_test() {
@@ -159,11 +125,7 @@ pub fn introspect_query_no_params_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(db, "SELECT id, name FROM users")
-  let assert [] = result.parameters
-  let assert [
-    Column(name: "id", column_type: IntType, nullable: False),
-    Column(name: "name", column_type: StringType, nullable: False),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "query no params")
 }
 
 pub fn introspect_query_multiple_params_test() {
@@ -182,10 +144,7 @@ pub fn introspect_query_multiple_params_test() {
       db,
       "SELECT id FROM users WHERE name = ? AND age > ?",
     )
-  let assert [
-    Parameter(name: "name", column_type: StringType, nullable: False),
-    Parameter(name: "age", column_type: IntType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "query multiple params")
 }
 
 pub fn introspect_query_nullable_result_test() {
@@ -200,10 +159,7 @@ pub fn introspect_query_nullable_result_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(db, "SELECT id, bio FROM users WHERE id = ?")
-  let assert [
-    Column(name: "id", column_type: IntType, nullable: False),
-    Column(name: "bio", column_type: StringType, nullable: True),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "query nullable result")
 }
 
 pub fn introspect_query_update_no_return_test() {
@@ -219,11 +175,7 @@ pub fn introspect_query_update_no_return_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(db, "UPDATE users SET name = ? WHERE id = ?")
-  let assert [] = result.columns
-  let assert [
-    Parameter(name: "name", column_type: StringType, nullable: False),
-    Parameter(name: "id", column_type: IntType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "query update no return")
 }
 
 // --- Demonstrates string-based SQL parsing limitation ---
@@ -248,11 +200,7 @@ pub fn introspect_subquery_in_where_test() {
       db,
       "SELECT id, name FROM users WHERE id IN (SELECT user_id FROM bans WHERE reason = ?)",
     )
-  // EXPLAIN-based inference works: finds the comparison context
-  let assert [Column(name: "id", ..), Column(name: "name", ..)] = result.columns
-  let assert [
-    Parameter(name: "reason", column_type: StringType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "subquery in where")
 }
 
 // This demonstrates the string-parsing limitation:
@@ -302,11 +250,7 @@ pub fn introspect_query_mixed_case_where_test() {
       db,
       "SELECT id FROM users WHERE name = ? And age > ?",
     )
-  let assert 2 = list.length(result.parameters)
-  let assert [
-    Parameter(name: "name", column_type: StringType, nullable: False),
-    Parameter(name: "age", column_type: IntType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "query mixed case where")
 }
 
 pub fn introspect_query_update_returning_test() {
@@ -325,10 +269,7 @@ pub fn introspect_query_update_returning_test() {
       db,
       "UPDATE users SET name = ?, updated_at = ? WHERE id = ? RETURNING id, updated_at",
     )
-  let assert [
-    Column(name: "id", column_type: IntType, nullable: False),
-    Column(name: "updated_at", column_type: TimestampType, nullable: False),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "query update returning")
 }
 
 // --- Tests for fixed issues ---
@@ -349,12 +290,7 @@ pub fn introspect_returning_star_test() {
       db,
       "INSERT INTO users (name, email) VALUES (?, ?) RETURNING *",
     )
-  // RETURNING * should expand to all table columns
-  let assert [
-    Column(name: "id", column_type: IntType, nullable: False),
-    Column(name: "name", column_type: StringType, nullable: False),
-    Column(name: "email", column_type: StringType, nullable: False),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "returning star")
 }
 
 pub fn introspect_duplicate_parameter_names_test() {
@@ -372,9 +308,7 @@ pub fn introspect_duplicate_parameter_names_test() {
       db,
       "SELECT id FROM users WHERE age > ? AND age < ?",
     )
-  // Should deduplicate: age, age_2 instead of age, age
-  let assert [Parameter(name: "age", ..), Parameter(name: "age_2", ..)] =
-    result.parameters
+  result |> string.inspect |> birdie.snap(title: "duplicate parameter names")
 }
 
 pub fn introspect_delete_returning_test() {
@@ -392,11 +326,7 @@ pub fn introspect_delete_returning_test() {
       db,
       "DELETE FROM users WHERE id = ? RETURNING id, name",
     )
-  let assert [
-    Column(name: "id", column_type: IntType, nullable: False),
-    Column(name: "name", column_type: StringType, nullable: False),
-  ] = result.columns
-  let assert 1 = list.length(result.parameters)
+  result |> string.inspect |> birdie.snap(title: "delete returning")
 }
 
 pub fn introspect_where_no_spaces_test() {
@@ -408,10 +338,7 @@ pub fn introspect_where_no_spaces_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(db, "UPDATE users SET name=? WHERE id=?")
-  let assert [
-    Parameter(name: "name", column_type: StringType, nullable: False),
-    Parameter(name: "id", column_type: IntType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "where no spaces")
 }
 
 pub fn introspect_returning_alias_preserves_case_test() {
@@ -429,9 +356,7 @@ pub fn introspect_returning_alias_preserves_case_test() {
       db,
       "INSERT INTO users (name) VALUES (?) RETURNING id AS userId, name AS userName",
     )
-  // Aliases should preserve original case, not be uppercased
-  let assert [Column(name: "userId", ..), Column(name: "userName", ..)] =
-    result.columns
+  result |> string.inspect |> birdie.snap(title: "returning alias preserves case")
 }
 
 pub fn introspect_table_named_asset_test() {
@@ -444,10 +369,7 @@ pub fn introspect_table_named_asset_test() {
   // "asset" contains "SET" as a substring -- should not confuse the parser
   let assert Ok(result) =
     sqlite.introspect_query(db, "UPDATE asset SET value = ? WHERE id = ?")
-  let assert [
-    Parameter(name: "value", column_type: FloatType, nullable: False),
-    Parameter(name: "id", column_type: IntType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "table named asset")
 }
 
 pub fn introspect_join_query_test() {
@@ -468,10 +390,7 @@ pub fn introspect_join_query_test() {
       "SELECT users.name, posts.title FROM posts JOIN users ON users.id = posts.user_id WHERE posts.user_id = ?",
     )
   // Columns from joined tables should resolve correctly
-  let assert [
-    Column(name: "name", column_type: StringType, nullable: False),
-    Column(name: "title", column_type: StringType, nullable: False),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "join query")
 }
 
 pub fn debug_exists_test() {
@@ -490,13 +409,7 @@ pub fn debug_exists_test() {
       db,
       "SELECT EXISTS(SELECT 1 FROM item_features WHERE item_id = ? AND field_key = ?) AS has_feature",
     )
-  let assert [
-    Column(name: "has_feature", column_type: IntType, nullable: False),
-  ] = result.columns
-  let assert [
-    Parameter(name: "item_id", column_type: IntType, nullable: False),
-    Parameter(name: "field_key", column_type: StringType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "debug exists")
 }
 
 pub fn introspect_left_join_marks_right_side_nullable_test() {
@@ -521,13 +434,7 @@ pub fn introspect_left_join_marks_right_side_nullable_test() {
        FROM users u
        LEFT JOIN profiles p ON p.user_id = u.id",
     )
-  // u.id and u.name come from the primary (non-nullable) side
-  // p.bio comes from the LEFT JOINed (nullable) side
-  let assert [
-    Column(name: "id", column_type: IntType, nullable: False),
-    Column(name: "name", column_type: StringType, nullable: False),
-    Column(name: "bio", column_type: StringType, nullable: True),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "left join marks right side nullable")
 }
 
 pub fn introspect_left_join_on_unindexed_column_marks_right_side_nullable_test() {
@@ -558,10 +465,7 @@ pub fn introspect_left_join_on_unindexed_column_marks_right_side_nullable_test()
        FROM users u
        LEFT JOIN profiles p ON p.user_name = u.name",
     )
-  let assert [
-    Column(name: "name", column_type: StringType, nullable: False),
-    Column(name: "bio", column_type: StringType, nullable: True),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "left join on unindexed column marks right side nullable")
 }
 
 pub fn introspect_inner_join_keeps_both_sides_non_nullable_test() {
@@ -586,11 +490,7 @@ pub fn introspect_inner_join_keeps_both_sides_non_nullable_test() {
        FROM users u
        JOIN profiles p ON p.user_id = u.id",
     )
-  // INNER JOIN: both sides are non-nullable (NOT NULL in schema)
-  let assert [
-    Column(name: "name", column_type: StringType, nullable: False),
-    Column(name: "bio", column_type: StringType, nullable: False),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "inner join keeps both sides non nullable")
 }
 
 pub fn introspect_chained_left_joins_test() {
@@ -610,12 +510,7 @@ pub fn introspect_chained_left_joins_test() {
        LEFT JOIN b ON b.a_id = a.id
        LEFT JOIN c ON c.b_id = b.id",
     )
-  // a is primary (non-nullable); b and c are LEFT JOINed (both nullable)
-  let assert [
-    Column(name: "a_val", column_type: StringType, nullable: False),
-    Column(name: "b_val", column_type: StringType, nullable: True),
-    Column(name: "c_val", column_type: StringType, nullable: True),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "chained left joins")
 }
 
 pub fn introspect_left_join_strength_reduced_by_where_test() {
@@ -637,8 +532,7 @@ pub fn introspect_left_join_strength_reduced_by_where_test() {
        LEFT JOIN profiles p ON p.user_id = u.id
        WHERE p.bio = 'x'",
     )
-  let assert [Column(name: "bio", column_type: StringType, nullable: False)] =
-    result.columns
+  result |> string.inspect |> birdie.snap(title: "left join strength reduced by where")
 }
 
 pub fn introspect_mixed_inner_and_left_joins_test() {
@@ -658,12 +552,7 @@ pub fn introspect_mixed_inner_and_left_joins_test() {
        JOIN b ON b.a_id = a.id
        LEFT JOIN c ON c.b_id = b.id",
     )
-  // a and b are INNER JOINed (non-nullable); c is LEFT JOINed (nullable)
-  let assert [
-    Column(name: "a_val", column_type: StringType, nullable: False),
-    Column(name: "b_val", column_type: StringType, nullable: False),
-    Column(name: "c_val", column_type: StringType, nullable: True),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "mixed inner and left joins")
 }
 
 pub fn introspect_row_number_returns_int_test() {
@@ -678,10 +567,7 @@ pub fn introspect_row_number_returns_int_test() {
       db,
       "SELECT id, ROW_NUMBER() OVER (ORDER BY created_at) AS position FROM items",
     )
-  let assert [
-    Column(name: "id", column_type: IntType, nullable: False),
-    Column(name: "position", column_type: IntType, nullable: False),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "row number returns int")
 }
 
 pub fn introspect_rank_returns_int_test() {
@@ -696,10 +582,7 @@ pub fn introspect_rank_returns_int_test() {
       db,
       "SELECT id, RANK() OVER (ORDER BY score DESC) AS rk FROM items",
     )
-  let assert [
-    Column(name: "id", column_type: IntType, nullable: False),
-    Column(name: "rk", column_type: IntType, nullable: False),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "rank returns int")
 }
 
 pub fn introspect_order_by_with_sorter_resolves_columns_correctly_test() {
@@ -723,11 +606,7 @@ pub fn introspect_order_by_with_sorter_resolves_columns_correctly_test() {
       db,
       "SELECT id, name_en, name_fr FROM items ORDER BY name_fr",
     )
-  let assert [
-    Column(name: "id", column_type: IntType, nullable: False),
-    Column(name: "name_en", column_type: StringType, nullable: False),
-    Column(name: "name_fr", column_type: StringType, nullable: False),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "order by with sorter resolves columns correctly")
 }
 
 pub fn introspect_alias_with_bang_forces_not_null_test() {
@@ -740,8 +619,7 @@ pub fn introspect_alias_with_bang_forces_not_null_test() {
   // `name` is nullable in schema; the `!` suffix on the alias overrides it
   let assert Ok(result) =
     sqlite.introspect_query(db, "SELECT name AS name! FROM users")
-  let assert [Column(name: "name", column_type: StringType, nullable: False)] =
-    result.columns
+  result |> string.inspect |> birdie.snap(title: "alias with bang forces not null")
 }
 
 pub fn introspect_alias_with_question_forces_nullable_test() {
@@ -753,8 +631,7 @@ pub fn introspect_alias_with_question_forces_nullable_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(db, "SELECT name AS name? FROM users")
-  let assert [Column(name: "name", column_type: StringType, nullable: True)] =
-    result.columns
+  result |> string.inspect |> birdie.snap(title: "alias with question forces nullable")
 }
 
 pub fn introspect_update_with_coalesce_named_param_test() {
@@ -774,12 +651,7 @@ pub fn introspect_update_with_coalesce_named_param_test() {
       db,
       "UPDATE participants SET gender = COALESCE(@gender, gender), birthdate = COALESCE(@birthdate, birthdate), updated_at = @updated_at WHERE id = @id",
     )
-  let assert [
-    Parameter(name: "gender", column_type: StringType, nullable: True),
-    Parameter(name: "birthdate", column_type: StringType, nullable: True),
-    Parameter(name: "updated_at", column_type: IntType, nullable: False),
-    Parameter(name: "id", column_type: IntType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "update with coalesce named param")
 }
 
 pub fn introspect_update_with_subquery_named_param_test() {
@@ -803,9 +675,7 @@ pub fn introspect_update_with_subquery_named_param_test() {
       db,
       "UPDATE line_items SET discount_cents = COALESCE((SELECT SUM(amount_cents) FROM line_item_discounts WHERE line_item_id = line_items.id), 0) WHERE order_id = @order_id",
     )
-  let assert [
-    Parameter(name: "order_id", column_type: IntType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "update with subquery named param")
 }
 
 // Update with IN (subquery) WHERE condition and a @named param inside the subquery.
@@ -836,11 +706,7 @@ pub fn introspect_update_with_in_subquery_named_param_test() {
       db,
       "UPDATE line_item_question_values SET question_name = @question_name WHERE question_key = @question_key AND line_item_id IN (SELECT li.id FROM line_items li JOIN orders o ON o.id = li.order_id WHERE o.org_id = @org_id)",
     )
-  let assert [
-    Parameter(name: "question_name", column_type: StringType, nullable: True),
-    Parameter(name: "question_key", column_type: StringType, nullable: False),
-    Parameter(name: "org_id", column_type: IntType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "update with in subquery named param")
 }
 
 pub fn introspect_insert_select_with_named_params_in_select_list_test() {
@@ -863,11 +729,7 @@ pub fn introspect_insert_select_with_named_params_in_select_list_test() {
        FROM item_features lf
        WHERE lf.item_id = @source_item_id",
     )
-  let assert [
-    Parameter(name: "item_id", column_type: IntType, nullable: False),
-    Parameter(name: "created_at", column_type: IntType, nullable: False),
-    Parameter(name: "source_item_id", column_type: IntType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "insert select with named params in select list")
 }
 
 // Note: CTEs currently lose type information because SQLite's EXPLAIN output
@@ -888,13 +750,7 @@ pub fn introspect_cte_test() {
       )
       SELECT id, user_id, total FROM big_orders WHERE user_id = ?",
     )
-  // Types fall back to String/nullable because CTE columns can't be traced
-  let assert [
-    Column(name: "id", column_type: StringType, nullable: True),
-    Column(name: "user_id", column_type: StringType, nullable: True),
-    Column(name: "total", column_type: StringType, nullable: True),
-  ] = result.columns
-  let assert 2 = list.length(result.parameters)
+  result |> string.inspect |> birdie.snap(title: "cte")
 }
 
 pub fn introspect_recursive_cte_test() {
@@ -915,13 +771,7 @@ pub fn introspect_recursive_cte_test() {
       )
       SELECT id, name, depth FROM tree",
     )
-  // Recursive CTEs also lose type info
-  let assert [
-    Column(name: "id", column_type: StringType, nullable: True),
-    Column(name: "name", column_type: StringType, nullable: True),
-    Column(name: "depth", column_type: StringType, nullable: True),
-  ] = result.columns
-  let assert 1 = list.length(result.parameters)
+  result |> string.inspect |> birdie.snap(title: "recursive cte")
 }
 
 // Correlated subqueries in the SELECT list lose type info for the subquery column
@@ -941,13 +791,7 @@ pub fn introspect_correlated_subquery_test() {
       FROM users u
       WHERE u.id = ?",
     )
-  let assert [
-    Column(name: "id", column_type: IntType, nullable: False),
-    Column(name: "name", column_type: StringType, nullable: False),
-    // Subquery result type can't be traced through EXPLAIN
-    Column(name: "order_count", column_type: StringType, nullable: True),
-  ] = result.columns
-  let assert 1 = list.length(result.parameters)
+  result |> string.inspect |> birdie.snap(title: "correlated subquery")
 }
 
 pub fn introspect_multiple_joins_test() {
@@ -968,13 +812,7 @@ pub fn introspect_multiple_joins_test() {
       INNER JOIN order_items oi ON oi.order_id = o.id
       WHERE u.id = ?",
     )
-  let assert [
-    Column(name: "user_name", column_type: StringType, nullable: False),
-    Column(name: "status", column_type: StringType, nullable: False),
-    Column(name: "product_name", column_type: StringType, nullable: False),
-    Column(name: "qty", column_type: IntType, nullable: False),
-  ] = result.columns
-  let assert 1 = list.length(result.parameters)
+  result |> string.inspect |> birdie.snap(title: "multiple joins")
 }
 
 pub fn parse_returns_no_annotation_test() {
@@ -1042,12 +880,7 @@ pub fn introspect_mixed_left_inner_joins_test() {
       LEFT JOIN avatars a ON a.user_id = u.id
       WHERE u.id = ?",
     )
-  let assert [
-    Column(name: "name", column_type: StringType, nullable: False),
-    Column(name: "bio", column_type: StringType, nullable: False),
-    Column(name: "avatar_url", column_type: StringType, nullable: True),
-  ] = result.columns
-  let assert 1 = list.length(result.parameters)
+  result |> string.inspect |> birdie.snap(title: "mixed left inner joins")
 }
 
 // --- CASE expression inference tests ---
@@ -1064,8 +897,7 @@ pub fn introspect_case_int_literals_test() {
       db,
       "SELECT CASE WHEN active THEN 1 ELSE 0 END AS registered FROM t",
     )
-  let assert [Column(name: "registered", column_type: IntType, nullable: False)] =
-    result.columns
+  result |> string.inspect |> birdie.snap(title: "case int literals")
 }
 
 pub fn introspect_case_string_literals_test() {
@@ -1080,8 +912,7 @@ pub fn introspect_case_string_literals_test() {
       db,
       "SELECT CASE WHEN active THEN 'yes' ELSE 'no' END AS label FROM t",
     )
-  let assert [Column(name: "label", column_type: StringType, nullable: False)] =
-    result.columns
+  result |> string.inspect |> birdie.snap(title: "case string literals")
 }
 
 pub fn introspect_case_no_else_nullable_test() {
@@ -1096,8 +927,7 @@ pub fn introspect_case_no_else_nullable_test() {
       db,
       "SELECT CASE WHEN active THEN 1 END AS maybe_val FROM t",
     )
-  let assert [Column(name: "maybe_val", column_type: IntType, nullable: True)] =
-    result.columns
+  result |> string.inspect |> birdie.snap(title: "case no else nullable")
 }
 
 pub fn introspect_case_null_branch_nullable_test() {
@@ -1112,8 +942,7 @@ pub fn introspect_case_null_branch_nullable_test() {
       db,
       "SELECT CASE WHEN active THEN 1 ELSE NULL END AS maybe_val FROM t",
     )
-  let assert [Column(name: "maybe_val", column_type: IntType, nullable: True)] =
-    result.columns
+  result |> string.inspect |> birdie.snap(title: "case null branch nullable")
 }
 
 pub fn introspect_case_mixed_types_fallback_test() {
@@ -1128,8 +957,7 @@ pub fn introspect_case_mixed_types_fallback_test() {
       db,
       "SELECT CASE WHEN active THEN 1 ELSE 'a' END AS mixed FROM t",
     )
-  let assert [Column(name: "mixed", column_type: StringType, nullable: True)] =
-    result.columns
+  result |> string.inspect |> birdie.snap(title: "case mixed types fallback")
 }
 
 pub fn introspect_case_nested_test() {
@@ -1144,10 +972,7 @@ pub fn introspect_case_nested_test() {
       db,
       "SELECT CASE WHEN a THEN CASE WHEN b THEN 1 ELSE 0 END ELSE 2 END AS val FROM t",
     )
-  // The inner CASE is a non-literal expression, but "2" is a literal.
-  // Since the inner CASE can't be resolved by infer_literal_type, it falls back.
-  let assert [Column(name: "val", column_type: StringType, nullable: True)] =
-    result.columns
+  result |> string.inspect |> birdie.snap(title: "case nested")
 }
 
 pub fn introspect_case_simple_form_test() {
@@ -1162,8 +987,7 @@ pub fn introspect_case_simple_form_test() {
       db,
       "SELECT CASE status WHEN 1 THEN 'active' WHEN 2 THEN 'inactive' ELSE 'unknown' END AS label FROM t",
     )
-  let assert [Column(name: "label", column_type: StringType, nullable: False)] =
-    result.columns
+  result |> string.inspect |> birdie.snap(title: "case simple form")
 }
 
 pub fn introspect_case_column_ref_fallback_test() {
@@ -1178,10 +1002,7 @@ pub fn introspect_case_column_ref_fallback_test() {
       db,
       "SELECT CASE WHEN id > 0 THEN a ELSE b END AS val FROM t",
     )
-  // Column refs fall through infer_expression_type, but the opcode path
-  // traces the result back to the source column, resolving correctly.
-  let assert [Column(name: "val", column_type: StringType, nullable: False)] =
-    result.columns
+  result |> string.inspect |> birdie.snap(title: "case column ref fallback")
 }
 
 // Regression: UPDATE with `WHERE col = (subquery)` where the subquery
@@ -1217,13 +1038,7 @@ pub fn introspect_update_with_eq_subquery_multiple_named_params_test() {
          LIMIT 1
        )",
     )
-  let assert [
-    Parameter(name: "claimed_at", column_type: IntType, nullable: True),
-    Parameter(name: "updated_at", column_type: IntType, nullable: False),
-    Parameter(name: "item_id", column_type: IntType, nullable: False),
-    Parameter(name: "account_id", column_type: IntType, nullable: False),
-    Parameter(name: "org_id", column_type: IntType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "update with eq subquery multiple named params")
 }
 
 pub fn introspect_case_with_exists_subquery_test() {
@@ -1243,8 +1058,7 @@ pub fn introspect_case_with_exists_subquery_test() {
       db,
       "SELECT CASE WHEN EXISTS(SELECT 1 FROM events WHERE events.season_id = seasons.id) THEN 1 ELSE 0 END AS registered FROM seasons",
     )
-  let assert [Column(name: "registered", column_type: IntType, nullable: False)] =
-    result.columns
+  result |> string.inspect |> birdie.snap(title: "case with exists subquery")
 }
 
 // --- String literal awareness in comma/condition splitting ---
@@ -1261,11 +1075,7 @@ pub fn insert_values_with_string_containing_comma_test() {
       db,
       "INSERT INTO notes (id, title, body) VALUES (?, 'hello, world', ?)",
     )
-  // Only 2 params: the string literal 'hello, world' is not a placeholder
-  let assert [
-    Parameter(name: "id", column_type: IntType, nullable: False),
-    Parameter(name: "body", column_type: StringType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "insert values with string containing comma")
 }
 
 pub fn insert_values_with_escaped_quote_in_string_test() {
@@ -1280,8 +1090,7 @@ pub fn insert_values_with_escaped_quote_in_string_test() {
       db,
       "INSERT INTO notes (id, title) VALUES (?, 'it''s, complicated')",
     )
-  let assert [Parameter(name: "id", column_type: IntType, nullable: False)] =
-    result.parameters
+  result |> string.inspect |> birdie.snap(title: "insert values with escaped quote in string")
 }
 
 pub fn where_with_string_containing_and_test() {
@@ -1297,9 +1106,7 @@ pub fn where_with_string_containing_and_test() {
       db,
       "SELECT id FROM users WHERE name != 'foo AND bar' AND email = ?",
     )
-  let assert [
-    Parameter(name: "email", column_type: StringType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "where with string containing and")
 }
 
 pub fn where_with_string_containing_or_test() {
@@ -1314,9 +1121,7 @@ pub fn where_with_string_containing_or_test() {
       db,
       "SELECT id FROM users WHERE name != 'yes or no' AND status = ?",
     )
-  let assert [
-    Parameter(name: "status", column_type: StringType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "where with string containing or")
 }
 
 pub fn select_with_string_literal_containing_comma_test() {
@@ -1332,10 +1137,7 @@ pub fn select_with_string_literal_containing_comma_test() {
       db,
       "SELECT COALESCE(name, 'unknown, unnamed') AS display_name FROM users WHERE id = ?",
     )
-  let assert [Column(name: "display_name", column_type: StringType, ..)] =
-    result.columns
-  let assert [Parameter(name: "id", column_type: IntType, nullable: False)] =
-    result.parameters
+  result |> string.inspect |> birdie.snap(title: "select with string literal containing comma")
 }
 
 // --- Tests for previously untested fixes ---
@@ -1352,10 +1154,7 @@ pub fn introspect_dollar_name_parameter_test() {
       db,
       "SELECT id, name FROM users WHERE id = $id AND name = $name",
     )
-  let assert [
-    Parameter(name: "id", column_type: IntType, nullable: False),
-    Parameter(name: "name", column_type: StringType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "dollar name parameter")
 }
 
 pub fn introspect_sum_returns_float_test() {
@@ -1367,8 +1166,7 @@ pub fn introspect_sum_returns_float_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(db, "SELECT SUM(amount) AS total FROM orders")
-  let assert [Column(name: "total", column_type: FloatType, nullable: True)] =
-    result.columns
+  result |> string.inspect |> birdie.snap(title: "sum returns float")
 }
 
 pub fn introspect_returning_cast_as_alias_test() {
@@ -1383,8 +1181,7 @@ pub fn introspect_returning_cast_as_alias_test() {
       db,
       "INSERT INTO t (val) VALUES (?) RETURNING CAST(id AS TEXT) AS id_text",
     )
-  let assert [Column(name: "id_text", column_type: StringType, ..)] =
-    result.columns
+  result |> string.inspect |> birdie.snap(title: "returning cast as alias")
 }
 
 pub fn introspect_nested_cast_test() {
@@ -1399,10 +1196,7 @@ pub fn introspect_nested_cast_test() {
       db,
       "SELECT CAST(CAST(val AS INT) AS TEXT) AS converted FROM t",
     )
-  // EXPLAIN traces back to source column (REAL), so the type comes from the
-  // opcode path rather than the outer CAST. The important thing is the alias
-  // is correctly resolved via the last top-level AS (not the inner one).
-  let assert [Column(name: "converted", ..)] = result.columns
+  result |> string.inspect |> birdie.snap(title: "nested cast")
 }
 
 pub fn introspect_double_quoted_identifier_with_escaped_quotes_test() {
@@ -1429,8 +1223,7 @@ pub fn introspect_keyword_inside_string_literal_test() {
       db,
       "UPDATE t SET name = 'hello WHERE world' WHERE id = ?",
     )
-  let assert [Parameter(name: "id", column_type: IntType, nullable: False)] =
-    result.parameters
+  result |> string.inspect |> birdie.snap(title: "keyword inside string literal")
 }
 
 pub fn introspect_double_quoted_identifier_containing_placeholder_test() {
@@ -1442,8 +1235,7 @@ pub fn introspect_double_quoted_identifier_containing_placeholder_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(db, "SELECT \"what?\", val FROM t WHERE val = ?")
-  let assert [Parameter(name: "val", column_type: StringType, nullable: False)] =
-    result.parameters
+  result |> string.inspect |> birdie.snap(title: "double quoted identifier containing placeholder")
 }
 
 pub fn introspect_nested_function_unwrap_test() {
@@ -1458,8 +1250,7 @@ pub fn introspect_nested_function_unwrap_test() {
       db,
       "UPDATE t SET name = LOWER(TRIM(name)) WHERE id = ?",
     )
-  let assert [Parameter(name: "id", column_type: IntType, nullable: False)] =
-    result.parameters
+  result |> string.inspect |> birdie.snap(title: "nested function unwrap")
 }
 
 pub fn introspect_case_with_string_containing_end_test() {
@@ -1474,8 +1265,7 @@ pub fn introspect_case_with_string_containing_end_test() {
       db,
       "SELECT CASE WHEN active THEN 'THE END' ELSE 'no END here' END AS label FROM t",
     )
-  let assert [Column(name: "label", column_type: StringType, nullable: False)] =
-    result.columns
+  result |> string.inspect |> birdie.snap(title: "case with string containing end")
 }
 
 pub fn introspect_placeholder_after_escaped_quote_test() {
@@ -1490,8 +1280,7 @@ pub fn introspect_placeholder_after_escaped_quote_test() {
       db,
       "SELECT id FROM t WHERE name != 'it''s' AND id = ?",
     )
-  let assert [Parameter(name: "id", column_type: IntType, nullable: False)] =
-    result.parameters
+  result |> string.inspect |> birdie.snap(title: "placeholder after escaped quote")
 }
 
 pub fn introspect_string_literal_containing_close_paren_test() {
@@ -1506,10 +1295,7 @@ pub fn introspect_string_literal_containing_close_paren_test() {
       db,
       "SELECT COALESCE(name, 'default)value') AS display FROM t WHERE id = ?",
     )
-  let assert [Column(name: "display", column_type: StringType, ..)] =
-    result.columns
-  let assert [Parameter(name: "id", column_type: IntType, nullable: False)] =
-    result.parameters
+  result |> string.inspect |> birdie.snap(title: "string literal containing close paren")
 }
 
 pub fn introspect_keyword_in_subquery_not_matched_test() {
@@ -1529,10 +1315,7 @@ pub fn introspect_keyword_in_subquery_not_matched_test() {
       db,
       "SELECT id, name FROM users WHERE id IN (SELECT user_id FROM orders WHERE total > ?)",
     )
-  let assert [
-    Column(name: "id", column_type: IntType, nullable: False),
-    Column(name: "name", column_type: StringType, nullable: False),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "keyword in subquery not matched")
 }
 
 pub fn introspect_double_quoted_keyword_identifier_in_where_test() {
@@ -1544,8 +1327,7 @@ pub fn introspect_double_quoted_keyword_identifier_in_where_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(db, "SELECT id FROM t WHERE \"AND\" = ?")
-  let assert [Parameter(name: "AND", column_type: StringType, nullable: False)] =
-    result.parameters
+  result |> string.inspect |> birdie.snap(title: "double quoted keyword identifier in where")
 }
 
 // Regression: CAST(COUNT(*) AS INTEGER) should infer IntType, not
@@ -1561,8 +1343,7 @@ pub fn introspect_cast_count_as_integer_test() {
       db,
       "SELECT CAST(COUNT(*) AS INTEGER) AS count FROM t",
     )
-  let assert [Column(name: "count", column_type: IntType, nullable: False)] =
-    result.columns
+  result |> string.inspect |> birdie.snap(title: "cast count as integer")
 }
 
 // Regression: CAST(COALESCE(SUM(...), 0) AS INTEGER) should infer IntType.
@@ -1580,8 +1361,7 @@ pub fn introspect_cast_coalesce_sum_as_integer_test() {
       db,
       "SELECT CAST(COALESCE(SUM(amount_cents), 0) AS INTEGER) AS total FROM t",
     )
-  let assert [Column(name: "total", column_type: IntType, nullable: False)] =
-    result.columns
+  result |> string.inspect |> birdie.snap(title: "cast coalesce sum as integer")
 }
 
 // Regression: outer CAST around a subquery-aliased column should honor
@@ -1599,8 +1379,7 @@ pub fn introspect_cast_subquery_column_as_integer_test() {
       "SELECT CAST(sub.val AS INTEGER) AS v
        FROM (SELECT val FROM t) sub",
     )
-  let assert [Column(name: "v", column_type: IntType, nullable: False)] =
-    result.columns
+  result |> string.inspect |> birdie.snap(title: "cast subquery column as integer")
 }
 
 pub fn between_named_params_infer_column_type_test() {
@@ -1619,14 +1398,7 @@ pub fn between_named_params_infer_column_type_test() {
       db,
       "SELECT id, name FROM events WHERE created_at BETWEEN @from_ts AND @to_ts",
     )
-  let assert [
-    Column(name: "id", column_type: IntType, nullable: False),
-    Column(name: "name", column_type: StringType, nullable: False),
-  ] = result.columns
-  let assert [
-    Parameter(name: "from_ts", column_type: IntType, nullable: False),
-    Parameter(name: "to_ts", column_type: IntType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "between named params infer column type")
 }
 
 pub fn coalesce_max_plus_literal_returns_int_test() {
@@ -1647,14 +1419,7 @@ pub fn coalesce_max_plus_literal_returns_int_test() {
       db,
       "SELECT COALESCE(MAX(position), 0) + 1 AS next_position FROM items WHERE org_id = @org_id AND item_type = @item_type AND season IS @season",
     )
-  let assert [
-    Column(name: "next_position", column_type: IntType, nullable: False),
-  ] = result.columns
-  let assert [
-    Parameter(name: "org_id", column_type: IntType, nullable: False),
-    Parameter(name: "item_type", column_type: StringType, nullable: False),
-    Parameter(name: "season", column_type: IntType, nullable: True),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "coalesce max plus literal returns int")
 }
 
 // ---- SELECT DISTINCT ----
@@ -1670,9 +1435,7 @@ pub fn introspect_select_distinct_single_column_test() {
     sqlight.exec("INSERT INTO t (id, status) VALUES (1, 'active'), (2, 'active')", on: db)
   let assert Ok(result) =
     sqlite.introspect_query(db, "SELECT DISTINCT status FROM t")
-  let assert [
-    Column(name: "status", column_type: StringType, nullable: False),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "select distinct single column")
 }
 
 pub fn introspect_select_distinct_multiple_columns_test() {
@@ -1684,10 +1447,7 @@ pub fn introspect_select_distinct_multiple_columns_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(db, "SELECT DISTINCT status, priority FROM t")
-  let assert [
-    Column(name: "status", column_type: StringType, nullable: False),
-    Column(name: "priority", column_type: IntType, nullable: False),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "select distinct multiple columns")
 }
 
 pub fn introspect_select_distinct_with_where_param_test() {
@@ -1702,12 +1462,7 @@ pub fn introspect_select_distinct_with_where_param_test() {
       db,
       "SELECT DISTINCT status FROM t WHERE id > ?",
     )
-  let assert [
-    Column(name: "status", column_type: StringType, nullable: False),
-  ] = result.columns
-  let assert [
-    Parameter(name: "id", column_type: IntType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "select distinct with where param")
 }
 
 pub fn introspect_select_distinct_with_order_by_test() {
@@ -1722,9 +1477,7 @@ pub fn introspect_select_distinct_with_order_by_test() {
       db,
       "SELECT DISTINCT name FROM t ORDER BY name",
     )
-  let assert [
-    Column(name: "name", column_type: StringType, nullable: False),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "select distinct with order by")
 }
 
 // ---- GROUP BY ----
@@ -1741,10 +1494,7 @@ pub fn introspect_group_by_with_count_test() {
       db,
       "SELECT status, COUNT(*) AS cnt FROM t GROUP BY status",
     )
-  let assert [
-    Column(name: "status", column_type: StringType, nullable: False),
-    Column(name: "cnt", column_type: IntType, nullable: False),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "group by with count")
 }
 
 pub fn introspect_group_by_multiple_columns_test() {
@@ -1759,11 +1509,7 @@ pub fn introspect_group_by_multiple_columns_test() {
       db,
       "SELECT region, category, SUM(amount) AS total FROM t GROUP BY region, category",
     )
-  let assert [
-    Column(name: "region", column_type: StringType, nullable: False),
-    Column(name: "category", column_type: StringType, nullable: False),
-    Column(name: "total", column_type: FloatType, nullable: True),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "group by multiple columns")
 }
 
 pub fn introspect_group_by_with_where_param_test() {
@@ -1778,13 +1524,7 @@ pub fn introspect_group_by_with_where_param_test() {
       db,
       "SELECT status, SUM(count) AS total FROM t WHERE status = ? GROUP BY status",
     )
-  let assert [
-    Column(name: "status", column_type: StringType, nullable: False),
-    Column(name: "total", column_type: FloatType, nullable: True),
-  ] = result.columns
-  let assert [
-    Parameter(name: "status", column_type: StringType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "group by with where param")
 }
 
 pub fn introspect_group_by_with_having_test() {
@@ -1799,13 +1539,7 @@ pub fn introspect_group_by_with_having_test() {
       db,
       "SELECT status, SUM(count) AS total FROM t GROUP BY status HAVING SUM(count) > ?",
     )
-  let assert [
-    Column(name: "status", column_type: StringType, nullable: False),
-    Column(name: "total", column_type: FloatType, nullable: True),
-  ] = result.columns
-  let assert [
-    Parameter(name: "count", column_type: IntType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "group by with having")
 }
 
 pub fn introspect_group_by_with_multiple_aggregates_test() {
@@ -1820,12 +1554,7 @@ pub fn introspect_group_by_with_multiple_aggregates_test() {
       db,
       "SELECT grp, COUNT(*) AS cnt, AVG(val) AS avg_val, MAX(val) AS max_val FROM t GROUP BY grp",
     )
-  let assert [
-    Column(name: "grp", column_type: StringType, nullable: False),
-    Column(name: "cnt", column_type: IntType, nullable: False),
-    Column(name: "avg_val", column_type: FloatType, nullable: True),
-    Column(name: "max_val", column_type: IntType, nullable: True),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "group by with multiple aggregates")
 }
 
 // ---- UNION / INTERSECT / EXCEPT ----
@@ -1847,10 +1576,7 @@ pub fn introspect_union_select_test() {
       db,
       "SELECT id, name FROM active UNION SELECT id, name FROM archived",
     )
-  let assert [
-    Column(name: "id", column_type: IntType, nullable: False),
-    Column(name: "name", column_type: StringType, nullable: False),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "union select")
 }
 
 pub fn introspect_union_all_test() {
@@ -1870,10 +1596,7 @@ pub fn introspect_union_all_test() {
       db,
       "SELECT id, val FROM t1 UNION ALL SELECT id, val FROM t2",
     )
-  let assert [
-    Column(name: "id", column_type: IntType, nullable: False),
-    Column(name: "val", column_type: StringType, nullable: False),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "union all")
 }
 
 pub fn introspect_union_with_where_param_test() {
@@ -1893,10 +1616,7 @@ pub fn introspect_union_with_where_param_test() {
       db,
       "SELECT id, name FROM t1 WHERE name = ? UNION SELECT id, name FROM t2 WHERE name = ?",
     )
-  let assert [
-    Column(name: "id", column_type: IntType, nullable: False),
-    Column(name: "name", column_type: StringType, nullable: False),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "union with where param")
 }
 
 pub fn introspect_intersect_test() {
@@ -1916,9 +1636,7 @@ pub fn introspect_intersect_test() {
       db,
       "SELECT id FROM t1 INTERSECT SELECT id FROM t2",
     )
-  let assert [
-    Column(name: "id", column_type: IntType, nullable: False),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "intersect")
 }
 
 pub fn introspect_except_test() {
@@ -1938,9 +1656,7 @@ pub fn introspect_except_test() {
       db,
       "SELECT id FROM t1 EXCEPT SELECT id FROM t2",
     )
-  let assert [
-    Column(name: "id", column_type: IntType, nullable: False),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "except")
 }
 
 pub fn introspect_compound_query_as_subquery_test() {
@@ -1960,16 +1676,7 @@ pub fn introspect_compound_query_as_subquery_test() {
       db,
       "SELECT id, name FROM (SELECT id, name FROM t1 UNION SELECT id, name FROM t2) WHERE name = ?",
     )
-  // Column names are correctly parsed (proving UNION doesn't break the
-  // outer SELECT list). Types fall back to StringType because subquery
-  // FROM clauses aren't in the table schema — a pre-existing limitation.
-  let assert [
-    Column(name: "id", column_type: StringType, nullable: True),
-    Column(name: "name", column_type: StringType, nullable: True),
-  ] = result.columns
-  let assert [
-    Parameter(name: "name", column_type: StringType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "compound query as subquery")
 }
 
 // ---- UPSERT / ON CONFLICT ----
@@ -1986,14 +1693,7 @@ pub fn introspect_upsert_do_nothing_returning_test() {
       db,
       "INSERT INTO t (id, val) VALUES (?, ?) ON CONFLICT(id) DO NOTHING RETURNING id, val",
     )
-  let assert [
-    Column(name: "id", column_type: IntType, nullable: False),
-    Column(name: "val", column_type: StringType, nullable: False),
-  ] = result.columns
-  let assert [
-    Parameter(name: "id", column_type: IntType, nullable: False),
-    Parameter(name: "val", column_type: StringType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "upsert do nothing returning")
 }
 
 pub fn introspect_upsert_do_update_returning_test() {
@@ -2008,11 +1708,7 @@ pub fn introspect_upsert_do_update_returning_test() {
       db,
       "INSERT INTO t (id, val, updated_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET val = ?, updated_at = ? RETURNING id, val, updated_at",
     )
-  let assert [
-    Column(name: "id", column_type: IntType, nullable: False),
-    Column(name: "val", column_type: StringType, nullable: False),
-    Column(name: "updated_at", column_type: IntType, nullable: False),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "upsert do update returning")
 }
 
 pub fn introspect_upsert_do_update_with_named_params_test() {
@@ -2027,13 +1723,7 @@ pub fn introspect_upsert_do_update_with_named_params_test() {
       db,
       "INSERT INTO t (id, val, counter) VALUES (@id, @val, @counter) ON CONFLICT(id) DO UPDATE SET val = @val, counter = @counter",
     )
-  // verify parameter count and types are correct
-  let assert 3 = list.length(result.parameters)
-  let assert [
-    Parameter(name: "id", column_type: IntType, nullable: False),
-    Parameter(name: "val", column_type: StringType, nullable: False),
-    Parameter(name: "counter", column_type: IntType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "upsert do update with named params")
 }
 
 pub fn introspect_upsert_do_update_set_with_where_test() {
@@ -2048,11 +1738,7 @@ pub fn introspect_upsert_do_update_set_with_where_test() {
       db,
       "INSERT INTO t (id, val, version) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET val = ?, version = ? WHERE version < ? RETURNING id, val, version",
     )
-  let assert [
-    Column(name: "id", column_type: IntType, nullable: False),
-    Column(name: "val", column_type: StringType, nullable: False),
-    Column(name: "version", column_type: IntType, nullable: False),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "upsert do update set with where")
 }
 
 pub fn introspect_upsert_do_nothing_no_returning_test() {
@@ -2067,11 +1753,7 @@ pub fn introspect_upsert_do_nothing_no_returning_test() {
       db,
       "INSERT INTO t (id, val) VALUES (?, ?) ON CONFLICT(id) DO NOTHING",
     )
-  let assert 2 = list.length(result.parameters)
-  let assert [
-    Parameter(name: "id", column_type: IntType, nullable: False),
-    Parameter(name: "val", column_type: StringType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "upsert do nothing no returning")
 }
 
 pub fn introspect_upsert_no_conflict_target_test() {
@@ -2087,10 +1769,7 @@ pub fn introspect_upsert_no_conflict_target_test() {
       db,
       "INSERT INTO t (id, val) VALUES (?, ?) ON CONFLICT DO NOTHING",
     )
-  let assert [
-    Parameter(name: "id", column_type: IntType, nullable: False),
-    Parameter(name: "val", column_type: StringType, nullable: False),
-  ] = result.parameters
+  result |> string.inspect |> birdie.snap(title: "upsert no conflict target")
 }
 
 pub fn introspect_upsert_insert_select_test() {
@@ -2113,10 +1792,7 @@ pub fn introspect_upsert_insert_select_test() {
       db,
       "INSERT INTO t (id, val) SELECT id, val FROM src WHERE true ON CONFLICT(id) DO UPDATE SET val = excluded.val RETURNING id, val",
     )
-  let assert [
-    Column(name: "id", column_type: IntType, nullable: False),
-    Column(name: "val", column_type: StringType, nullable: False),
-  ] = result.columns
+  result |> string.inspect |> birdie.snap(title: "upsert insert select")
 }
 
 // ---- Error path tests ----

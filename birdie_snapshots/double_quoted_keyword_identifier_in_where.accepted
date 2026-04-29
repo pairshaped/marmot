@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: double quoted keyword identifier in where
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_double_quoted_keyword_identifier_in_where_test
+---
+QueryInfo([Column("id", IntType, False)], [Parameter("AND", StringType, False)])

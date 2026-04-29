@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: cast count as integer
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_cast_count_as_integer_test
+---
+QueryInfo([Column("count", IntType, False)], [])

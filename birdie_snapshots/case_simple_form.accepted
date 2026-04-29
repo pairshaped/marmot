@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: case simple form
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_case_simple_form_test
+---
+QueryInfo([Column("label", StringType, False)], [])

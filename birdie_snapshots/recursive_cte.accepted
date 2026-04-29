@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: recursive cte
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_recursive_cte_test
+---
+QueryInfo([Column("id", StringType, True), Column("name", StringType, True), Column("depth", StringType, True)], [Parameter("id", IntType, False)])

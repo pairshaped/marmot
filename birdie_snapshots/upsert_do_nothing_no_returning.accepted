@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: upsert do nothing no returning
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_upsert_do_nothing_no_returning_test
+---
+QueryInfo([], [Parameter("id", IntType, False), Parameter("val", StringType, False)])

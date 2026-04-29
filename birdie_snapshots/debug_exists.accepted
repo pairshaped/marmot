@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: debug exists
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: debug_exists_test
+---
+QueryInfo([Column("has_feature", IntType, False)], [Parameter("item_id", IntType, False), Parameter("field_key", StringType, False)])

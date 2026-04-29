@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: upsert no conflict target
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_upsert_no_conflict_target_test
+---
+QueryInfo([], [Parameter("id", IntType, False), Parameter("val", StringType, False)])

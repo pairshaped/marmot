@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: duplicate parameter names
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_duplicate_parameter_names_test
+---
+QueryInfo([Column("id", IntType, False)], [Parameter("age", IntType, False), Parameter("age_2", IntType, False)])

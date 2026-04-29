@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: case column ref fallback
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_case_column_ref_fallback_test
+---
+QueryInfo([Column("val", StringType, False)], [])

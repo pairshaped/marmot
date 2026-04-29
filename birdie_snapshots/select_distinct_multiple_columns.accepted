@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: select distinct multiple columns
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_select_distinct_multiple_columns_test
+---
+QueryInfo([Column("status", StringType, False), Column("priority", IntType, False)], [])

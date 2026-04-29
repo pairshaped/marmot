@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: query update returning
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_query_update_returning_test
+---
+QueryInfo([Column("id", IntType, False), Column("updated_at", TimestampType, False)], [Parameter("name", StringType, False), Parameter("updated_at", TimestampType, False), Parameter("id", IntType, False)])

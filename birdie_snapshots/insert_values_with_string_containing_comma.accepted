@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: insert values with string containing comma
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: insert_values_with_string_containing_comma_test
+---
+QueryInfo([], [Parameter("id", IntType, False), Parameter("body", StringType, False)])

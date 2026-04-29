@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: alias with question forces nullable
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_alias_with_question_forces_nullable_test
+---
+QueryInfo([Column("name", StringType, True)], [])

@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: insert select with named params in select list
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_insert_select_with_named_params_in_select_list_test
+---
+QueryInfo([], [Parameter("item_id", IntType, False), Parameter("created_at", IntType, False), Parameter("source_item_id", IntType, False)])

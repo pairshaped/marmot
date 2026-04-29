@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: insert with nullable column param
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_insert_with_nullable_column_param_test
+---
+QueryInfo([], [Parameter("username", StringType, False), Parameter("bio", StringType, True), Parameter("created_at", IntType, False)])

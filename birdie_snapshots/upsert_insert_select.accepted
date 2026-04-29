@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: upsert insert select
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_upsert_insert_select_test
+---
+QueryInfo([Column("id", IntType, False), Column("val", StringType, False)], [])

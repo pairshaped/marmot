@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: string literal containing close paren
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_string_literal_containing_close_paren_test
+---
+QueryInfo([Column("display", StringType, False)], [Parameter("id", IntType, False)])

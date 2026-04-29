@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: query multiple params
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_query_multiple_params_test
+---
+QueryInfo([Column("id", IntType, False)], [Parameter("name", StringType, False), Parameter("age", IntType, False)])

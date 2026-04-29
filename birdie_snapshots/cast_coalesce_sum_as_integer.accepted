@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: cast coalesce sum as integer
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_cast_coalesce_sum_as_integer_test
+---
+QueryInfo([Column("total", IntType, False)], [])

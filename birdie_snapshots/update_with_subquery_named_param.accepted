@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: update with subquery named param
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_update_with_subquery_named_param_test
+---
+QueryInfo([], [Parameter("order_id", IntType, False)])

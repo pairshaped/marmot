@@ -1,6 +1,6 @@
 import gleam/dict
 import marmot/internal/query.{
-  type Column, type Parameter, Column, FloatType, IntType, Parameter, StringType,
+  type Column, Column, IntType, Parameter, StringType,
 }
 import marmot/internal/sqlite/opcode.{type Opcode, Opcode, find_column_for_register, infer_parameter_type}
 

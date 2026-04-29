@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: table named asset
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_table_named_asset_test
+---
+QueryInfo([], [Parameter("value", FloatType, False), Parameter("id", IntType, False)])

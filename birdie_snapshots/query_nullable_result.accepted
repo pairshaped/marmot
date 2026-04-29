@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: query nullable result
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_query_nullable_result_test
+---
+QueryInfo([Column("id", IntType, False), Column("bio", StringType, True)], [Parameter("id", IntType, False)])

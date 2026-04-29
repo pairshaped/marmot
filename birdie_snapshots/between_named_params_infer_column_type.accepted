@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: between named params infer column type
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: between_named_params_infer_column_type_test
+---
+QueryInfo([Column("id", IntType, False), Column("name", StringType, False)], [Parameter("from_ts", IntType, False), Parameter("to_ts", IntType, False)])

@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: nested cast
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_nested_cast_test
+---
+QueryInfo([Column("converted", FloatType, False)], [])

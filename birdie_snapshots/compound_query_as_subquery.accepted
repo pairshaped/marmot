@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: compound query as subquery
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_compound_query_as_subquery_test
+---
+QueryInfo([Column("id", StringType, True), Column("name", StringType, True)], [Parameter("name", StringType, False)])

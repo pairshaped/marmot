@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: multiple joins
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_multiple_joins_test
+---
+QueryInfo([Column("user_name", StringType, False), Column("status", StringType, False), Column("product_name", StringType, False), Column("qty", IntType, False)], [Parameter("id", IntType, False)])

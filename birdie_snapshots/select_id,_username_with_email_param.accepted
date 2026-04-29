@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: select id, username with email param
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_query_select_test
+---
+QueryInfo([Column("id", IntType, False), Column("username", StringType, False)], [Parameter("email", StringType, False)])

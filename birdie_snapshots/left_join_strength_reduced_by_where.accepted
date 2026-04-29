@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: left join strength reduced by where
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_left_join_strength_reduced_by_where_test
+---
+QueryInfo([Column("bio", StringType, False)], [])

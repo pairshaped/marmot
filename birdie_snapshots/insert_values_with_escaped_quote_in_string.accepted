@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: insert values with escaped quote in string
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: insert_values_with_escaped_quote_in_string_test
+---
+QueryInfo([], [Parameter("id", IntType, False)])

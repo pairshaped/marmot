@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: inner join keeps both sides non nullable
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_inner_join_keeps_both_sides_non_nullable_test
+---
+QueryInfo([Column("name", StringType, False), Column("bio", StringType, False)], [])

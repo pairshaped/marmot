@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: dollar name parameter
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_dollar_name_parameter_test
+---
+QueryInfo([Column("id", IntType, False), Column("name", StringType, False)], [Parameter("id", IntType, False), Parameter("name", StringType, False)])

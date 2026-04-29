@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: upsert do update with named params
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_upsert_do_update_with_named_params_test
+---
+QueryInfo([], [Parameter("id", IntType, False), Parameter("val", StringType, False), Parameter("counter", IntType, False)])

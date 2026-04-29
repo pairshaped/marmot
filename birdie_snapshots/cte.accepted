@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: cte
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_cte_test
+---
+QueryInfo([Column("id", StringType, True), Column("user_id", StringType, True), Column("total", StringType, True)], [Parameter("total", FloatType, False), Parameter("user_id", IntType, False)])

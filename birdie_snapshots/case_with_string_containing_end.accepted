@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: case with string containing end
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_case_with_string_containing_end_test
+---
+QueryInfo([Column("label", StringType, False)], [])
