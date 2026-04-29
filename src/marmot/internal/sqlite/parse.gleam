@@ -21,6 +21,7 @@ pub type StatementType {
   Insert
   Update
   Delete
+  Replace
   Other
 }
 
@@ -153,6 +154,7 @@ pub fn classify_statement(tokens: List(Token)) -> StatementType {
         "INSERT" -> Insert
         "UPDATE" -> Update
         "DELETE" -> Delete
+        "REPLACE" -> Replace
         _ -> Other
       }
     _ -> Other
@@ -678,18 +680,44 @@ fn do_extract_lhs(tokens: List(Token), acc: List(Token)) -> Option(String) {
         [] -> option.None
         _ -> option.Some(tokens_to_column_name(list.reverse(acc)))
       }
-    // Keyword operators
+    // Keyword operators. NOT before LIKE/IN/BETWEEN is treated as part of the
+    // operator boundary (e.g., NOT LIKE, NOT IN, NOT BETWEEN).
     [Word(w), ..] -> {
       let upper = string.uppercase(w)
-      case
-        upper == "LIKE" || upper == "IN" || upper == "IS" || upper == "BETWEEN"
-      {
+      case upper == "NOT" {
         True ->
-          case acc {
-            [] -> option.None
-            _ -> option.Some(tokens_to_column_name(list.reverse(acc)))
+          case list.drop(tokens, 1) {
+            [Word(next), ..] -> {
+              let next_upper = string.uppercase(next)
+              case
+                next_upper == "LIKE"
+                || next_upper == "IN"
+                || next_upper == "BETWEEN"
+              {
+                True ->
+                  case acc {
+                    [] -> option.None
+                    _ -> option.Some(tokens_to_column_name(list.reverse(acc)))
+                  }
+                False -> do_extract_lhs(list.drop(tokens, 1), [Word(w), ..acc])
+              }
+            }
+            _ -> do_extract_lhs(list.drop(tokens, 1), [Word(w), ..acc])
           }
-        False -> do_extract_lhs(list.drop(tokens, 1), [Word(w), ..acc])
+        False ->
+          case
+            upper == "LIKE"
+            || upper == "IN"
+            || upper == "IS"
+            || upper == "BETWEEN"
+          {
+            True ->
+              case acc {
+                [] -> option.None
+                _ -> option.Some(tokens_to_column_name(list.reverse(acc)))
+              }
+            False -> do_extract_lhs(list.drop(tokens, 1), [Word(w), ..acc])
+          }
       }
     }
     [token, ..rest] -> do_extract_lhs(rest, [token, ..acc])
@@ -900,6 +928,18 @@ fn do_skip_between(prev: List(Token), skipped: Int) -> Option(List(Token)) {
 
 fn extract_column_word(prev: List(Token)) -> Option(String) {
   case prev {
+    // Skip NOT that precedes a keyword operator (e.g., NOT LIKE, NOT IN,
+    // NOT BETWEEN). prev is reversed, so NOT is the first word after the op.
+    [Word("NOT"), Word(col), Dot, Word(table), ..] -> option.Some(table <> "." <> col)
+    [Word("NOT"), Word(col), ..] -> option.Some(col)
+    [Word("NOT"), QuotedId(col), ..] -> option.Some(col)
+    [Word("NOT"), CloseParen, ..rest] -> {
+      let inner = collect_inside_reversed_parens(rest, 1, [])
+      case inner {
+        option.Some(tokens) -> extract_column_word(list.reverse(tokens))
+        option.None -> option.None
+      }
+    }
     // table.col (reversed prev: [Word(col), Dot, Word(table), ...])
     [Word(col), Dot, Word(table), ..] -> option.Some(table <> "." <> col)
     // Simple column

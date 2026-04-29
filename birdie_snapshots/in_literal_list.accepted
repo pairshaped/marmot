@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: in literal list
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_in_literal_list_test
+---
+QueryInfo([Column("id", IntType, False), Column("name", StringType, False)], [])

@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: not between named params
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_not_between_named_params_test
+---
+QueryInfo([Column("id", IntType, False)], [Parameter("start", IntType, False), Parameter("end", IntType, False)])

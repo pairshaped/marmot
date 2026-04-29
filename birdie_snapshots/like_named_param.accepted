@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: like named param
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_like_named_param_test
+---
+QueryInfo([Column("id", IntType, False)], [Parameter("pattern", StringType, False)])

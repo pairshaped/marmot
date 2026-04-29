@@ -1,5 +1,6 @@
 import gleam/list
 import gleam/option
+import gleam/string
 import marmot/internal/sqlite/tokenize.{
   CloseParen, Comma, Dot, Eq, Ge, Gt, Le, Lt, Minus, Ne, NullOverride,
   NullableOverride, Number, OpenParen, ParamAnon, ParamNamed, Plus, QuotedId,
@@ -647,4 +648,12 @@ pub fn collect_inside_parens_nested_test() {
     }
     _ -> panic as "Expected OpenParen"
   }
+}
+
+// ---- Operator coverage gaps ----
+
+pub fn tokenize_concat_operator_test() {
+  let tokens = tokenize.tokenize("SELECT 'a' || 'b'")
+  let text = tokenize.tokens_to_text(tokens)
+  let assert ["SELECT", "'a'", "||", "'b'"] = text |> string.split(" ")
 }

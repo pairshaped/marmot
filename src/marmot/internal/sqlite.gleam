@@ -126,14 +126,14 @@ pub fn introspect_query(
 
   // Check statement type
   let stmt_type = parse.classify_statement(tokens)
-  let is_insert = stmt_type == parse.Insert
+  let is_insert = stmt_type == parse.Insert || stmt_type == parse.Replace
   let has_returning = tokenize.has_keyword(tokens, "RETURNING")
 
   // Determine result columns
   let columns = case has_returning {
     True -> {
       let table_name = case stmt_type {
-        parse.Insert -> parse.parse_insert_table_name(tokens)
+        parse.Insert | parse.Replace -> parse.parse_insert_table_name(tokens)
         parse.Update -> parse.parse_update_table_name(tokens)
         parse.Delete -> parse.parse_delete_table_name(tokens)
         _ -> ""
@@ -363,7 +363,7 @@ fn extract_parameters(
       }
 
       case stmt_type {
-        parse.Insert -> {
+        parse.Insert | parse.Replace -> {
           case tokenize.has_keyword(tokens, "VALUES") {
             True -> {
               let parsed = extract_insert_parameters(table_schemas, tokens)

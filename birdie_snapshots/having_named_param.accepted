@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: having named param
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_having_named_param_test
+---
+QueryInfo([Column("region", StringType, False), Column("total", FloatType, True)], [Parameter("min_amount", IntType, False)])

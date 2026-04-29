@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: insert or replace
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_insert_or_replace_test
+---
+QueryInfo([], [Parameter("id", IntType, False), Parameter("name", StringType, False)])

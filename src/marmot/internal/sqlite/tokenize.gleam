@@ -35,6 +35,7 @@ pub type Token {
   // Marmot-specific nullability overrides
   NullOverride
   NullableOverride
+  Concat
 }
 
 // ---- Tokenizer ----
@@ -83,6 +84,7 @@ fn do_tokenize(chars: List(String), acc: List(Token)) -> List(Token) {
     }
 
     // Multi-char operators (must come before single-char)
+    ["|", "|", ..rest] -> do_tokenize(rest, [Concat, ..acc])
     ["<", "=", ..rest] -> do_tokenize(rest, [Le, ..acc])
     ["<", ">", ..rest] -> do_tokenize(rest, [Ne, ..acc])
     [">", "=", ..rest] -> do_tokenize(rest, [Ge, ..acc])
@@ -385,6 +387,7 @@ pub fn token_text(token: Token) -> String {
     Slash -> "/"
     NullOverride -> "!"
     NullableOverride -> "?"
+    Concat -> "||"
   }
 }
 

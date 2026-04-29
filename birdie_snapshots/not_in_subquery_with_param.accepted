@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: not in subquery with param
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_not_in_subquery_param_test
+---
+QueryInfo([Column("id", IntType, False), Column("name", StringType, False)], [Parameter("name", StringType, False)])

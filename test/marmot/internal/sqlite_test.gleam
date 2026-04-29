@@ -1795,6 +1795,323 @@ pub fn introspect_upsert_insert_select_test() {
   result |> string.inspect |> birdie.snap(title: "upsert insert select")
 }
 
+// ---- LIKE operator ----
+
+pub fn introspect_like_param_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id, name FROM users WHERE name LIKE ?",
+    )
+  result |> string.inspect |> birdie.snap(title: "like param")
+}
+
+pub fn introspect_like_named_param_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id FROM users WHERE name LIKE @pattern",
+    )
+  result |> string.inspect |> birdie.snap(title: "like named param")
+}
+
+// ---- IS NULL / IS NOT NULL ----
+
+pub fn introspect_is_null_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT NOT NULL,
+        deleted_at INTEGER
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(db, "SELECT id, name FROM users WHERE deleted_at IS NULL")
+  result |> string.inspect |> birdie.snap(title: "is null")
+}
+
+pub fn introspect_is_not_null_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(db, "SELECT id, name FROM users WHERE email IS NOT NULL")
+  result |> string.inspect |> birdie.snap(title: "is not null")
+}
+
+// ---- IN (literal list) ----
+
+pub fn introspect_in_literal_list_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id, name FROM users WHERE id IN (1, 2, 3)",
+    )
+  result |> string.inspect |> birdie.snap(title: "in literal list")
+}
+
+pub fn introspect_in_literal_list_param_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        status TEXT NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id FROM users WHERE status IN (?, ?, ?)",
+    )
+  result |> string.inspect |> birdie.snap(title: "in literal list with params")
+}
+
+// ---- RIGHT JOIN / CROSS JOIN ----
+
+pub fn introspect_right_join_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        org_id INTEGER NOT NULL,
+        name TEXT NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE orgs (
+        id INTEGER NOT NULL PRIMARY KEY,
+        org_name TEXT NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT u.id, o.org_name FROM users u RIGHT JOIN orgs o ON u.org_id = o.id",
+    )
+  result |> string.inspect |> birdie.snap(title: "right join")
+}
+
+pub fn introspect_cross_join_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE a (id INTEGER NOT NULL PRIMARY KEY, val_a TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE b (id INTEGER NOT NULL PRIMARY KEY, val_b TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(db, "SELECT a.id, b.id FROM a CROSS JOIN b")
+  result |> string.inspect |> birdie.snap(title: "cross join")
+}
+
+// ---- INSERT OR REPLACE / INSERT OR IGNORE ----
+
+pub fn introspect_insert_or_replace_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "INSERT OR REPLACE INTO users (id, name) VALUES (?, ?)",
+    )
+  result |> string.inspect |> birdie.snap(title: "insert or replace")
+}
+
+pub fn introspect_insert_or_ignore_returning_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "INSERT OR IGNORE INTO users (name) VALUES (?) RETURNING id, name",
+    )
+  result |> string.inspect |> birdie.snap(title: "insert or ignore returning")
+}
+
+// ---- REPLACE INTO ----
+
+pub fn introspect_replace_into_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "REPLACE INTO users (id, name) VALUES (?, ?)",
+    )
+  result |> string.inspect |> birdie.snap(title: "replace into")
+}
+
+// ---- NOT IN / NOT LIKE / NOT BETWEEN ----
+
+pub fn introspect_not_in_subquery_param_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE deleted (user_id INTEGER NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id, name FROM users WHERE id NOT IN (SELECT user_id FROM deleted) AND name = ?",
+    )
+  result |> string.inspect |> birdie.snap(title: "not in subquery with param")
+}
+
+pub fn introspect_not_like_param_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id FROM users WHERE name NOT LIKE ?",
+    )
+  result |> string.inspect |> birdie.snap(title: "not like param")
+}
+
+pub fn introspect_not_between_named_params_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE events (
+        id INTEGER NOT NULL PRIMARY KEY,
+        created_at INTEGER NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id FROM events WHERE created_at NOT BETWEEN @start AND @end",
+    )
+  result |> string.inspect |> birdie.snap(title: "not between named params")
+}
+
+// ---- HAVING text-based param inference ----
+
+pub fn introspect_having_named_param_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE orders (
+        id INTEGER NOT NULL PRIMARY KEY,
+        region TEXT NOT NULL,
+        amount INTEGER NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT region, SUM(amount) AS total FROM orders GROUP BY region HAVING SUM(amount) > @min_amount",
+    )
+  result |> string.inspect |> birdie.snap(title: "having named param")
+}
+
+// ---- ORDER BY param binding ----
+
+pub fn introspect_order_by_param_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id, name FROM users WHERE name = ? ORDER BY id LIMIT ?",
+    )
+  result |> string.inspect |> birdie.snap(title: "order by with limit param")
+}
+
 // ---- Error path tests ----
 
 pub fn introspect_columns_nonexistent_table_test() {
