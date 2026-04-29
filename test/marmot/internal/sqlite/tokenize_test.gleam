@@ -593,3 +593,58 @@ pub fn tokenize_carriage_return_in_sql_test() {
   let assert ["SELECT", "id", "FROM", "users"] =
     tokens |> list.map(tokenize.token_text)
 }
+
+// ---- Edge case tests for token walking utilities ----
+
+pub fn take_until_keywords_skips_nested_test() {
+  // Keyword inside parens at depth > 0 should not stop the take
+  let tokens =
+    tokenize.tokenize(
+      "id, name FROM (SELECT user_id FROM other WHERE flag = 1)",
+    )
+  let taken = tokenize.take_until_keywords(tokens, ["FROM", "WHERE"])
+  // Should stop at the first top-level FROM, not the one in the subquery
+  let assert [Word("id"), Comma, Word("name")] = taken
+}
+
+pub fn split_on_and_or_between_nested_test() {
+  // AND inside parens at depth > 0 should not be consumed as BETWEEN's AND.
+  // The AND at depth 0 after the close paren IS BETWEEN's AND, so it should
+  // be consumed into the BETWEEN group, resulting in 2 groups total.
+  let tokens =
+    tokenize.tokenize("a = 1 AND b BETWEEN (SELECT x AND y) AND c")
+  let groups = tokenize.split_on_and_or(tokens)
+  let assert 2 = list.length(groups)
+  // Verify the BETWEEN group contains the nested AND (preserved) and the
+  // depth-0 AND (consumed as BETWEEN's AND), both in the same group.
+  let and_count =
+    groups
+    |> list.fold(0, fn(acc, g) {
+      acc
+      + list.length(list.filter(g, fn(t) { t == Word("AND") }))
+    })
+  let assert 2 = and_count
+}
+
+pub fn collect_inside_parens_nested_test() {
+  // Should preserve inner parens and stop at the matching close paren
+  let tokens = tokenize.tokenize("(a, (b, c), d) rest")
+  case tokens {
+    [OpenParen, ..rest] -> {
+      let #(inner, remaining) = tokenize.collect_inside_parens(rest)
+      let assert [
+        Word("a"),
+        Comma,
+        OpenParen,
+        Word("b"),
+        Comma,
+        Word("c"),
+        CloseParen,
+        Comma,
+        Word("d"),
+      ] = inner
+      let assert [Word("rest")] = remaining
+    }
+    _ -> panic as "Expected OpenParen"
+  }
+}
