@@ -274,6 +274,7 @@ fn strip_override_from_alias(alias: String) -> String {
 fn detect_bare_column(tokens: List(Token)) -> Option(String) {
   case tokens {
     [Word(name)] -> option.Some(name)
+    [QuotedId(name)] -> option.Some(name)
     [Word(_), Dot, Word(name)] -> option.Some(name)
     _ -> option.None
   }
@@ -1149,10 +1150,51 @@ pub fn infer_expression_type(item: SelectItem) -> Column {
       case string.uppercase(w) == "CASE" {
         True -> infer_case_type(item.alias, item.tokens)
         False ->
-          Column(name: item.alias, column_type: StringType, nullable: True)
+          case infer_arithmetic_type(item.tokens) {
+            option.Some(t) ->
+              Column(name: item.alias, column_type: t, nullable: True)
+            option.None ->
+              Column(name: item.alias, column_type: StringType, nullable: True)
+          }
       }
 
-    _ -> Column(name: item.alias, column_type: StringType, nullable: True)
+    _ ->
+      case infer_arithmetic_type(item.tokens) {
+        option.Some(t) ->
+          Column(name: item.alias, column_type: t, nullable: True)
+        option.None ->
+          Column(name: item.alias, column_type: StringType, nullable: True)
+      }
+  }
+}
+
+/// Check if tokens contain arithmetic operators and infer FloatType as a safe
+/// default (division always produces Float; mixed-type arithmetic produces
+/// Float; Int-only arithmetic is the sole case where Int would be correct).
+fn infer_arithmetic_type(tokens: List(Token)) -> Option(query.ColumnType) {
+  // Detect binary arithmetic by scanning adjacent token pairs. A Star
+  // preceded by OpenParen or Dot is a wildcard, not multiplication.
+  let #(has_op, _) =
+    list.fold(tokens, #(False, option.None), fn(acc, t) {
+      let found = acc.0
+      let prev = acc.1
+      let is_op = case prev, t {
+        _, Plus -> True
+        _, Slash -> True
+        option.Some(OpenParen), Star -> False // COUNT(*) or SELECT *
+        option.Some(Dot), Star -> False // table.*
+        _, Star -> True
+        option.Some(Number(_)), Minus -> True // binary subtraction
+        option.Some(Word(_)), Minus -> True // column - x
+        option.Some(CloseParen), Minus -> True // ) - 1
+        _, Minus -> False // unary negation
+        _, _ -> False
+      }
+      #(found || is_op, option.Some(t))
+    })
+  case has_op {
+    False -> option.None
+    True -> option.Some(query.FloatType)
   }
 }
 

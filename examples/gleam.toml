@@ -1,0 +1,14 @@
+name = "marmot_examples"
+version = "1.0.0"
+target = "erlang"
+
+[dependencies]
+gleam_stdlib = ">= 0.34.0 and < 2.0.0"
+sqlight = ">= 1.0.0 and < 2.0.0"
+
+[dev-dependencies]
+marmot = { path = ".." }
+gleeunit = ">= 1.0.0 and < 2.0.0"
+
+[tools.marmot]
+database = "demo.sqlite"

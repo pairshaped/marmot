@@ -256,7 +256,21 @@ fn extract_result_columns(
                       table_schemas,
                       join_nullability,
                     )
-                  _ -> Column(..opcode_column, name: item.alias)
+                  _ -> {
+                    let expr_col =
+                      resolve_select_item(
+                        idx,
+                        select_items,
+                        from_tables,
+                        table_schemas,
+                        join_nullability,
+                      )
+                    Column(
+                      name: item.alias,
+                      column_type: expr_col.column_type,
+                      nullable: opcode_column.nullable,
+                    )
+                  }
                 }
             }
             parse.apply_override(resolved_col, item.override)
