@@ -2,9 +2,10 @@ import gleam/list
 import gleam/option
 import gleam/string
 import marmot/internal/sqlite/tokenize.{
-  CloseParen, Comma, Dot, Eq, Ge, Gt, Le, Lt, Minus, Ne, NullOverride,
-  NullableOverride, Number, OpenParen, ParamAnon, ParamNamed, Plus, QuotedId,
-  Semicolon, Slash, Star, StringLit, Word,
+  BitAnd, BitOr, CloseParen, Comma, Concat, Dot, Eq, Ge, Gt, Le, Lt, Minus, Ne,
+  NullOverride, NullableOverride, Number, OpenParen, ParamAnon, ParamNamed,
+  Percent, Plus, QuotedId, Semicolon, ShiftLeft, ShiftRight, Slash, Star,
+  StringLit, Word,
 }
 
 // ---- Basic tokenization ----
@@ -656,4 +657,105 @@ pub fn tokenize_concat_operator_test() {
   let tokens = tokenize.tokenize("SELECT 'a' || 'b'")
   let text = tokenize.tokens_to_text(tokens)
   let assert ["SELECT", "'a'", "||", "'b'"] = text |> string.split(" ")
+}
+
+// ---- Hex integer literals ----
+
+pub fn tokenize_hex_integer_test() {
+  let tokens = tokenize.tokenize("0x1A")
+  let assert [Number("0x1A")] = tokens
+}
+
+pub fn tokenize_hex_integer_uppercase_test() {
+  // Uppercase X is normalized to lowercase in the number text
+  let tokens = tokenize.tokenize("0XFF")
+  let assert [Number("0xFF")] = tokens
+}
+
+pub fn tokenize_hex_integer_lowercase_digits_test() {
+  let tokens = tokenize.tokenize("0xdeadbeef")
+  let assert [Number("0xdeadbeef")] = tokens
+}
+
+pub fn tokenize_hex_in_mixed_context_test() {
+  let tokens = tokenize.tokenize("WHERE flag = 0x1A")
+  let assert [Word("WHERE"), Word("flag"), Eq, Number("0x1A")] = tokens
+}
+
+pub fn tokenize_bare_0x_without_hex_digits_is_split_test() {
+  // 0x without hex digits is NOT a hex literal — splits into Number + Word
+  let tokens = tokenize.tokenize("0x")
+  let assert [Number("0"), Word("x")] = tokens
+}
+
+// ---- Scientific notation ----
+
+pub fn tokenize_scientific_notation_test() {
+  let tokens = tokenize.tokenize("1e5")
+  let assert [Number("1e5")] = tokens
+}
+
+pub fn tokenize_scientific_negative_exponent_test() {
+  let tokens = tokenize.tokenize("1.5e-3")
+  let assert [Number("1.5e-3")] = tokens
+}
+
+pub fn tokenize_scientific_uppercase_test() {
+  // Uppercase E is normalized to lowercase in the number text
+  let tokens = tokenize.tokenize("2E10")
+  let assert [Number("2e10")] = tokens
+}
+
+pub fn tokenize_scientific_positive_exponent_test() {
+  let tokens = tokenize.tokenize("3.0e+4")
+  let assert [Number("3.0e+4")] = tokens
+}
+
+pub fn tokenize_bare_e_without_exponent_is_split_test() {
+  // 1e without exponent digits is NOT scientific notation — splits apart
+  let tokens = tokenize.tokenize("1e")
+  let assert [Number("1"), Word("e")] = tokens
+}
+
+// ---- Rare operators ----
+
+pub fn tokenize_modulo_operator_test() {
+  let tokens = tokenize.tokenize("a % b")
+  let assert [Word("a"), Percent, Word("b")] = tokens
+}
+
+pub fn tokenize_shift_left_operator_test() {
+  let tokens = tokenize.tokenize("a << b")
+  let assert [Word("a"), ShiftLeft, Word("b")] = tokens
+}
+
+pub fn tokenize_shift_right_operator_test() {
+  let tokens = tokenize.tokenize("a >> b")
+  let assert [Word("a"), ShiftRight, Word("b")] = tokens
+}
+
+pub fn tokenize_bitwise_and_operator_test() {
+  let tokens = tokenize.tokenize("a & b")
+  let assert [Word("a"), BitAnd, Word("b")] = tokens
+}
+
+pub fn tokenize_bitwise_or_operator_test() {
+  let tokens = tokenize.tokenize("a | b")
+  let assert [Word("a"), BitOr, Word("b")] = tokens
+}
+
+pub fn tokenize_bitwise_or_still_handles_concat_test() {
+  // || must still tokenize as Concat, not as two BitOr tokens
+  let tokens = tokenize.tokenize("a || b")
+  let assert [Word("a"), Concat, Word("b")] = tokens
+}
+
+// ---- token_text for new operators ----
+
+pub fn token_text_new_operators_test() {
+  let assert "%" = tokenize.token_text(Percent)
+  let assert "<<" = tokenize.token_text(ShiftLeft)
+  let assert ">>" = tokenize.token_text(ShiftRight)
+  let assert "&" = tokenize.token_text(BitAnd)
+  let assert "|" = tokenize.token_text(BitOr)
 }

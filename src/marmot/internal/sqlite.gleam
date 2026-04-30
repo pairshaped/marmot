@@ -10,7 +10,9 @@ import marmot/internal/query.{
 }
 import marmot/internal/sqlite/opcode.{type JoinNullability, type Opcode, Opcode}
 import marmot/internal/sqlite/parse
-import marmot/internal/sqlite/tokenize.{type Token}
+import marmot/internal/sqlite/tokenize.{
+  type Token, CloseParen, OpenParen, ParamAnon, ParamNamed, Word,
+}
 import sqlight.{type Connection}
 
 /// Result of introspecting a query's structure.
@@ -362,7 +364,7 @@ fn extract_parameters(
         })
       }
 
-      case stmt_type {
+      fix_limit_offset_param_types(case stmt_type {
         parse.Insert | parse.Replace -> {
           case tokenize.has_keyword(tokens, "VALUES") {
             True -> {
@@ -398,8 +400,89 @@ fn extract_parameters(
           }
         }
         parse.Other -> opcode_fallback()
-      }
+      }, tokens)
     }
+  }
+}
+
+/// Override LIMIT ? and OFFSET ? parameter types to IntType.
+/// These never participate in column comparisons, so both text-based
+/// and opcode-based inference miss them.
+fn fix_limit_offset_param_types(
+  parameters: List(Parameter),
+  tokens: List(Token),
+) -> List(Parameter) {
+  let limit_offset_positions =
+    find_limit_offset_param_positions(tokens, 0, 0, [], False)
+  list.index_map(parameters, fn(param, idx) {
+    case list.contains(limit_offset_positions, idx) {
+      True -> Parameter(..param, column_type: query.IntType, nullable: False)
+      False -> param
+    }
+  })
+}
+
+fn find_limit_offset_param_positions(
+  tokens: List(Token),
+  param_count: Int,
+  depth: Int,
+  acc: List(Int),
+  prev_is_limit_offset: Bool,
+) -> List(Int) {
+  case tokens {
+    [] -> list.reverse(acc)
+    [OpenParen, ..rest] ->
+      find_limit_offset_param_positions(
+        rest,
+        param_count,
+        depth + 1,
+        acc,
+        prev_is_limit_offset,
+      )
+    [CloseParen, ..rest] ->
+      find_limit_offset_param_positions(
+        rest,
+        param_count,
+        depth - 1,
+        acc,
+        prev_is_limit_offset,
+      )
+    [ParamAnon, ..rest] | [ParamNamed(_), ..rest] -> {
+      let new_acc = case prev_is_limit_offset && depth == 0 {
+        True -> [param_count, ..acc]
+        False -> acc
+      }
+      find_limit_offset_param_positions(
+        rest,
+        param_count + 1,
+        depth,
+        new_acc,
+        False,
+      )
+    }
+    [Word(w), ..rest] -> {
+      let upper = string.uppercase(w)
+      let is_limit_or_offset = upper == "LIMIT" || upper == "OFFSET"
+      let new_prev = case is_limit_or_offset && depth == 0 {
+        True -> True
+        False -> prev_is_limit_offset
+      }
+      find_limit_offset_param_positions(
+        rest,
+        param_count,
+        depth,
+        acc,
+        new_prev,
+      )
+    }
+    [_, ..rest] ->
+      find_limit_offset_param_positions(
+        rest,
+        param_count,
+        depth,
+        acc,
+        prev_is_limit_offset,
+      )
   }
 }
 

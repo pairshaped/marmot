@@ -366,8 +366,7 @@ pub fn parse_from_tables(tokens: List(Token)) -> List(String) {
 fn extract_table_names_from_from(tokens: List(Token)) -> List(String) {
   split_on_joins(tokens)
   |> list.filter_map(fn(segment) {
-    // Strip ON clause: take tokens until ON keyword
-    let before_on = tokenize.take_until_keywords(segment, ["ON"])
+    let before_on = tokenize.take_until_keywords(segment, ["ON", "USING"])
     case before_on {
       [Word(name), ..] -> Ok(name)
       [QuotedId(name), ..] -> Ok(name)
@@ -418,6 +417,7 @@ fn strip_trailing_join_modifiers(reversed_tokens: List(Token)) -> List(Token) {
         || upper == "INNER"
         || upper == "CROSS"
         || upper == "OUTER"
+        || upper == "NATURAL"
       {
         True -> strip_trailing_join_modifiers(rest)
         False -> reversed_tokens
@@ -438,7 +438,43 @@ fn extract_name_after_keyword(tokens: List(Token), keyword: String) -> String {
 }
 
 pub fn parse_insert_table_name(tokens: List(Token)) -> String {
-  extract_name_after_keyword(tokens, "INTO")
+  case tokens {
+    [Word(w), ..rest] -> {
+      let upper = string.uppercase(w)
+      case upper == "INSERT" || upper == "REPLACE" {
+        True ->
+          case rest {
+            [Word(or_kw), Word(next), ..rest2] -> {
+              case string.uppercase(or_kw) == "OR" {
+                True ->
+                  case rest2 {
+                    [Word(into), ..rest3] -> {
+                      case string.uppercase(into) == "INTO" {
+                        True -> tokenize.first_word(rest3)
+                        False -> tokenize.first_word(rest2)
+                      }
+                    }
+                    _ -> tokenize.first_word(rest2)
+                  }
+                False ->
+                  case string.uppercase(or_kw) == "INTO" {
+                    True -> tokenize.first_word([Word(next), ..rest2])
+                    False -> tokenize.first_word(rest)
+                  }
+              }
+            }
+            [Word(into), ..rest2] ->
+              case string.uppercase(into) == "INTO" {
+                True -> tokenize.first_word(rest2)
+                False -> tokenize.first_word(rest)
+              }
+            _ -> tokenize.first_word(rest)
+          }
+        False -> extract_name_after_keyword(tokens, "INTO")
+      }
+    }
+    _ -> ""
+  }
 }
 
 pub fn parse_update_table_name(tokens: List(Token)) -> String {

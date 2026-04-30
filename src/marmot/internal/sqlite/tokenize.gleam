@@ -36,6 +36,12 @@ pub type Token {
   NullOverride
   NullableOverride
   Concat
+  // Bitwise and arithmetic operators
+  Percent
+  ShiftLeft
+  ShiftRight
+  BitAnd
+  BitOr
 }
 
 // ---- Tokenizer ----
@@ -85,6 +91,8 @@ fn do_tokenize(chars: List(String), acc: List(Token)) -> List(Token) {
 
     // Multi-char operators (must come before single-char)
     ["|", "|", ..rest] -> do_tokenize(rest, [Concat, ..acc])
+    ["<", "<", ..rest] -> do_tokenize(rest, [ShiftLeft, ..acc])
+    [">", ">", ..rest] -> do_tokenize(rest, [ShiftRight, ..acc])
     ["<", "=", ..rest] -> do_tokenize(rest, [Le, ..acc])
     ["<", ">", ..rest] -> do_tokenize(rest, [Ne, ..acc])
     [">", "=", ..rest] -> do_tokenize(rest, [Ge, ..acc])
@@ -98,6 +106,9 @@ fn do_tokenize(chars: List(String), acc: List(Token)) -> List(Token) {
     ["-", ..rest] -> do_tokenize(rest, [Minus, ..acc])
     ["*", ..rest] -> do_tokenize(rest, [Star, ..acc])
     ["/", ..rest] -> do_tokenize(rest, [Slash, ..acc])
+    ["%", ..rest] -> do_tokenize(rest, [Percent, ..acc])
+    ["&", ..rest] -> do_tokenize(rest, [BitAnd, ..acc])
+    ["|", ..rest] -> do_tokenize(rest, [BitOr, ..acc])
 
     // Punctuation
     ["(", ..rest] -> do_tokenize(rest, [OpenParen, ..acc])
@@ -215,15 +226,88 @@ fn consume_number(
   chars: List(String),
   acc: List(String),
 ) -> #(String, List(String)) {
+  let #(base_str, remaining) = consume_number_digits(chars, acc)
+  try_hex_or_exp(base_str, remaining)
+}
+
+fn consume_number_digits(
+  chars: List(String),
+  acc: List(String),
+) -> #(String, List(String)) {
   case chars {
     [".", c, ..rest] ->
       case is_digit(c) {
-        True -> consume_number(rest, [c, ".", ..acc])
+        True -> consume_number_digits(rest, [c, ".", ..acc])
         False -> #(join_rev(acc), chars)
       }
     [c, ..rest] ->
       case is_digit(c) {
-        True -> consume_number(rest, [c, ..acc])
+        True -> consume_number_digits(rest, [c, ..acc])
+        False -> #(join_rev(acc), chars)
+      }
+    [] -> #(join_rev(acc), [])
+  }
+}
+
+fn try_hex_or_exp(
+  num_str: String,
+  remaining: List(String),
+) -> #(String, List(String)) {
+  case remaining {
+    ["x", c, ..rest] | ["X", c, ..rest] if num_str == "0" ->
+      case is_hex_digit(c) {
+        True -> {
+          let #(hex_digits, after_hex) = consume_hex_digits(rest, [c])
+          #(num_str <> "x" <> hex_digits, after_hex)
+        }
+        False -> #(num_str, remaining)
+      }
+    ["e", c, ..rest] | ["E", c, ..rest] ->
+      case c {
+        "+" | "-" ->
+          case rest {
+            [d, ..rest2] ->
+              case is_digit(d) {
+                True -> {
+                  let #(exp_digits, after_exp) =
+                    consume_number_digits(rest2, [d])
+                  #(num_str <> "e" <> c <> exp_digits, after_exp)
+                }
+                False -> #(num_str, remaining)
+              }
+            _ -> #(num_str, remaining)
+          }
+        _ ->
+          case is_digit(c) {
+            True -> {
+              let #(exp_digits, after_exp) =
+                consume_number_digits(rest, [c])
+              #(num_str <> "e" <> exp_digits, after_exp)
+            }
+            False -> #(num_str, remaining)
+          }
+      }
+    _ -> #(num_str, remaining)
+  }
+}
+
+fn is_hex_digit(c: String) -> Bool {
+  case c {
+    "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" -> True
+    "a" | "b" | "c" | "d" | "e" | "f" -> True
+    "A" | "B" | "C" | "D" | "E" | "F" -> True
+    _ -> False
+  }
+}
+
+fn consume_hex_digits(
+  chars: List(String),
+  acc: List(String),
+) -> #(String, List(String)) {
+  case chars {
+    [c, ..rest] ->
+      case is_hex_digit(c) {
+        True -> consume_hex_digits(rest, [c, ..acc])
         False -> #(join_rev(acc), chars)
       }
     [] -> #(join_rev(acc), [])
@@ -233,18 +317,22 @@ fn consume_number(
 // ---- Parameter and override handling ----
 
 /// Disambiguate `?` as NullableOverride vs ParamAnon.
-/// After a Word, followed by boundary char: NullableOverride.
+/// After a Word that is NOT a keyword-taking-param (LIMIT, OFFSET),
+/// followed by boundary char: NullableOverride.
 /// Otherwise: ParamAnon.
 fn handle_question_mark(rest: List(String), acc: List(Token)) -> List(Token) {
-  let prev_is_word = case acc {
-    [Word(_), ..] -> True
+  let prev_is_column_name = case acc {
+    [Word(w), ..] -> {
+      let upper = string.uppercase(w)
+      upper != "LIMIT" && upper != "OFFSET"
+    }
     _ -> False
   }
   let next_is_boundary = case rest {
     [] -> True
     [c, ..] -> c == " " || c == "," || c == ")" || c == "\t" || c == "\n"
   }
-  case prev_is_word && next_is_boundary {
+  case prev_is_column_name && next_is_boundary {
     True -> do_tokenize(rest, [NullableOverride, ..acc])
     False -> do_tokenize(rest, [ParamAnon, ..acc])
   }
@@ -388,6 +476,11 @@ pub fn token_text(token: Token) -> String {
     NullOverride -> "!"
     NullableOverride -> "?"
     Concat -> "||"
+    Percent -> "%"
+    ShiftLeft -> "<<"
+    ShiftRight -> ">>"
+    BitAnd -> "&"
+    BitOr -> "|"
   }
 }
 

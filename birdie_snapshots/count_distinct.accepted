@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: count distinct
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_count_distinct_test
+---
+QueryInfo([Column("unique_customers", IntType, False)], [])

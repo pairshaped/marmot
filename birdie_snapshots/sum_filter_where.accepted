@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: sum filter where
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_sum_filter_where_test
+---
+QueryInfo([Column("total_paid", FloatType, True)], [])

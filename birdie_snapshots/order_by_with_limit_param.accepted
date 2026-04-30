@@ -4,4 +4,4 @@ title: order by with limit param
 file: ./test/marmot/internal/sqlite_test.gleam
 test_name: introspect_order_by_param_test
 ---
-QueryInfo([Column("id", IntType, False), Column("name", StringType, False)], [Parameter("name", StringType, False), Parameter("param", StringType, False)])
+QueryInfo([Column("id", IntType, False), Column("name", StringType, False)], [Parameter("name", StringType, False), Parameter("param", IntType, False)])

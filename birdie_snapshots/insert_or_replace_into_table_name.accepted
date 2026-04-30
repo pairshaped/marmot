@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: insert or replace into table name
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_insert_or_replace_into_table_name_test
+---
+QueryInfo([], [Parameter("id", IntType, False), Parameter("name", StringType, False)])

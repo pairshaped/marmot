@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: filter where with param
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_filter_where_with_param_test
+---
+QueryInfo([Column("total", FloatType, True)], [Parameter("status", StringType, False)])

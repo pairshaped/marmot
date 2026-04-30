@@ -1,0 +1,7 @@
+---
+version: 1.5.5
+title: natural join
+file: ./test/marmot/internal/sqlite_test.gleam
+test_name: introspect_natural_join_test
+---
+QueryInfo([Column("id", IntType, False), Column("val_a", StringType, False)], [])
