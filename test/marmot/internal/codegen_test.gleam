@@ -819,3 +819,17 @@ pub fn codegen_blob_param_test() {
   codegen.generate_function(q)
   |> birdie.snap(title: "codegen blob parameter")
 }
+
+pub fn codegen_escaped_single_quotes_in_sql_test() {
+  let q =
+    Query(
+      name: "update_title",
+      sql: "UPDATE notes SET title = 'it''s fine' WHERE id = ?",
+      path: "src/app/sql/update_title.sql",
+      parameters: [Parameter(name: "id", column_type: IntType, nullable: False)],
+      columns: [],
+      custom_type_name: option.None,
+    )
+  codegen.generate_function(q)
+  |> birdie.snap(title: "codegen escaped single quotes in sql")
+}

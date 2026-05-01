@@ -658,17 +658,35 @@ fn has_subquery(tokens: List(Token)) -> Bool {
 fn do_has_subquery(tokens: List(Token)) -> Bool {
   case tokens {
     [] -> False
-    // IN (SELECT ...) or IN(SELECT ...)
+    // EXISTS (SELECT ...) or NOT EXISTS (SELECT ...)
     [Word(w), OpenParen, Word(s), ..] -> {
       let uw = string.uppercase(w)
       let us = string.uppercase(s)
-      case uw == "IN" && us == "SELECT" {
+      case { uw == "IN" || uw == "EXISTS" } && us == "SELECT" {
         True -> True
-        False -> do_has_subquery(list.drop(tokens, 1))
+        False ->
+          case uw == "NOT" {
+            True ->
+              // Peek at the next word inside parens: NOT EXISTS (SELECT ...)
+              case list.drop(tokens, 2) {
+                [Word(next), ..] ->
+                  case string.uppercase(next) == "EXISTS" {
+                    True -> True
+                    False -> do_has_subquery(list.drop(tokens, 1))
+                  }
+                _ -> do_has_subquery(list.drop(tokens, 1))
+              }
+            False -> do_has_subquery(list.drop(tokens, 1))
+          }
       }
     }
-    // = (SELECT ...)
-    [Eq, OpenParen, Word(w), ..] ->
+    // = (SELECT ...) or < (SELECT ...) or > (SELECT ...) etc.
+    [Eq, OpenParen, Word(w), ..]
+    | [Ne, OpenParen, Word(w), ..]
+    | [Lt, OpenParen, Word(w), ..]
+    | [Gt, OpenParen, Word(w), ..]
+    | [Le, OpenParen, Word(w), ..]
+    | [Ge, OpenParen, Word(w), ..] ->
       case string.uppercase(w) == "SELECT" {
         True -> True
         False -> do_has_subquery(list.drop(tokens, 1))

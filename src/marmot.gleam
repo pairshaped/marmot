@@ -445,7 +445,7 @@ fn timer_sleep(ms: Int) -> Nil
 /// Create a temp file with a cryptographically random name and write content
 /// atomically using exclusive mode (prevents symlink races).
 @external(erlang, "marmot_ffi", "make_tmp_file")
-fn make_tmp_file(dir: String, content: String) -> Result(String, Nil)
+fn make_tmp_file(dir: String, content: String) -> Result(String, String)
 
 /// Look up a single environment variable by name. The FFI handles
 /// binary-to-charlist conversion for OTP 27+ compatibility.

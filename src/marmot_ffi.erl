@@ -34,7 +34,7 @@ make_tmp_file(Dir, Content) ->
     Path = <<Dir/binary, "/marmot_fmt_", Suffix/binary, ".gleam">>,
     case file:write_file(Path, Content, [exclusive]) of
         ok -> {ok, Path};
-        {error, _} -> {error, nil}
+        {error, Reason} -> {error, erlang:atom_to_binary(Reason, utf8)}
     end.
 
 %% Find an executable on PATH. Returns {some, Path} or none.

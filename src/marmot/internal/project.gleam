@@ -199,7 +199,7 @@ fn resolve_path(path: String) -> String {
   |> string.split("/")
   |> list.fold([], fn(acc, segment) {
     case segment {
-      "." -> acc
+      "." | "" -> acc
       ".." ->
         case acc {
           // Don't pop past already-accumulated ".." (we're above root)

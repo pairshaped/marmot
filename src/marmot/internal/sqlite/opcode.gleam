@@ -1,6 +1,7 @@
 import gleam/dict.{type Dict}
 import gleam/dynamic/decode
 import gleam/int
+import gleam/io
 import gleam/list
 import marmot/internal/query.{
   type Column, type Parameter, Column, Parameter,
@@ -228,7 +229,9 @@ fn resolve_rowid_column(
   }
 }
 
-/// Look up a column by cursor and index
+/// Look up a column by cursor and index.
+/// Logs a warning when falling back to `unknown_column()` so users can diagnose
+/// type inference gaps.
 pub fn resolve_column(
   cursor: Int,
   col_idx: Int,
@@ -241,13 +244,29 @@ pub fn resolve_column(
         Ok(table_cols) ->
           case parse.list_at(table_cols, col_idx) {
             Ok(col) -> col
-            Error(_) ->
+            Error(_) -> {
+              io.println_error(
+                "warning: column at index "
+                <> int.to_string(col_idx)
+                <> " not found in table "
+                <> table_name,
+              )
               query.unknown_column()
+            }
           }
-        Error(_) ->
+        Error(_) -> {
+          io.println_error(
+            "warning: table " <> table_name <> " not found in schema",
+          )
           query.unknown_column()
+        }
       }
-    Error(_) -> query.unknown_column()
+    Error(_) -> {
+      io.println_error(
+        "warning: cursor " <> int.to_string(cursor) <> " not found in cursor-to-table map",
+      )
+      query.unknown_column()
+    }
   }
 }
 
@@ -331,8 +350,15 @@ pub fn infer_parameter_type(
             Error(_) ->
               Parameter(name: "id", column_type: query.IntType, nullable: False)
           }
-        Error(_) ->
+        Error(_) -> {
+          io.println_error(
+            "warning: no comparison context for Variable p1="
+            <> int.to_string(var_op.p1)
+            <> " register p2="
+            <> int.to_string(var_op.p2),
+          )
           query.unknown_param()
+        }
       }
     }
   }
@@ -366,8 +392,13 @@ fn find_nearest_column_source(
   case best {
     Ok(cop) ->
       resolve_column_to_parameter(cop.p1, cop.p2, cursor_table, table_schemas)
-    Error(_) ->
+    Error(_) -> {
+      io.println_error(
+        "warning: no Column opcode found writing to register "
+        <> int.to_string(target_reg),
+      )
       query.unknown_param()
+    }
   }
 }
 
@@ -424,14 +455,33 @@ fn resolve_column_to_parameter(
                 column_type: col.column_type,
                 nullable: col.nullable,
               )
-            Error(_) ->
+            Error(_) -> {
+              io.println_error(
+                "warning: parameter cursor "
+                <> int.to_string(cursor)
+                <> " col_idx "
+                <> int.to_string(col_idx)
+                <> " not found in table "
+                <> table_name,
+              )
               query.unknown_param()
+            }
           }
-        Error(_) ->
+        Error(_) -> {
+          io.println_error(
+            "warning: table " <> table_name <> " not found in schema for parameter resolution",
+          )
           query.unknown_param()
+        }
       }
-    Error(_) ->
+    Error(_) -> {
+      io.println_error(
+        "warning: cursor "
+        <> int.to_string(cursor)
+        <> " not found in cursor-to-table map for parameter",
+      )
       query.unknown_param()
+    }
   }
 }
 

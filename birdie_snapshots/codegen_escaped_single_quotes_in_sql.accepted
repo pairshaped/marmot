@@ -1,0 +1,12 @@
+---
+version: 1.5.5
+title: codegen escaped single quotes in sql
+---
+pub fn update_title(db db: sqlight.Connection, id id: Int) -> Result(List(Nil), sqlight.Error) {
+  sqlight.query(
+    "UPDATE notes SET title = 'it''s fine' WHERE id = ?",
+    on: db,
+    with: [sqlight.int(id)],
+    expecting: decode.success(Nil),
+  )
+}

@@ -701,17 +701,27 @@ fn validate_group_shapes(
 ) -> Result(List(Column), error.MarmotError) {
   case queries {
     [] -> Ok([])
-    [first, ..rest] -> {
-      case list.find(rest, fn(q) { !columns_equal(first.columns, q.columns) }) {
-        Error(Nil) -> Ok(first.columns)
-        Ok(mismatched) ->
-          Error(
-            error.SharedTypeMismatch(name: name, conflicts: [
-              #(first.path, first.columns),
-              #(mismatched.path, mismatched.columns),
-            ]),
-          )
-      }
+    [first, ..rest] ->
+      validate_group_shapes_rest(name, first, rest)
+  }
+}
+
+fn validate_group_shapes_rest(
+  name: String,
+  first: Query,
+  rest: List(Query),
+) -> Result(List(Column), error.MarmotError) {
+  let mismatched =
+    list.filter(rest, fn(q) { !columns_equal(first.columns, q.columns) })
+  case mismatched {
+    [] -> Ok(first.columns)
+    _ -> {
+      let conflicts =
+        list.map(mismatched, fn(q) { #(q.path, q.columns) })
+      Error(error.SharedTypeMismatch(name: name, conflicts: [
+        #(first.path, first.columns),
+        ..conflicts,
+      ]))
     }
   }
 }

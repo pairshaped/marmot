@@ -7,6 +7,7 @@ import marmot/internal/sqlite/tokenize.{
 }
 import marmot/internal/sqlite/parse.{
   type SelectItem, OverrideNone, SelectItem, infer_expression_type,
+  parse_values_placeholder_positions,
 }
 
 // ---- Helpers ----
@@ -337,4 +338,13 @@ pub fn infer_expr_column_ref_falls_back_test() {
   let item = item("id", [Word("id")])
   let assert Column(name: "id", column_type: StringType, nullable: True) =
     infer_expression_type(item)
+}
+
+pub fn parse_values_with_default_placeholder_positions_test() {
+  let tokens =
+    tokenize.tokenize(
+      "INSERT INTO items (id, title, category) VALUES (?, DEFAULT, ?)",
+    )
+  let positions = parse_values_placeholder_positions(tokens)
+  let assert [0, 2] = positions
 }
