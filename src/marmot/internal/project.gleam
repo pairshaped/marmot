@@ -12,6 +12,7 @@ pub type Config {
     database: Option(String),
     output: Option(String),
     query_function: Option(String),
+    sql_dir: Option(String),
   )
 }
 
@@ -25,7 +26,7 @@ pub fn parse_config(
   env_database: Option(String),
 ) -> Config {
   // Parse toml values
-  let #(toml_database, toml_output, toml_query_function) = case
+  let #(toml_database, toml_output, toml_query_function, toml_sql_dir) = case
     tom.parse(toml_content)
   {
     Ok(parsed) -> {
@@ -41,9 +42,12 @@ pub fn parse_config(
         tom.get_string(parsed, ["tools", "marmot", "query_function"])
           |> result.map(option.Some)
           |> result.unwrap(option.None),
+        tom.get_string(parsed, ["tools", "marmot", "sql_dir"])
+          |> result.map(option.Some)
+          |> result.unwrap(option.None),
       )
     }
-    Error(_) -> #(option.None, option.None, option.None)
+    Error(_) -> #(option.None, option.None, option.None, option.None)
   }
 
   // Parse CLI args
@@ -64,7 +68,7 @@ pub fn parse_config(
     option.None -> toml_output
   }
 
-  Config(database:, output:, query_function: toml_query_function)
+  Config(database:, output:, query_function: toml_query_function, sql_dir: toml_sql_dir)
 }
 
 type CliArgs {
@@ -97,9 +101,52 @@ fn parse_cli_args_loop(args: List(String), acc: CliArgs) -> CliArgs {
   }
 }
 
-/// Recursively find all directories named "sql" under the given root.
-pub fn find_sql_directories(root: String) -> List(String) {
-  find_sql_directories_recursive(root)
+/// Find SQL directories to process.
+/// When sql_dir is configured, treats each subdirectory as a module
+/// and includes the root directory if it contains .sql files.
+/// Otherwise, recursively finds directories named "sql" under src/.
+pub fn find_sql_directories(root: String, sql_dir: Option(String)) -> List(String) {
+  case sql_dir {
+    option.Some(dir) -> find_sql_dirs_from_root(dir)
+    option.None -> find_sql_directories_recursive(root)
+  }
+}
+
+fn find_sql_dirs_from_root(dir: String) -> List(String) {
+  case simplifile.read_directory(at: dir) {
+    Ok(entries) -> {
+      let subdirs =
+        entries
+        |> list.filter_map(fn(entry) {
+          let path = dir <> "/" <> entry
+          case simplifile.is_directory(path) {
+            Ok(True) -> {
+              let has_sql = case simplifile.read_directory(path) {
+                Ok(files) -> list.any(files, fn(f) { string.ends_with(f, ".sql") })
+                Error(_) -> False
+              }
+              case has_sql {
+                True -> Ok(path)
+                False -> Error(Nil)
+              }
+            }
+            _ -> Error(Nil)
+          }
+        })
+        |> list.sort(string.compare)
+
+      let root_has_sql = case simplifile.read_directory(dir) {
+        Ok(files) -> list.any(files, fn(f) { string.ends_with(f, ".sql") })
+        Error(_) -> False
+      }
+
+      case root_has_sql {
+        True -> [dir, ..subdirs]
+        False -> subdirs
+      }
+    }
+    Error(_) -> []
+  }
 }
 
 fn find_sql_directories_recursive(dir: String) -> List(String) {
@@ -215,7 +262,7 @@ fn resolve_path(path: String) -> String {
   |> string.join("/")
 }
 
-const known_config_keys = ["database", "output", "query_function"]
+const known_config_keys = ["database", "output", "query_function", "sql_dir"]
 
 fn warn_unknown_config_keys(parsed: dict.Dict(String, tom.Toml)) -> Nil {
   case tom.get_table(parsed, ["tools", "marmot"]) {

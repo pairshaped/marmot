@@ -86,7 +86,7 @@ fn generate_all(db: sqlight.Connection, config: project.Config) -> Nil {
       }
     option.None -> Nil
   }
-  let sql_dirs = project.find_sql_directories("src")
+  let sql_dirs = project.find_sql_directories("src", config.sql_dir)
   case sql_dirs {
     [] -> io.println("No sql/ directories found under src/")
     dirs -> {

@@ -133,7 +133,7 @@ pub fn e2e_multiple_sql_directories_test() {
     )
 
   // Scan both directories
-  let dirs = project.find_sql_directories(base <> "/src")
+  let dirs = project.find_sql_directories(base <> "/src", option.None)
   let assert 2 = list.length(dirs)
 
   // Generate modules for each directory

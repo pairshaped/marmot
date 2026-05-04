@@ -23,6 +23,7 @@ pub fn parse_config_empty_toml_test() {
     database: option.None,
     output: option.None,
     query_function: option.None,
+    sql_dir: option.None,
   ) = config
 }
 
@@ -37,6 +38,7 @@ output = \"src/app/generated\"
     database: option.Some("dev.sqlite"),
     output: option.Some("src/app/generated"),
     query_function: option.None,
+    sql_dir: option.None,
   ) = config
 }
 
@@ -51,6 +53,7 @@ query_function = \"server/db.query\"
     database: option.Some("dev.sqlite"),
     output: option.None,
     query_function: option.Some("server/db.query"),
+    sql_dir: option.None,
   ) = config
 }
 
@@ -79,6 +82,7 @@ output = \"src/app/generated\"
     database: option.Some("test.sqlite"),
     output: option.Some("src/other/"),
     query_function: option.None,
+    sql_dir: option.None,
   ) = config
 }
 
@@ -106,11 +110,63 @@ pub fn find_sql_directories_test() {
   let assert Ok(_) =
     simplifile.write("test_tmp/src/other/sql/list_items.sql", "SELECT 1")
 
-  let dirs = project.find_sql_directories("test_tmp/src")
+  let dirs = project.find_sql_directories("test_tmp/src", option.None)
   let assert True = list.contains(dirs, "test_tmp/src/app/sql")
   let assert True = list.contains(dirs, "test_tmp/src/other/sql")
   let assert 2 = list.length(dirs)
   Nil
+}
+
+pub fn find_sql_directories_with_sql_dir_test() {
+  use <- with_temp_dir("test_tmp_sqldir")
+
+  let assert Ok(_) = simplifile.create_directory_all("test_tmp_sqldir/src/sql/likes")
+  let assert Ok(_) = simplifile.write("test_tmp_sqldir/src/sql/likes/get_likes.sql", "SELECT 1")
+  let assert Ok(_) = simplifile.create_directory_all("test_tmp_sqldir/src/sql/articles")
+  let assert Ok(_) = simplifile.write("test_tmp_sqldir/src/sql/articles/get_articles.sql", "SELECT 1")
+
+  let dirs = project.find_sql_directories("test_tmp_sqldir/src", option.Some("test_tmp_sqldir/src/sql"))
+  let assert True = list.contains(dirs, "test_tmp_sqldir/src/sql/likes")
+  let assert True = list.contains(dirs, "test_tmp_sqldir/src/sql/articles")
+  let assert 2 = list.length(dirs)
+  Nil
+}
+
+pub fn find_sql_directories_with_sql_dir_root_files_test() {
+  use <- with_temp_dir("test_tmp_sqldir2")
+
+  let assert Ok(_) = simplifile.create_directory_all("test_tmp_sqldir2/src/sql/likes")
+  let assert Ok(_) = simplifile.write("test_tmp_sqldir2/src/sql/likes/get_likes.sql", "SELECT 1")
+  let assert Ok(_) = simplifile.write("test_tmp_sqldir2/src/sql/get_settings.sql", "SELECT 1")
+
+  let dirs = project.find_sql_directories("test_tmp_sqldir2/src", option.Some("test_tmp_sqldir2/src/sql"))
+  let assert True = list.contains(dirs, "test_tmp_sqldir2/src/sql")
+  let assert True = list.contains(dirs, "test_tmp_sqldir2/src/sql/likes")
+  let assert 2 = list.length(dirs)
+  Nil
+}
+
+pub fn find_sql_directories_with_sql_dir_empty_subdir_test() {
+  use <- with_temp_dir("test_tmp_sqldir3")
+
+  let assert Ok(_) = simplifile.create_directory_all("test_tmp_sqldir3/src/sql/empty")
+  let assert Ok(_) = simplifile.create_directory_all("test_tmp_sqldir3/src/sql/likes")
+  let assert Ok(_) = simplifile.write("test_tmp_sqldir3/src/sql/likes/get_likes.sql", "SELECT 1")
+
+  let dirs = project.find_sql_directories("test_tmp_sqldir3/src", option.Some("test_tmp_sqldir3/src/sql"))
+  let assert True = list.contains(dirs, "test_tmp_sqldir3/src/sql/likes")
+  let assert 1 = list.length(dirs)
+  Nil
+}
+
+pub fn parse_config_sql_dir_from_toml_test() {
+  let toml =
+    "[tools.marmot]
+database = \"dev.sqlite\"
+sql_dir = \"src/sql\"
+"
+  let config = project.parse_config(toml, [], option.None)
+  let assert Config(sql_dir: option.Some("src/sql"), ..) = config
 }
 
 pub fn list_sql_files_test() {
@@ -136,6 +192,7 @@ pub fn parse_config_flag_without_value_test() {
     database: option.None,
     output: option.Some("src/gen"),
     query_function: option.None,
+    sql_dir: option.None,
   ) = config
 }
 
@@ -145,6 +202,7 @@ pub fn parse_config_flag_as_last_arg_test() {
     database: option.None,
     output: option.None,
     query_function: option.None,
+    sql_dir: option.None,
   ) = config
 }
 
@@ -212,6 +270,7 @@ pub fn validate_output_under_src_test() {
       database: option.None,
       output: option.Some("src/generated"),
       query_function: option.None,
+      sql_dir: option.None,
     )
   let assert Ok(Nil) = project.validate_output(config)
 }
@@ -222,6 +281,7 @@ pub fn validate_output_not_under_src_test() {
       database: option.None,
       output: option.Some("gen/output"),
       query_function: option.None,
+      sql_dir: option.None,
     )
   let assert Error(Nil) = project.validate_output(config)
 }
@@ -232,6 +292,7 @@ pub fn validate_output_none_test() {
       database: option.None,
       output: option.None,
       query_function: option.None,
+      sql_dir: option.None,
     )
   let assert Ok(Nil) = project.validate_output(config)
 }
@@ -242,6 +303,7 @@ pub fn validate_output_path_traversal_test() {
       database: option.None,
       output: option.Some("src/../../etc/evil"),
       query_function: option.None,
+      sql_dir: option.None,
     )
   let assert Error(Nil) = project.validate_output(config)
 }
@@ -252,6 +314,7 @@ pub fn validate_output_dot_segments_test() {
       database: option.None,
       output: option.Some("src/./generated"),
       query_function: option.None,
+      sql_dir: option.None,
     )
   let assert Ok(Nil) = project.validate_output(config)
 }
@@ -262,6 +325,7 @@ pub fn validate_output_double_traversal_test() {
       database: option.None,
       output: option.Some("src/a/../../../outside"),
       query_function: option.None,
+      sql_dir: option.None,
     )
   let assert Error(Nil) = project.validate_output(config)
 }
