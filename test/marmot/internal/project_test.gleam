@@ -264,6 +264,41 @@ pub fn output_path_single_sql_dir_test() {
     project.output_path("src/sql", option.Some("src/generated"))
 }
 
+pub fn output_path_sql_dir_with_subdirs_test() {
+  // sql_dir = "src/sql", subdir is "likes" -> strips "sql" from path
+  // src/sql/likes relative to src/generated/sql: common prefix is "src/"
+  // relative is "sql/likes", strip "sql" segments -> "likes"
+  let assert "src/generated/sql/likes_sql.gleam" =
+    project.output_path("src/sql/likes", option.Some("src/generated/sql"))
+}
+
+pub fn output_path_sql_segment_stripping_test() {
+  // likes/sql/queries path should strip the "sql" segment
+  let assert "src/generated/sql/likes/queries_sql.gleam" =
+    project.output_path("src/likes/sql/queries/sql", option.Some("src/generated/sql"))
+}
+
+pub fn output_path_sql_dir_root_test() {
+  // Files directly in sql_dir root: "sql" segment gets stripped
+  let assert "src/generated_sql.gleam" =
+    project.output_path("src/sql", option.Some("src/generated"))
+}
+
+pub fn find_sql_directories_with_sql_dir_nested_test() {
+  use <- with_temp_dir("test_tmp_sqldir4")
+
+  let assert Ok(_) = simplifile.create_directory_all("test_tmp_sqldir4/src/sql/likes/sql")
+  let assert Ok(_) = simplifile.write("test_tmp_sqldir4/src/sql/likes/sql/get_likes.sql", "SELECT 1")
+  let assert Ok(_) = simplifile.create_directory_all("test_tmp_sqldir4/src/sql/articles")
+  let assert Ok(_) = simplifile.write("test_tmp_sqldir4/src/sql/articles/get_articles.sql", "SELECT 1")
+
+  let dirs = project.find_sql_directories("test_tmp_sqldir4/src", option.Some("test_tmp_sqldir4/src/sql"))
+  let assert True = list.contains(dirs, "test_tmp_sqldir4/src/sql/likes/sql")
+  let assert True = list.contains(dirs, "test_tmp_sqldir4/src/sql/articles")
+  let assert 2 = list.length(dirs)
+  Nil
+}
+
 pub fn validate_output_under_src_test() {
   let config =
     Config(

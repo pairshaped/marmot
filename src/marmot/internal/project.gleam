@@ -102,47 +102,33 @@ fn parse_cli_args_loop(args: List(String), acc: CliArgs) -> CliArgs {
 }
 
 /// Find SQL directories to process.
-/// When sql_dir is configured, treats each subdirectory as a module
-/// and includes the root directory if it contains .sql files.
+/// When sql_dir is configured, recursively finds all directories containing
+/// .sql files under sql_dir.
 /// Otherwise, recursively finds directories named "sql" under src/.
 pub fn find_sql_directories(root: String, sql_dir: Option(String)) -> List(String) {
   case sql_dir {
-    option.Some(dir) -> find_sql_dirs_from_root(dir)
+    option.Some(dir) -> find_dirs_with_sql_files(dir)
     option.None -> find_sql_directories_recursive(root)
   }
 }
 
-fn find_sql_dirs_from_root(dir: String) -> List(String) {
+fn find_dirs_with_sql_files(dir: String) -> List(String) {
   case simplifile.read_directory(at: dir) {
     Ok(entries) -> {
-      let subdirs =
+      let has_sql_here = list.any(entries, fn(f) { string.ends_with(f, ".sql") })
+      let child_dirs =
         entries
-        |> list.filter_map(fn(entry) {
+        |> list.flat_map(fn(entry) {
           let path = dir <> "/" <> entry
           case simplifile.is_directory(path) {
-            Ok(True) -> {
-              let has_sql = case simplifile.read_directory(path) {
-                Ok(files) -> list.any(files, fn(f) { string.ends_with(f, ".sql") })
-                Error(_) -> False
-              }
-              case has_sql {
-                True -> Ok(path)
-                False -> Error(Nil)
-              }
-            }
-            _ -> Error(Nil)
+            Ok(True) -> find_dirs_with_sql_files(path)
+            _ -> []
           }
         })
-        |> list.sort(string.compare)
 
-      let root_has_sql = case simplifile.read_directory(dir) {
-        Ok(files) -> list.any(files, fn(f) { string.ends_with(f, ".sql") })
-        Error(_) -> False
-      }
-
-      case root_has_sql {
-        True -> [dir, ..subdirs]
-        False -> subdirs
+      case has_sql_here {
+        True -> list.sort([dir, ..child_dirs], string.compare)
+        False -> list.sort(child_dirs, string.compare)
       }
     }
     Error(_) -> []
@@ -205,10 +191,7 @@ pub fn output_path(sql_dir: String, configured_output: Option(String)) -> String
   let sql_parts = string.split(sql_dir, "/")
   let common_len = common_prefix_length(output_parts, sql_parts, 0)
   let relative = list.drop(sql_parts, common_len)
-  let entity_parts = case list.last(relative) {
-    Ok("sql") -> list.take(relative, list.length(relative) - 1)
-    _ -> relative
-  }
+  let entity_parts = list.filter(relative, fn(seg) { seg != "sql" })
   let entity_path = string.join(entity_parts, "/")
   case entity_path {
     "" -> trimmed <> "_sql.gleam"
