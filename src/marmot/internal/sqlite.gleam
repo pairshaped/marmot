@@ -1,6 +1,7 @@
 import gleam/dict.{type Dict}
 import gleam/dynamic/decode
 import gleam/int
+import gleam/io
 import gleam/list
 import gleam/option
 import gleam/result
@@ -830,13 +831,22 @@ fn get_table_metadata(
   }
 
   let tables =
-    sqlight.query(
-      "SELECT name, rootpage FROM sqlite_master WHERE type='table'",
-      on: db,
-      with: [],
-      expecting: master_decoder,
-    )
-    |> result.unwrap([])
+    case
+      sqlight.query(
+        "SELECT name, rootpage FROM sqlite_master WHERE type='table'",
+        on: db,
+        with: [],
+        expecting: master_decoder,
+      )
+    {
+      Ok(rows) -> rows
+      Error(err) -> {
+        io.println_error(
+          "warning: Could not read table metadata: " <> err.message,
+        )
+        []
+      }
+    }
 
   let index_parent_decoder = {
     use rootpage <- decode.field(0, decode.int)
@@ -844,13 +854,17 @@ fn get_table_metadata(
     decode.success(#(rootpage, tbl_name))
   }
   let indexes =
-    sqlight.query(
-      "SELECT rootpage, tbl_name FROM sqlite_master WHERE type='index'",
-      on: db,
-      with: [],
-      expecting: index_parent_decoder,
-    )
-    |> result.unwrap([])
+    case
+      sqlight.query(
+        "SELECT rootpage, tbl_name FROM sqlite_master WHERE type='index'",
+        on: db,
+        with: [],
+        expecting: index_parent_decoder,
+      )
+    {
+      Ok(rows) -> rows
+      Error(_) -> []
+    }
 
   let pragma_decoder = {
     use col_name <- decode.field(1, decode.string)
@@ -895,7 +909,15 @@ fn get_table_metadata(
         }
         #(schemas, pks, rootpages)
       }
-      Error(_) -> #(schemas, pks, rootpages)
+      Error(err) -> {
+        io.println_error(
+          "warning: Could not read schema for table "
+          <> table_name
+          <> ": "
+          <> err.message,
+        )
+        #(schemas, pks, rootpages)
+      }
     }
   })
   |> add_index_rootpages(indexes)

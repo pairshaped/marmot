@@ -130,7 +130,10 @@ fn generate_for_directory(
   config: project.Config,
 ) -> Bool {
   let sql_files = project.list_sql_files(sql_dir)
-  warn_subdirectories(sql_dir)
+  case config.sql_dir {
+    option.None -> warn_subdirectories(sql_dir)
+    option.Some(_) -> Nil
+  }
   let queries =
     list.filter_map(sql_files, fn(file_path) { process_sql_file(db, file_path) })
 
@@ -295,12 +298,24 @@ pub fn validate_sql(trimmed: String, file_path: String) -> Result(String, Nil) {
       Error(Nil)
     }
     sql -> {
+      // Strip comments so trailing semicolons followed by comments are
+      // recognised (e.g., "SELECT 1; -- comment").
       let stripped = case string.ends_with(sql, ";") {
         True ->
           sql
           |> string.drop_end(1)
           |> string.trim
-        False -> sql
+        False -> {
+          let without_comments = query.strip_comments(sql)
+          case string.ends_with(string.trim(without_comments), ";") {
+            True ->
+              without_comments
+              |> string.trim
+              |> string.drop_end(1)
+              |> string.trim
+            False -> sql
+          }
+        }
       }
       case contains_semicolon_outside_strings(stripped) {
         True -> {
@@ -386,6 +401,12 @@ fn format_gleam(code: String) -> String {
           )
           code
         }
+        -2 -> {
+          io.println_error(
+            "warning: gleam format timed out, using unformatted output",
+          )
+          code
+        }
         _ -> {
           io.println_error(
             "warning: gleam format failed (exit code "
@@ -428,8 +449,8 @@ fn halt(code: Int) -> Nil {
   // init:stop/1 performs a graceful shutdown that flushes I/O buffers,
   // unlike erlang:halt/1 which exits immediately and may lose stderr output
   init_stop(code)
-  // init:stop is async; wait for graceful shutdown, then force exit
-  timer_sleep(5000)
+  // init:stop is async; brief wait for graceful shutdown, then force exit
+  timer_sleep(100)
   erlang_halt(code)
 }
 

@@ -1,20 +1,27 @@
 -module(marmot_ffi).
 -export([run_executable/2, find_executable/1, get_env/1, make_tmp_file/2]).
 
+-define(EXEC_TIMEOUT_MS, 10000).
+
 %% Run an executable with args using open_port (no shell interpretation).
-%% Waits for the port to close and returns the exit status as an integer.
+%% Waits for the port to close and returns the exit status as an integer,
+%% or -1 on timeout (10 seconds).
 run_executable(Path, Args) ->
     Port = erlang:open_port(
         {spawn_executable, unicode:characters_to_list(Path)},
         [{args, [unicode:characters_to_list(A) || A <- Args]},
          exit_status, stderr_to_stdout]
     ),
-    wait_for_port(Port).
+    Timer = erlang:send_after(?EXEC_TIMEOUT_MS, self(), {port_timeout, Port}),
+    Status = wait_for_port(Port),
+    _ = erlang:cancel_timer(Timer),
+    Status.
 
 wait_for_port(Port) ->
     receive
         {Port, {exit_status, Status}} -> Status;
-        {Port, {data, _}} -> wait_for_port(Port)
+        {Port, {data, _}} -> wait_for_port(Port);
+        {port_timeout, Port} -> -2
     end.
 
 %% Look up a single environment variable by name. Converts the binary name

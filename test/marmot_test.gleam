@@ -157,6 +157,16 @@ pub fn validate_sql_semicolon_in_comment_test() {
     marmot.validate_sql("SELECT 1 -- comment; still a comment", "test.sql")
 }
 
+pub fn validate_sql_trailing_semicolon_with_line_comment_test() {
+  let assert Ok("SELECT 1") =
+    marmot.validate_sql("SELECT 1; -- comment", "test.sql")
+}
+
+pub fn validate_sql_trailing_semicolon_with_block_comment_test() {
+  let assert Ok("SELECT 1") =
+    marmot.validate_sql("SELECT 1; /* comment */", "test.sql")
+}
+
 pub fn contains_semicolon_outside_strings_none_test() {
   let assert False = marmot.contains_semicolon_outside_strings("SELECT 1")
 }

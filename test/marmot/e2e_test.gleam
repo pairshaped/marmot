@@ -1,3 +1,4 @@
+import birdie
 import gleam/list
 import gleam/option
 import gleam/result
@@ -89,6 +90,8 @@ pub fn e2e_generate_module_test() {
 
   // Generate module
   let assert Ok(output) = codegen.generate_module(queries)
+  output
+  |> birdie.snap(title: "e2e generate module two queries")
   let assert True = string.contains(output, "pub fn delete_user")
   let assert True = string.contains(output, "pub fn find_user")
   let assert True = string.contains(output, "FindUserRow")
@@ -176,6 +179,10 @@ pub fn e2e_multiple_sql_directories_test() {
 
   // Should have 2 separate modules
   let assert 2 = list.length(modules)
+  modules
+  |> list.map(fn(m) { m.1 })
+  |> string.join("\n---\n")
+  |> birdie.snap(title: "e2e multiple sql directories combined")
   let assert True =
     list.any(modules, fn(m) { string.contains(m.1, "find_user") })
   let assert True =

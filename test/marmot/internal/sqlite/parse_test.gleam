@@ -1,5 +1,6 @@
 import gleam/list
 import gleam/option
+import gleam/string
 import marmot/internal/query.{BitArrayType, Column, FloatType, IntType, StringType}
 import marmot/internal/sqlite/tokenize.{
   type Token, CloseParen, Comma, Gt, Minus, Number, OpenParen, Star,
@@ -7,7 +8,7 @@ import marmot/internal/sqlite/tokenize.{
 }
 import marmot/internal/sqlite/parse.{
   type SelectItem, OverrideNone, SelectItem, infer_expression_type,
-  parse_values_placeholder_positions,
+  normalize_sql_whitespace, parse_values_placeholder_positions,
 }
 
 // ---- Helpers ----
@@ -347,4 +348,34 @@ pub fn parse_values_with_default_placeholder_positions_test() {
     )
   let positions = parse_values_placeholder_positions(tokens)
   let assert [0, 2] = positions
+}
+
+// ---- normalize_sql_whitespace ----
+
+pub fn normalize_whitespace_preserves_newlines_in_strings_test() {
+  let sql = "SELECT 'hello\nworld'"
+  let result = normalize_sql_whitespace(sql)
+  let assert True = string.contains(result, "hello\nworld")
+}
+
+pub fn normalize_whitespace_preserves_tabs_in_strings_test() {
+  let sql = "SELECT 'hello\tworld'"
+  let result = normalize_sql_whitespace(sql)
+  let assert True = string.contains(result, "hello\tworld")
+}
+
+pub fn normalize_whitespace_collapses_newlines_outside_strings_test() {
+  let sql = "SELECT\n  id,\n  name\nFROM users"
+  let result = normalize_sql_whitespace(sql)
+  let assert False = string.contains(result, "\n")
+}
+
+pub fn normalize_whitespace_mixed_string_and_newlines_test() {
+  let sql = "SELECT 'keep\nthis', id\nFROM users"
+  let result = normalize_sql_whitespace(sql)
+  let assert True = string.contains(result, "keep\nthis")
+  let assert False =
+    result
+    |> string.replace("keep\nthis", "")
+    |> string.contains("\n")
 }

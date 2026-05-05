@@ -833,3 +833,39 @@ pub fn codegen_escaped_single_quotes_in_sql_test() {
   codegen.generate_function(q)
   |> birdie.snap(title: "codegen escaped single quotes in sql")
 }
+
+// ---- escape_sql unit tests ----
+
+pub fn escape_sql_no_special_chars_test() {
+  let assert "SELECT 1" = codegen.escape_sql("SELECT 1")
+}
+
+pub fn escape_sql_escapes_backslashes_test() {
+  let assert "SELECT 'a\\\\b'" = codegen.escape_sql("SELECT 'a\\b'")
+}
+
+pub fn escape_sql_escapes_double_quotes_test() {
+  let assert "SELECT \\\"col\\\"" = codegen.escape_sql("SELECT \"col\"")
+}
+
+pub fn escape_sql_preserves_newlines_in_strings_test() {
+  let result = codegen.escape_sql("SELECT 'hello\nworld'")
+  let assert True = string.contains(result, "\\n")
+}
+
+pub fn escape_sql_collapses_newlines_outside_strings_test() {
+  let result = codegen.escape_sql("SELECT\n  id\nFROM t")
+  let assert False = string.contains(result, "\n")
+  let assert False = string.contains(result, "\\n")
+}
+
+pub fn escape_sql_strips_comments_test() {
+  let result = codegen.escape_sql("SELECT 1 -- comment")
+  let assert False = string.contains(result, "comment")
+  let assert True = string.contains(result, "SELECT 1")
+}
+
+pub fn escape_sql_preserves_tabs_in_strings_test() {
+  let result = codegen.escape_sql("SELECT 'hello\tworld'")
+  let assert True = string.contains(result, "\\t")
+}

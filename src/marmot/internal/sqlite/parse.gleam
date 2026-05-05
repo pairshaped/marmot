@@ -46,16 +46,12 @@ pub type Binder {
 
 // ---- String operations (pre-tokenization) ----
 
-/// Normalize SQL whitespace: strip line comments, convert newlines/tabs to
-/// spaces, collapse runs, and trim.
+/// Normalize SQL whitespace: strip comments, replace newlines/tabs with spaces
+/// (preserving string literals), collapse runs, and trim.
 pub fn normalize_sql_whitespace(sql: String) -> String {
   sql
   |> query.strip_comments
-  |> string.replace("\r\n", " ")
-  |> string.replace("\r", " ")
-  |> string.replace("\n", " ")
-  |> string.replace("\t", " ")
-  |> query.collapse_spaces
+  |> query.normalize_whitespace
   |> string.trim
 }
 

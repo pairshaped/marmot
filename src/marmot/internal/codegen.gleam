@@ -583,19 +583,23 @@ fn column_decoder(col: Column) -> String {
   }
 }
 
-fn escape_sql(sql: String) -> String {
+/// Escape SQL text for embedding in a Gleam string literal.
+/// Preserves content inside single-quoted SQL string literals (newlines, tabs)
+/// by converting them to Gleam escape sequences. Outside string literals,
+/// whitespace is collapsed to a single space so multi-line SQL is readable
+/// in the generated code.
+pub fn escape_sql(sql: String) -> String {
   sql
-  // Strip comments BEFORE collapsing newlines, otherwise a leading
-  // `-- comment\nSELECT ...` becomes `-- comment SELECT ...` which comments
-  // out the actual SQL at runtime.
   |> query.strip_comments
   |> string.replace("\\", "\\\\")
   |> string.replace("\"", "\\\"")
-  |> string.replace("\r\n", " ")
-  |> string.replace("\r", " ")
-  |> string.replace("\n", " ")
-  |> string.replace("\t", " ")
-  |> query.collapse_spaces
+  |> query.normalize_whitespace
+  // Escape newlines/tabs remaining inside string literals for valid Gleam
+  // string embedding. After normalize_whitespace, these only appear inside
+  // single-quoted SQL strings.
+  |> string.replace("\n", "\\n")
+  |> string.replace("\r", "\\r")
+  |> string.replace("\t", "\\t")
 }
 
 fn timestamp_helpers() -> String {
@@ -635,17 +639,9 @@ fn date_decoder() -> decode.Decoder(Date) {
 }
 
 /// Check whether two column lists match exactly: names, types, nullability,
-/// and order.
+/// and order. Delegates to Gleam's structural equality on the list.
 pub fn columns_equal(a: List(Column), b: List(Column)) -> Bool {
-  case a, b {
-    [], [] -> True
-    [col_a, ..rest_a], [col_b, ..rest_b] ->
-      col_a.name == col_b.name
-      && col_a.column_type == col_b.column_type
-      && col_a.nullable == col_b.nullable
-      && columns_equal(rest_a, rest_b)
-    _, _ -> False
-  }
+  a == b
 }
 
 pub type SharedGroup {

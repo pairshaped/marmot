@@ -344,3 +344,32 @@ pub fn collapse_spaces(s: String) -> String {
   |> list.filter(fn(part) { part != "" })
   |> string.join(" ")
 }
+
+/// Replace newlines, carriage returns, and tabs with spaces, but preserve
+/// whitespace inside single-quoted string literals. Runs of resulting spaces
+/// are then collapsed via `collapse_spaces`.
+pub fn normalize_whitespace(sql: String) -> String {
+  do_normalize_ws(string.to_graphemes(sql), [], False)
+  |> list.reverse
+  |> string.join("")
+  |> collapse_spaces
+}
+
+fn do_normalize_ws(
+  chars: List(String),
+  acc: List(String),
+  in_string: Bool,
+) -> List(String) {
+  case chars {
+    [] -> acc
+    ["'", ..rest] -> do_normalize_ws(rest, ["'", ..acc], !in_string)
+    [c, ..rest] -> {
+      let is_special = c == "\n" || c == "\r" || c == "\t"
+      case is_special, in_string {
+        True, True -> do_normalize_ws(rest, [c, ..acc], in_string)
+        True, False -> do_normalize_ws(rest, [" ", ..acc], in_string)
+        False, _ -> do_normalize_ws(rest, [c, ..acc], in_string)
+      }
+    }
+  }
+}
