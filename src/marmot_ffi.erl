@@ -1,5 +1,5 @@
 -module(marmot_ffi).
--export([run_executable/2, find_executable/1, get_env/1, make_tmp_file/2]).
+-export([run_executable/2, run_executable_in/3, run_executable_in_timeout/4, find_executable/1, get_env/1, make_tmp_file/2]).
 
 -define(EXEC_TIMEOUT_MS, 10000).
 
@@ -45,6 +45,24 @@ make_tmp_file(Dir, Content) ->
         ok -> {ok, Path};
         {error, Reason} -> {error, erlang:atom_to_binary(Reason, utf8)}
     end.
+
+%% Run an executable with args and working directory.
+%% Same semantics as run_executable/2 but sets CWD before spawning.
+run_executable_in(Path, Args, Cwd) ->
+    run_executable_in_timeout(Path, Args, Cwd, ?EXEC_TIMEOUT_MS).
+
+%% Run an executable with args, working directory, and custom timeout in ms.
+run_executable_in_timeout(Path, Args, Cwd, TimeoutMs) ->
+    Port = erlang:open_port(
+        {spawn_executable, unicode:characters_to_list(Path)},
+        [{args, [unicode:characters_to_list(A) || A <- Args]},
+         {cd, unicode:characters_to_list(Cwd)},
+         exit_status, stderr_to_stdout]
+    ),
+    Timer = erlang:send_after(TimeoutMs, self(), {port_timeout, Port}),
+    Status = wait_for_port(Port),
+    _ = erlang:cancel_timer(Timer),
+    Status.
 
 %% Find an executable on PATH. Returns {some, Path} or none.
 find_executable(Name) ->

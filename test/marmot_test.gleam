@@ -8,6 +8,7 @@ import marmot
 import marmot/internal/codegen
 import marmot/internal/query
 import marmot/internal/sqlite
+import simplifile
 import sqlight
 
 pub fn main() -> Nil {
@@ -239,4 +240,50 @@ pub fn check_duplicate_columns_single_test() {
     query.Column(name: "id", column_type: query.IntType, nullable: False),
   ]
   let assert Ok(Nil) = marmot.check_duplicate_columns(cols, "test.sql")
+}
+
+// ---- FFI failure paths ----
+
+pub fn run_executable_not_found_test() {
+  let assert -1 = marmot.run_executable("zzz_nonexistent_binary_xyz", [])
+}
+
+pub fn run_executable_success_test() {
+  // gleam --version should always work in the dev environment
+  let assert 0 = marmot.run_executable("gleam", ["--version"])
+}
+
+pub fn make_tmp_file_success_test() {
+  let result = marmot.make_tmp_file("/tmp", "test content")
+  case result {
+    Ok(path) -> {
+      let assert Ok(True) = simplifile.is_file(path)
+      let _ = simplifile.delete(path)
+    }
+    Error(_) -> panic as "expected Ok, got Error"
+  }
+}
+
+pub fn make_tmp_file_error_test() {
+  let result = marmot.make_tmp_file("/nonexistent_dir_xyz_test", "test")
+  case result {
+    Ok(_) -> panic as "expected Error, got Ok"
+    Error(_) -> Nil
+  }
+}
+
+pub fn format_gleam_happy_path_test() {
+  let input = "pub fn main() {\n  1 + 1\n}\n"
+  let output = marmot.format_gleam(input)
+  // Output should be valid Gleam: gleam format on it should not change it
+  let result = marmot.make_tmp_file("/tmp", output)
+  case result {
+    Ok(path) -> {
+      let exit_code =
+        marmot.run_executable("gleam", ["format", "--check", path])
+      let _ = simplifile.delete(path)
+      let assert 0 = exit_code
+    }
+    Error(_) -> panic as "could not create temp file"
+  }
 }

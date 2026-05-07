@@ -290,6 +290,14 @@ pub fn output_path_single_sql_dir_test() {
     project.output_path("src/sql", option.Some("src/generated"))
 }
 
+pub fn output_path_default_root_sql_test() {
+  // When sql_dir is "src/sql" (root-level) with default output, both share
+  // "src/" prefix, relative is "sql", all segments filtered leaving empty
+  // entity path -> file placed inside the output directory as sql.gleam.
+  let assert "src/generated/sql/sql.gleam" =
+    project.output_path("src/sql", option.None)
+}
+
 pub fn output_path_sql_dir_with_subdirs_test() {
   // sql_dir = "src/sql", subdir is "likes" -> strips "sql" from path
   // src/sql/likes relative to src/generated/sql: common prefix is "src/"

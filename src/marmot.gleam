@@ -402,7 +402,8 @@ pub fn contains_semicolon_outside_strings(sql: String) -> Bool {
 
 /// Run `gleam format` on generated code. Falls back to the original string
 /// if formatting fails (e.g., gleam not on PATH) and prints a warning.
-fn format_gleam(code: String) -> String {
+@internal
+pub fn format_gleam(code: String) -> String {
   let tmp_dir = get_tmp_dir()
   case make_tmp_file(tmp_dir, code) {
     Error(_) -> {
@@ -459,7 +460,8 @@ fn get_tmp_dir() -> String {
 /// Run an executable with arguments, bypassing the shell.
 /// Uses erlang:open_port with spawn_executable to avoid shell injection.
 /// Returns the exit status code, or -1 if the executable was not found.
-fn run_executable(executable: String, args: List(String)) -> Int {
+@internal
+pub fn run_executable(executable: String, args: List(String)) -> Int {
   case find_executable(executable) {
     option.None -> -1
     option.Some(path) -> run_executable_ffi(path, args)
@@ -468,6 +470,46 @@ fn run_executable(executable: String, args: List(String)) -> Int {
 
 @external(erlang, "marmot_ffi", "run_executable")
 fn run_executable_ffi(path: String, args: List(String)) -> Int
+
+/// Run an executable with arguments in a specific working directory.
+/// Same semantics as run_executable but sets CWD before spawning.
+@internal
+pub fn run_executable_in(
+  executable: String,
+  args: List(String),
+  cwd: String,
+) -> Int {
+  case find_executable(executable) {
+    option.None -> -1
+    option.Some(path) -> run_executable_in_ffi(path, args, cwd)
+  }
+}
+
+@external(erlang, "marmot_ffi", "run_executable_in")
+fn run_executable_in_ffi(path: String, args: List(String), cwd: String) -> Int
+
+/// Run an executable with a custom timeout (in milliseconds).
+@internal
+pub fn run_executable_in_timeout(
+  executable: String,
+  args: List(String),
+  cwd: String,
+  timeout_ms: Int,
+) -> Int {
+  case find_executable(executable) {
+    option.None -> -1
+    option.Some(path) ->
+      run_executable_in_timeout_ffi(path, args, cwd, timeout_ms)
+  }
+}
+
+@external(erlang, "marmot_ffi", "run_executable_in_timeout")
+fn run_executable_in_timeout_ffi(
+  path: String,
+  args: List(String),
+  cwd: String,
+  timeout_ms: Int,
+) -> Int
 
 @external(erlang, "marmot_ffi", "find_executable")
 fn find_executable(name: String) -> Option(String)
@@ -490,13 +532,15 @@ fn erlang_halt(code: Int) -> Nil
 @external(erlang, "timer", "sleep")
 fn timer_sleep(ms: Int) -> Nil
 
-type MakeTmpFileError {
+@internal
+pub type MakeTmpFileError {
   MakeTmpFileError(String)
 }
 
 /// Create a temp file with a cryptographically random name and write content
 /// atomically using exclusive mode (prevents symlink races).
-fn make_tmp_file(
+@internal
+pub fn make_tmp_file(
   dir: String,
   content: String,
 ) -> Result(String, MakeTmpFileError) {

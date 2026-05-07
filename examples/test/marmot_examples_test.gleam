@@ -24,32 +24,92 @@ fn exec(db: sqlight.Connection, sql: String) {
 }
 
 fn setup(db: sqlight.Connection) {
-  exec(db, "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL, created_at INTEGER NOT NULL, active INTEGER NOT NULL DEFAULT 1)")
-  exec(db, "CREATE TABLE posts (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, title TEXT NOT NULL, body TEXT, published_at INTEGER)")
-  exec(db, "CREATE TABLE comments (id INTEGER PRIMARY KEY, post_id INTEGER NOT NULL, user_id INTEGER NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL)")
+  exec(
+    db,
+    "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL, created_at INTEGER NOT NULL, active INTEGER NOT NULL DEFAULT 1)",
+  )
+  exec(
+    db,
+    "CREATE TABLE posts (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, title TEXT NOT NULL, body TEXT, published_at INTEGER)",
+  )
+  exec(
+    db,
+    "CREATE TABLE comments (id INTEGER PRIMARY KEY, post_id INTEGER NOT NULL, user_id INTEGER NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL)",
+  )
   exec(db, "CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
-  exec(db, "CREATE TABLE post_tags (post_id INTEGER NOT NULL, tag_id INTEGER NOT NULL, PRIMARY KEY (post_id, tag_id))")
-  exec(db, "CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, price REAL NOT NULL, created_at INTEGER NOT NULL)")
-  exec(db, "CREATE TABLE archived_posts (id INTEGER PRIMARY KEY, title TEXT NOT NULL, user_id INTEGER NOT NULL)")
+  exec(
+    db,
+    "CREATE TABLE post_tags (post_id INTEGER NOT NULL, tag_id INTEGER NOT NULL, PRIMARY KEY (post_id, tag_id))",
+  )
+  exec(
+    db,
+    "CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, price REAL NOT NULL, created_at INTEGER NOT NULL)",
+  )
+  exec(
+    db,
+    "CREATE TABLE archived_posts (id INTEGER PRIMARY KEY, title TEXT NOT NULL, user_id INTEGER NOT NULL)",
+  )
 
-  exec(db, "INSERT INTO users VALUES (1, 'Alice', 'alice@example.com', 1714400000, 1)")
-  exec(db, "INSERT INTO users VALUES (2, 'Bob', 'bob@example.com', 1714486400, 1)")
-  exec(db, "INSERT INTO users VALUES (3, 'Charlie', 'charlie@example.com', 1714572800, 0)")
-  exec(db, "INSERT INTO users VALUES (4, 'Diana', 'diana@example.com', 1714659200, 1)")
-  exec(db, "INSERT INTO users VALUES (5, 'Eve', 'eve@example.com', 1714745600, 0)")
+  exec(
+    db,
+    "INSERT INTO users VALUES (1, 'Alice', 'alice@example.com', 1714400000, 1)",
+  )
+  exec(
+    db,
+    "INSERT INTO users VALUES (2, 'Bob', 'bob@example.com', 1714486400, 1)",
+  )
+  exec(
+    db,
+    "INSERT INTO users VALUES (3, 'Charlie', 'charlie@example.com', 1714572800, 0)",
+  )
+  exec(
+    db,
+    "INSERT INTO users VALUES (4, 'Diana', 'diana@example.com', 1714659200, 1)",
+  )
+  exec(
+    db,
+    "INSERT INTO users VALUES (5, 'Eve', 'eve@example.com', 1714745600, 0)",
+  )
 
-  exec(db, "INSERT INTO posts VALUES (1, 1, 'Getting Started with Gleam', 'Gleam is a type-safe language...', 1714500000)")
-  exec(db, "INSERT INTO posts VALUES (2, 1, 'Why SQLite is Underrated', 'SQLite is fast and reliable...', 1714600000)")
-  exec(db, "INSERT INTO posts VALUES (3, 2, 'Building APIs with Marmot', 'Marmot generates type-safe SQL...', NULL)")
-  exec(db, "INSERT INTO posts VALUES (4, 2, 'A Guide to Functional Programming', 'Functional programming is...', 1714800000)")
+  exec(
+    db,
+    "INSERT INTO posts VALUES (1, 1, 'Getting Started with Gleam', 'Gleam is a type-safe language...', 1714500000)",
+  )
+  exec(
+    db,
+    "INSERT INTO posts VALUES (2, 1, 'Why SQLite is Underrated', 'SQLite is fast and reliable...', 1714600000)",
+  )
+  exec(
+    db,
+    "INSERT INTO posts VALUES (3, 2, 'Building APIs with Marmot', 'Marmot generates type-safe SQL...', NULL)",
+  )
+  exec(
+    db,
+    "INSERT INTO posts VALUES (4, 2, 'A Guide to Functional Programming', 'Functional programming is...', 1714800000)",
+  )
   exec(db, "INSERT INTO posts VALUES (5, 3, 'Draft: Untitled', NULL, NULL)")
-  exec(db, "INSERT INTO posts VALUES (6, 4, '10 Tips for Better Queries', 'Writing good SQL...', 1715000000)")
+  exec(
+    db,
+    "INSERT INTO posts VALUES (6, 4, '10 Tips for Better Queries', 'Writing good SQL...', 1715000000)",
+  )
 
   exec(db, "INSERT INTO comments VALUES (1, 1, 2, 'Great intro!', 1714550000)")
-  exec(db, "INSERT INTO comments VALUES (2, 1, 4, 'Thanks for writing this.', 1714560000)")
-  exec(db, "INSERT INTO comments VALUES (3, 2, 5, 'Totally agree, SQLite is amazing.', 1714650000)")
-  exec(db, "INSERT INTO comments VALUES (4, 4, 1, 'The section on pattern matching is great.', 1714850000)")
-  exec(db, "INSERT INTO comments VALUES (5, 4, 3, 'Could you explain monads?', 1714900000)")
+  exec(
+    db,
+    "INSERT INTO comments VALUES (2, 1, 4, 'Thanks for writing this.', 1714560000)",
+  )
+  exec(
+    db,
+    "INSERT INTO comments VALUES (3, 2, 5, 'Totally agree, SQLite is amazing.', 1714650000)",
+  )
+  exec(
+    db,
+    "INSERT INTO comments VALUES (4, 4, 1, 'The section on pattern matching is great.', 1714850000)",
+  )
+  exec(
+    db,
+    "INSERT INTO comments VALUES (5, 4, 3, 'Could you explain monads?', 1714900000)",
+  )
 
   exec(db, "INSERT INTO tags VALUES (1, 'gleam')")
   exec(db, "INSERT INTO tags VALUES (2, 'sqlite')")
@@ -94,10 +154,19 @@ pub fn basic_test() {
     let assert Ok(_) = basic.select_all(db:)
     let assert Ok(_) = basic.select_by_id(db:, id: 1)
     let assert Ok(_) = basic.select_with_anon_param(db:, name: "Alice")
-    let assert Ok(_) = basic.insert_user(db:, name: "Test", email: "t@t.com", created_at: 0)
-    let assert Ok(_) = basic.update_user_email(db:, email: "updated@t.com", id: 1)
+    let assert Ok(_) =
+      basic.insert_user(db:, name: "Test", email: "t@t.com", created_at: 0)
+    let assert Ok(_) =
+      basic.update_user_email(db:, email: "updated@t.com", id: 1)
     let assert Ok(_) = basic.delete_user(db:, id: 5)
-    let assert Ok(_) = basic.replace_user(db:, id: 1, name: "Alice", email: "alice@example.com", created_at: 1714400000)
+    let assert Ok(_) =
+      basic.replace_user(
+        db:,
+        id: 1,
+        name: "Alice",
+        email: "alice@example.com",
+        created_at: 1_714_400_000,
+      )
     Nil
   })
 }
@@ -111,20 +180,38 @@ pub fn joins_test() {
     let assert Ok(_) = joins.join_using(db:)
     let assert Ok(_) = joins.natural_join(db:)
     let assert Ok(_) = joins.multiple_joins(db:)
-    let assert Ok(_) = joins.left_join_where_reduces_nullability(db:, comment_id: 1)
+    let assert Ok(_) =
+      joins.left_join_where_reduces_nullability(db:, comment_id: 1)
     Nil
   })
 }
 
 pub fn filtering_test() {
   with_setup(fn(db) {
-    let assert Ok(_) = filters.where_comparison(db:, since: Some(1714500000), until: Some(1715000000), exclude_user_id: 3)
-    let assert Ok(_) = filters.where_like(db:, domain_pattern: "%@example.com", exclude_pattern: "ZZZ%")
+    let assert Ok(_) =
+      filters.where_comparison(
+        db:,
+        since: Some(1_714_500_000),
+        until: Some(1_715_000_000),
+        exclude_user_id: 3,
+      )
+    let assert Ok(_) =
+      filters.where_like(
+        db:,
+        domain_pattern: "%@example.com",
+        exclude_pattern: "ZZZ%",
+      )
     let assert Ok(_) = filters.where_is_null(db:)
     let assert Ok(_) = filters.where_in_list(db:, user_ids: "1,2,3")
     let assert Ok(_) = filters.where_in_subquery(db:, active: 1)
-    let assert Ok(_) = filters.where_between(db:, from: Some(1714500000), to: Some(1715000000))
-    let assert Ok(_) = filters.where_and_or(db:, since: Some(1714500000), user_id: 1)
+    let assert Ok(_) =
+      filters.where_between(
+        db:,
+        from: Some(1_714_500_000),
+        to: Some(1_715_000_000),
+      )
+    let assert Ok(_) =
+      filters.where_and_or(db:, since: Some(1_714_500_000), user_id: 1)
     let assert Ok(_) = filters.where_not_operators(db:, pattern: "ZZZ%")
     Nil
   })
@@ -146,7 +233,7 @@ pub fn expressions_test() {
   with_setup(fn(db) {
     let assert Ok(_) = exprs.cast(db:)
     let assert Ok(_) = exprs.coalesce(db:)
-    let assert Ok(_) = exprs.case_searched(db:, cutoff: Some(1714500000))
+    let assert Ok(_) = exprs.case_searched(db:, cutoff: Some(1_714_500_000))
     let assert Ok(_) = exprs.case_simple(db:)
     let assert Ok(_) = exprs.case_nested(db:)
     let assert Ok(_) = exprs.arithmetic(db:)
@@ -190,7 +277,8 @@ pub fn window_functions_test() {
 pub fn parameters_test() {
   with_setup(fn(db) {
     let assert Ok(_) = params.anonymous_params(db:, name: "Alice")
-    let assert Ok(_) = params.named_params(db:, user_id: 1, since: Some(0), pattern: "%")
+    let assert Ok(_) =
+      params.named_params(db:, user_id: 1, since: Some(0), pattern: "%")
     let assert Ok(_) = params.repeated_named_param(db:, pattern: "%")
     let assert Ok(_) = params.limit_param(db:, limit: 2)
     Nil
@@ -220,21 +308,55 @@ pub fn nullability_overrides_test() {
 
 pub fn returning_test() {
   with_setup(fn(db) {
-    let assert Ok(_) = ret.insert_returning(db:, name: "Frank", email: "frank@example.com", created_at: 1715000000)
-    let assert Ok(_) = ret.insert_returning_star(db:, name: "Grace", email: "grace@example.com", created_at: 1715000000)
+    let assert Ok(_) =
+      ret.insert_returning(
+        db:,
+        name: "Frank",
+        email: "frank@example.com",
+        created_at: 1_715_000_000,
+      )
+    let assert Ok(_) =
+      ret.insert_returning_star(
+        db:,
+        name: "Grace",
+        email: "grace@example.com",
+        created_at: 1_715_000_000,
+      )
     let assert Ok(_) = ret.update_returning(db:, active: 0, id: 1)
     let assert Ok(_) = ret.delete_returning(db:)
-    let assert Ok(_) = ret.insert_from_select_returning(db:, cutoff: Some(1715000000))
+    let assert Ok(_) =
+      ret.insert_from_select_returning(db:, cutoff: Some(1_715_000_000))
     Nil
   })
 }
 
 pub fn upserts_test() {
   with_setup(fn(db) {
-    let assert Ok(_) = upserts.insert_or_replace(db:, id: 1, name: "Alice", email: "alice@example.com", created_at: 1714400000)
+    let assert Ok(_) =
+      upserts.insert_or_replace(
+        db:,
+        id: 1,
+        name: "Alice",
+        email: "alice@example.com",
+        created_at: 1_714_400_000,
+      )
     let assert Ok(_) = upserts.insert_or_ignore(db:, post_id: 1, tag_id: 1)
-    let assert Ok(_) = upserts.on_conflict_do_nothing(db:, id: 1, name: "Alice", email: "alice@example.com", created_at: 1714400000)
-    let assert Ok(_) = upserts.on_conflict_do_update(db:, id: 1, name: "Alice", email: "alice@example.com", created_at: 1714400000)
+    let assert Ok(_) =
+      upserts.on_conflict_do_nothing(
+        db:,
+        id: 1,
+        name: "Alice",
+        email: "alice@example.com",
+        created_at: 1_714_400_000,
+      )
+    let assert Ok(_) =
+      upserts.on_conflict_do_update(
+        db:,
+        id: 1,
+        name: "Alice",
+        email: "alice@example.com",
+        created_at: 1_714_400_000,
+      )
     Nil
   })
 }

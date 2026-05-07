@@ -3,6 +3,7 @@ import gleam/list
 import gleam/option
 import gleam/result
 import gleam/string
+import marmot
 import marmot/internal/codegen
 import marmot/internal/project
 import marmot/internal/query
@@ -323,4 +324,379 @@ pub fn e2e_configured_output_dir_test() {
   let expected = output_dir <> "/" <> "app_sql.gleam"
   let assert True = output_path == expected
   Nil
+}
+
+// ---- generated code compilation tests ----
+
+pub fn e2e_compile_generated_code_test() {
+  let base = "test_e2e_compile_tmp"
+  use <- with_temp_dir(base)
+
+  // Schema with nullable types including BLOB, which exercises edge-case imports
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE edge_users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT NOT NULL,
+        avatar BLOB,
+        score REAL,
+        bio TEXT,
+        archived INTEGER
+      )",
+      on: db,
+    )
+
+  let sql_dir = base <> "/src/app/sql"
+  let assert Ok(_) = simplifile.create_directory_all(sql_dir)
+  let assert Ok(_) =
+    simplifile.write(
+      sql_dir <> "/find_edge_user.sql",
+      "-- returns: EdgeUserRow\nSELECT id, name, avatar, score, bio, archived FROM edge_users WHERE id = ?",
+    )
+
+  let sql_files = project.list_sql_files(sql_dir)
+  let queries =
+    list.filter_map(sql_files, fn(file_path) {
+      case simplifile.read(file_path) {
+        Ok(sql) ->
+          case sqlite.introspect_query(db, string.trim(sql)) {
+            Ok(info) -> {
+              let filename =
+                file_path
+                |> string.split("/")
+                |> list.last
+                |> result.unwrap("query.sql")
+              let assert Ok(name) = query.function_name(filename)
+              let assert Ok(type_name) =
+                sqlite.parse_returns_annotation(string.trim(sql))
+              Ok(query.Query(
+                name: name,
+                sql: string.trim(sql),
+                path: file_path,
+                parameters: info.parameters,
+                columns: info.columns,
+                custom_type_name: type_name,
+              ))
+            }
+            Error(_) -> Error(Nil)
+          }
+        Error(_) -> Error(Nil)
+      }
+    })
+
+  let assert 1 = list.length(queries)
+  let assert Ok(raw) = codegen.generate_module(queries)
+  let generated = marmot.format_gleam(raw)
+
+  // Write generated code into the examples project where deps are resolved,
+  // then run gleam check to verify the code compiles and imports resolve.
+  let out_file = "examples/src/generated/compile_edge_sql.gleam"
+  let assert Ok(_) = simplifile.write(out_file, generated)
+
+  let exit_code = marmot.run_executable_in("gleam", ["check"], "examples")
+  let _ = simplifile.delete(out_file)
+
+  let assert 0 = exit_code
+  Nil
+}
+
+pub fn e2e_shared_row_types_compiles_test() {
+  let base = "test_e2e_shared_rows_tmp"
+  use <- with_temp_dir(base)
+
+  // Two tables sharing a column name "id" and "name" — exercises shared row
+  // type generation where column types differ (cats.name is nullable)
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE dogs (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT NOT NULL,
+        breed TEXT NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE cats (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT,
+        color TEXT NOT NULL
+      )",
+      on: db,
+    )
+
+  let sql_dir = base <> "/src/app/sql"
+  let assert Ok(_) = simplifile.create_directory_all(sql_dir)
+  let assert Ok(_) =
+    simplifile.write(
+      sql_dir <> "/find_dog.sql",
+      "SELECT id, name, breed FROM dogs WHERE id = ?",
+    )
+  let assert Ok(_) =
+    simplifile.write(
+      sql_dir <> "/find_cat.sql",
+      "SELECT id, name, color FROM cats WHERE id = ?",
+    )
+
+  let sql_files = project.list_sql_files(sql_dir)
+  let queries =
+    list.filter_map(sql_files, fn(file_path) {
+      case simplifile.read(file_path) {
+        Ok(sql) ->
+          case sqlite.introspect_query(db, string.trim(sql)) {
+            Ok(info) -> {
+              let filename =
+                file_path
+                |> string.split("/")
+                |> list.last
+                |> result.unwrap("query.sql")
+              let assert Ok(name) = query.function_name(filename)
+              Ok(query.Query(
+                name: name,
+                sql: string.trim(sql),
+                path: file_path,
+                parameters: info.parameters,
+                columns: info.columns,
+                custom_type_name: option.None,
+              ))
+            }
+            Error(_) -> Error(Nil)
+          }
+        Error(_) -> Error(Nil)
+      }
+    })
+
+  let assert 2 = list.length(queries)
+  let assert Ok(raw) = codegen.generate_module(queries)
+  let generated = marmot.format_gleam(raw)
+
+  let out_file = "examples/src/generated/compile_shared_rows_sql.gleam"
+  let assert Ok(_) = simplifile.write(out_file, generated)
+
+  let exit_code = marmot.run_executable_in("gleam", ["check"], "examples")
+  let _ = simplifile.delete(out_file)
+
+  let assert 0 = exit_code
+  Nil
+}
+
+// ---- real CLI tests (gleam run -m marmot) ----
+
+fn write_cli_project(name: String, base: String) -> Nil {
+  let assert Ok(_) = simplifile.create_directory_all(base <> "/src")
+  let assert Ok(_) =
+    simplifile.write(
+      base <> "/gleam.toml",
+      "name = \""
+        <> name
+        <> "\"\nversion = \"1.0.0\"\ntarget = \"erlang\"\n"
+        <> "\n[dependencies]\n"
+        <> "gleam_stdlib = \">= 0.34.0 and < 2.0.0\"\n"
+        <> "marmot = { path = \"..\" }\n",
+    )
+  Nil
+}
+
+fn write_cli_project_with_config(
+  name: String,
+  base: String,
+  config: String,
+) -> Nil {
+  let assert Ok(_) = simplifile.create_directory_all(base <> "/src")
+  let assert Ok(_) =
+    simplifile.write(
+      base <> "/gleam.toml",
+      "name = \""
+        <> name
+        <> "\"\nversion = \"1.0.0\"\ntarget = \"erlang\"\n"
+        <> "\n[dependencies]\n"
+        <> "gleam_stdlib = \">= 0.34.0 and < 2.0.0\"\n"
+        <> "marmot = { path = \"..\" }\n"
+        <> config,
+    )
+  Nil
+}
+
+pub fn e2e_cli_missing_database_test() {
+  let base = "test_e2e_cli_missing_db"
+  let result =
+    rescue(fn() {
+      write_cli_project("cli_missing_db", base)
+      let exit_code =
+        marmot.run_executable_in_timeout(
+          "gleam",
+          ["run", "-m", "marmot"],
+          base,
+          120_000,
+        )
+      let assert 1 = exit_code
+      Nil
+    })
+  let _ = simplifile.delete(base)
+  case result {
+    Ok(Nil) -> Nil
+    Error(msg) -> panic as msg
+  }
+}
+
+pub fn e2e_cli_invalid_output_test() {
+  let base = "test_e2e_cli_bad_output"
+  let result =
+    rescue(fn() {
+      write_cli_project("cli_bad_output", base)
+      let exit_code =
+        marmot.run_executable_in_timeout(
+          "gleam",
+          ["run", "-m", "marmot", "--", "--output", "/etc/foo"],
+          base,
+          120_000,
+        )
+      let assert 1 = exit_code
+      Nil
+    })
+  let _ = simplifile.delete(base)
+  case result {
+    Ok(Nil) -> Nil
+    Error(msg) -> panic as msg
+  }
+}
+
+pub fn e2e_cli_malformed_query_function_test() {
+  let base = "test_e2e_cli_bad_query_fn"
+  let result =
+    rescue(fn() {
+      write_cli_project_with_config(
+        "cli_bad_query_fn",
+        base,
+        "\n[tools.marmot]\ndatabase = \"test.db\"\nquery_function = \"not_valid\"\n",
+      )
+      let exit_code =
+        marmot.run_executable_in_timeout(
+          "gleam",
+          ["run", "-m", "marmot"],
+          base,
+          120_000,
+        )
+      let assert 1 = exit_code
+      Nil
+    })
+  let _ = simplifile.delete(base)
+  case result {
+    Ok(Nil) -> Nil
+    Error(msg) -> panic as msg
+  }
+}
+
+pub fn e2e_cli_successful_generation_test() {
+  let base = "test_e2e_cli_success"
+  let result =
+    rescue(fn() {
+      write_cli_project_with_config(
+        "cli_success",
+        base,
+        "\n[tools.marmot]\ndatabase = \"test.db\"\n",
+      )
+
+      // Create test database and SQL file via explicit open/close
+      let assert Ok(db) = sqlight.open(base <> "/test.db")
+      let assert Ok(_) =
+        sqlight.exec(
+          "CREATE TABLE users (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+          on: db,
+        )
+      let _ = sqlight.close(db)
+
+      let sql_dir = base <> "/src/sql"
+      let assert Ok(_) = simplifile.create_directory(sql_dir)
+      let assert Ok(_) =
+        simplifile.write(
+          sql_dir <> "/find_user.sql",
+          "SELECT id, name FROM users WHERE id = ?",
+        )
+
+      let exit_code =
+        marmot.run_executable_in_timeout(
+          "gleam",
+          ["run", "-m", "marmot"],
+          base,
+          120_000,
+        )
+
+      // Verify output file was written
+      let assert Ok(True) =
+        simplifile.is_file(base <> "/src/generated/sql/sql.gleam")
+      let assert 0 = exit_code
+      Nil
+    })
+  let _ = simplifile.delete(base)
+  case result {
+    Ok(Nil) -> Nil
+    Error(msg) -> panic as msg
+  }
+}
+
+pub fn e2e_cli_no_sql_directories_test() {
+  let base = "test_e2e_cli_no_sql"
+  let result =
+    rescue(fn() {
+      write_cli_project_with_config(
+        "cli_no_sql",
+        base,
+        "\n[tools.marmot]\ndatabase = \"test.db\"\n",
+      )
+
+      use db <- sqlight.with_connection(base <> "/test.db")
+      let assert Ok(_) =
+        sqlight.exec(
+          "CREATE TABLE users (id INTEGER NOT NULL PRIMARY KEY)",
+          on: db,
+        )
+
+      let exit_code =
+        marmot.run_executable_in_timeout(
+          "gleam",
+          ["run", "-m", "marmot"],
+          base,
+          120_000,
+        )
+      // No sql/ dirs: reports message and exits 0, not an error
+      let assert 0 = exit_code
+      Nil
+    })
+  let _ = simplifile.delete(base)
+  case result {
+    Ok(Nil) -> Nil
+    Error(msg) -> panic as msg
+  }
+}
+
+pub fn e2e_cli_database_open_error_test() {
+  let base = "test_e2e_cli_bad_db"
+  let result =
+    rescue(fn() {
+      write_cli_project("cli_bad_db", base)
+      let exit_code =
+        marmot.run_executable_in_timeout(
+          "gleam",
+          [
+            "run",
+            "-m",
+            "marmot",
+            "--",
+            "--database",
+            "/nonexistent_dir_xyz/db.sqlite",
+          ],
+          base,
+          120_000,
+        )
+      let assert 1 = exit_code
+      Nil
+    })
+  let _ = simplifile.delete(base)
+  case result {
+    Ok(Nil) -> Nil
+    Error(msg) -> panic as msg
+  }
 }
