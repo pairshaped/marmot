@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DIR="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$DIR"
+
+suite="${1:-fast}"
+workers="${WORKERS:-4}"
+
+case "$suite" in
+  fast | slow | all)
+    ;;
+  *)
+    echo "usage: bin/test [fast|slow|all]" >&2
+    exit 2
+    ;;
+esac
+
+gleam test -- --suite "$suite" --workers "$workers"

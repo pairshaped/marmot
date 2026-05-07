@@ -1,9 +1,11 @@
+import argv
 import birdie
 import gleam/int
+import gleam/io
 import gleam/list
 import gleam/option
+import gleam/result
 import gleam/string
-import gleeunit
 import marmot
 import marmot/internal/codegen
 import marmot/internal/query
@@ -12,8 +14,129 @@ import simplifile
 import sqlight
 
 pub fn main() -> Nil {
-  gleeunit.main()
+  let args = argv.load().arguments
+  let suite = parse_suite(args)
+  let workers = parse_workers(args)
+  let options = [
+    Verbose,
+    NoTty,
+    Report(#(GleeunitProgress, [Colored(True)])),
+    ScaleTimeouts(10),
+    Parallel(workers),
+  ]
+
+  let result =
+    find_files(matching: "**/*.{erl,gleam}", in: "test")
+    |> list.filter(include_file(_, suite))
+    |> list.map(gleam_to_erlang_module_name)
+    |> list.map(dangerously_convert_string_to_atom(_, Utf8))
+    |> run_eunit(options)
+
+  let code = case result {
+    Ok(_) -> 0
+    Error(_) -> 1
+  }
+  halt(code)
 }
+
+type Suite {
+  Fast
+  Slow
+  All
+}
+
+const slow_test_file = "marmot/e2e_slow_test.gleam"
+
+fn parse_suite(args: List(String)) -> Suite {
+  case args {
+    ["--suite", "fast", ..] -> Fast
+    ["--suite", "slow", ..] -> Slow
+    ["--suite", "all", ..] -> All
+    ["--suite", value, ..] -> {
+      io.println_error(
+        "Unknown test suite " <> value <> ". Expected fast, slow, or all.",
+      )
+      halt(1)
+      All
+    }
+    [_, ..rest] -> parse_suite(rest)
+    [] -> All
+  }
+}
+
+fn parse_workers(args: List(String)) -> Int {
+  case args {
+    ["--workers", value, ..] ->
+      case int.parse(value) {
+        Ok(n) ->
+          case n > 0 {
+            True -> n
+            False -> 1
+          }
+        Error(_) -> 1
+      }
+    [_, ..rest] -> parse_workers(rest)
+    [] -> 1
+  }
+}
+
+fn include_file(file: String, suite: Suite) -> Bool {
+  case suite {
+    Fast -> file != slow_test_file
+    Slow -> file == slow_test_file
+    All -> True
+  }
+}
+
+fn gleam_to_erlang_module_name(path: String) -> String {
+  case string.ends_with(path, ".gleam") {
+    True ->
+      path
+      |> string.replace(".gleam", "")
+      |> string.replace("/", "@")
+
+    False ->
+      path
+      |> string.split("/")
+      |> list.last
+      |> result.unwrap(path)
+      |> string.replace(".erl", "")
+  }
+}
+
+@external(erlang, "gleeunit_ffi", "find_files")
+fn find_files(matching matching: String, in in: String) -> List(String)
+
+type Atom
+
+type Encoding {
+  Utf8
+}
+
+@external(erlang, "erlang", "binary_to_atom")
+fn dangerously_convert_string_to_atom(a: String, b: Encoding) -> Atom
+
+type ReportModuleName {
+  GleeunitProgress
+}
+
+type GleeunitProgressOption {
+  Colored(Bool)
+}
+
+type EunitOption {
+  Verbose
+  NoTty
+  Report(#(ReportModuleName, List(GleeunitProgressOption)))
+  ScaleTimeouts(Int)
+  Parallel(Int)
+}
+
+@external(erlang, "gleeunit_ffi", "run_eunit")
+fn run_eunit(a: List(Atom), b: List(EunitOption)) -> Result(Nil, a)
+
+@external(erlang, "erlang", "halt")
+fn halt(code: Int) -> Nil
 
 pub fn end_to_end_shared_row_types_test() {
   use db <- sqlight.with_connection(":memory:")
