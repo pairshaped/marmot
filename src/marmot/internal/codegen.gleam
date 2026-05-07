@@ -37,6 +37,25 @@ pub fn parse_query_function(
   raw: Option(String),
 ) -> Option(QueryFunctionConfig) {
   use value <- option.then(raw)
+  use #(module_path, function) <- option.then(split_query_function(value))
+  use module_parts <- option.then(valid_module_parts(module_path))
+
+  case is_valid_gleam_name(function) {
+    False -> option.None
+    True -> {
+      let alias =
+        list.last(module_parts)
+        |> result.unwrap(module_path)
+      option.Some(QueryFunctionConfig(
+        module_path: module_path,
+        module_alias: alias,
+        function: function,
+      ))
+    }
+  }
+}
+
+fn split_query_function(value: String) -> Option(#(String, String)) {
   // Split on the LAST "." so that paths with dots are handled correctly:
   // "server/db.query" -> #("server/db", "query").
   let parts = string.split(value, ".")
@@ -48,41 +67,21 @@ pub fn parse_query_function(
         |> string.join(".")
       case module_path {
         "" -> option.None
-        _ -> {
-          // Reject paths containing ".." segments to prevent directory traversal
-          let segments = string.split(module_path, "/")
-          case list.contains(segments, "..") {
-            True -> option.None
-            False -> {
-              // Split on both "/" and "." to get individual name parts,
-              // since module paths can use either separator
-              // (e.g., "server/db" or "some.module.path")
-              let all_parts =
-                segments
-                |> list.flat_map(fn(s) { string.split(s, ".") })
-              // Validate that all parts and the function are valid Gleam
-              // identifiers (lowercase, alphanumeric + underscore)
-              case
-                list.all(all_parts, is_valid_gleam_name)
-                && is_valid_gleam_name(function)
-              {
-                False -> option.None
-                True -> {
-                  let alias =
-                    list.last(all_parts)
-                    |> result.unwrap(module_path)
-                  option.Some(QueryFunctionConfig(
-                    module_path: module_path,
-                    module_alias: alias,
-                    function: function,
-                  ))
-                }
-              }
-            }
-          }
-        }
+        _ -> option.Some(#(module_path, function))
       }
     }
+  }
+}
+
+fn valid_module_parts(module_path: String) -> Option(List(String)) {
+  let segments = string.split(module_path, "/")
+  let parts =
+    segments
+    |> list.flat_map(fn(segment) { string.split(segment, ".") })
+
+  case list.contains(segments, "..") || !list.all(parts, is_valid_gleam_name) {
+    True -> option.None
+    False -> option.Some(parts)
   }
 }
 

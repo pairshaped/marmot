@@ -301,72 +301,79 @@ fn process_sql_file(
 }
 
 pub fn validate_sql(trimmed: String, file_path: String) -> Result(String, Nil) {
-  // Detect comment-only files: strip comments and check for empty SQL.
-  case query.strip_comments(trimmed) |> string.trim {
+  let sql_without_comments =
+    trimmed
+    |> query.strip_comments
+    |> string.trim
+
+  case sql_without_comments {
     "" -> {
       io.println_error(error.to_string(error.EmptySqlFile(path: file_path)))
       Error(Nil)
     }
     _ -> {
-      case trimmed {
-        "" -> {
-          io.println_error(error.to_string(error.EmptySqlFile(path: file_path)))
+      let semicolon_count = count_semicolons(trimmed)
+      case has_multiple_queries(sql_without_comments, semicolon_count) {
+        True -> {
+          io.println_error(
+            error.to_string(error.MultipleQueries(path: file_path)),
+          )
           Error(Nil)
         }
-        sql -> {
-          // Strip comments so trailing semicolons followed by comments are
-          // recognised (e.g., "SELECT 1; -- comment").
-          let stripped = case string.ends_with(sql, ";") {
-            True ->
-              sql
-              |> string.drop_end(1)
-              |> string.trim
-            False -> {
-              let without_comments = query.strip_comments(sql)
-              case string.ends_with(string.trim(without_comments), ";") {
-                True ->
-                  strip_trailing_comments(sql)
-                  |> string.trim
-                  |> string.drop_end(1)
-                  |> string.trim
-                False -> sql
-              }
-            }
-          }
-          case contains_semicolon_outside_strings(stripped) {
-            True -> {
-              io.println_error(
-                error.to_string(error.MultipleQueries(path: file_path)),
-              )
-              Error(Nil)
-            }
-            False -> Ok(stripped)
-          }
-        }
+        False -> Ok(remove_trailing_semicolon(trimmed, semicolon_count))
       }
     }
   }
 }
 
-fn strip_trailing_comments(sql: String) -> String {
-  sql
-  |> string.split("\n")
-  |> list.reverse
-  |> do_strip_trailing_comments
-  |> list.reverse
-  |> string.join("\n")
+fn has_multiple_queries(
+  sql_without_comments: String,
+  semicolon_count: Int,
+) -> Bool {
+  semicolon_count > 1
+  || { semicolon_count == 1 && !string.ends_with(sql_without_comments, ";") }
 }
 
-fn do_strip_trailing_comments(lines: List(String)) -> List(String) {
-  case lines {
-    [] -> []
-    [line, ..rest] -> {
-      let clean = string.trim(query.strip_comments(line))
-      case clean {
-        "" -> do_strip_trailing_comments(rest)
-        _ -> [clean, ..rest]
-      }
+fn count_semicolons(sql: String) -> Int {
+  tokenize.tokenize(sql)
+  |> list.fold(0, fn(count, token) {
+    case token {
+      tokenize.Semicolon -> count + 1
+      _ -> count
     }
+  })
+}
+
+fn remove_trailing_semicolon(sql: String, semicolon_count: Int) -> String {
+  case semicolon_count {
+    0 -> sql
+    _ ->
+      sql
+      |> trim_trailing_comment_lines
+      |> string.trim
+      |> string.drop_end(1)
+      |> string.trim
+  }
+}
+
+fn trim_trailing_comment_lines(sql: String) -> String {
+  let lines =
+    sql
+    |> string.split("\n")
+    |> list.reverse
+    |> list.drop_while(fn(line) {
+      line
+      |> query.strip_comments
+      |> string.trim
+      == ""
+    })
+
+  case lines {
+    [] -> ""
+    [line, ..rest] ->
+      [query.strip_comments(line) |> string.trim, ..rest]
+      |> list.reverse
+      |> string.join("\n")
   }
 }
 
