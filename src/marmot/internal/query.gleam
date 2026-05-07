@@ -248,14 +248,7 @@ fn do_strip_comments(
       do_strip_comments(rest, acc, in_single, in_double, False, True)
     // Newline outside any comment: preserve
     ["\n", ..rest] ->
-      do_strip_comments(
-        rest,
-        ["\n", ..acc],
-        in_single,
-        in_double,
-        False,
-        False,
-      )
+      do_strip_comments(rest, ["\n", ..acc], in_single, in_double, False, False)
     // Single-quoted strings
     ["'", ..rest] ->
       case in_double {

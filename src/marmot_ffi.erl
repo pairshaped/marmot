@@ -21,7 +21,9 @@ wait_for_port(Port) ->
     receive
         {Port, {exit_status, Status}} -> Status;
         {Port, {data, _}} -> wait_for_port(Port);
-        {port_timeout, Port} -> -2
+        {port_timeout, Port} ->
+            catch erlang:port_close(Port),
+            -2
     end.
 
 %% Look up a single environment variable by name. Converts the binary name

@@ -62,7 +62,9 @@ pub fn introspect_query_select_test() {
       db,
       "SELECT id, username FROM users WHERE email = ?",
     )
-  result |> string.inspect |> birdie.snap(title: "select id, username with email param")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "select id, username with email param")
 }
 
 pub fn introspect_query_insert_returning_test() {
@@ -101,7 +103,9 @@ pub fn introspect_insert_with_nullable_column_param_test() {
       db,
       "INSERT INTO users (username, bio, created_at) VALUES (@username, @bio, @created_at)",
     )
-  result |> string.inspect |> birdie.snap(title: "insert with nullable column param")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "insert with nullable column param")
 }
 
 pub fn introspect_query_no_return_test() {
@@ -356,7 +360,9 @@ pub fn introspect_returning_alias_preserves_case_test() {
       db,
       "INSERT INTO users (name) VALUES (?) RETURNING id AS userId, name AS userName",
     )
-  result |> string.inspect |> birdie.snap(title: "returning alias preserves case")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "returning alias preserves case")
 }
 
 pub fn introspect_table_named_asset_test() {
@@ -434,7 +440,9 @@ pub fn introspect_left_join_marks_right_side_nullable_test() {
        FROM users u
        LEFT JOIN profiles p ON p.user_id = u.id",
     )
-  result |> string.inspect |> birdie.snap(title: "left join marks right side nullable")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "left join marks right side nullable")
 }
 
 pub fn introspect_left_join_on_unindexed_column_marks_right_side_nullable_test() {
@@ -465,7 +473,11 @@ pub fn introspect_left_join_on_unindexed_column_marks_right_side_nullable_test()
        FROM users u
        LEFT JOIN profiles p ON p.user_name = u.name",
     )
-  result |> string.inspect |> birdie.snap(title: "left join on unindexed column marks right side nullable")
+  result
+  |> string.inspect
+  |> birdie.snap(
+    title: "left join on unindexed column marks right side nullable",
+  )
 }
 
 pub fn introspect_inner_join_keeps_both_sides_non_nullable_test() {
@@ -490,7 +502,9 @@ pub fn introspect_inner_join_keeps_both_sides_non_nullable_test() {
        FROM users u
        JOIN profiles p ON p.user_id = u.id",
     )
-  result |> string.inspect |> birdie.snap(title: "inner join keeps both sides non nullable")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "inner join keeps both sides non nullable")
 }
 
 pub fn introspect_chained_left_joins_test() {
@@ -532,7 +546,9 @@ pub fn introspect_left_join_strength_reduced_by_where_test() {
        LEFT JOIN profiles p ON p.user_id = u.id
        WHERE p.bio = 'x'",
     )
-  result |> string.inspect |> birdie.snap(title: "left join strength reduced by where")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "left join strength reduced by where")
 }
 
 pub fn introspect_mixed_inner_and_left_joins_test() {
@@ -606,7 +622,9 @@ pub fn introspect_order_by_with_sorter_resolves_columns_correctly_test() {
       db,
       "SELECT id, name_en, name_fr FROM items ORDER BY name_fr",
     )
-  result |> string.inspect |> birdie.snap(title: "order by with sorter resolves columns correctly")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "order by with sorter resolves columns correctly")
 }
 
 pub fn introspect_alias_with_bang_forces_not_null_test() {
@@ -619,7 +637,9 @@ pub fn introspect_alias_with_bang_forces_not_null_test() {
   // `name` is nullable in schema; the `!` suffix on the alias overrides it
   let assert Ok(result) =
     sqlite.introspect_query(db, "SELECT name AS name! FROM users")
-  result |> string.inspect |> birdie.snap(title: "alias with bang forces not null")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "alias with bang forces not null")
 }
 
 pub fn introspect_alias_with_question_forces_nullable_test() {
@@ -631,7 +651,9 @@ pub fn introspect_alias_with_question_forces_nullable_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(db, "SELECT name AS name? FROM users")
-  result |> string.inspect |> birdie.snap(title: "alias with question forces nullable")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "alias with question forces nullable")
 }
 
 pub fn introspect_update_with_coalesce_named_param_test() {
@@ -651,7 +673,9 @@ pub fn introspect_update_with_coalesce_named_param_test() {
       db,
       "UPDATE participants SET gender = COALESCE(@gender, gender), birthdate = COALESCE(@birthdate, birthdate), updated_at = @updated_at WHERE id = @id",
     )
-  result |> string.inspect |> birdie.snap(title: "update with coalesce named param")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "update with coalesce named param")
 }
 
 pub fn introspect_update_with_subquery_named_param_test() {
@@ -675,7 +699,9 @@ pub fn introspect_update_with_subquery_named_param_test() {
       db,
       "UPDATE line_items SET discount_cents = COALESCE((SELECT SUM(amount_cents) FROM line_item_discounts WHERE line_item_id = line_items.id), 0) WHERE order_id = @order_id",
     )
-  result |> string.inspect |> birdie.snap(title: "update with subquery named param")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "update with subquery named param")
 }
 
 // Update with IN (subquery) WHERE condition and a @named param inside the subquery.
@@ -706,7 +732,9 @@ pub fn introspect_update_with_in_subquery_named_param_test() {
       db,
       "UPDATE line_item_question_values SET question_name = @question_name WHERE question_key = @question_key AND line_item_id IN (SELECT li.id FROM line_items li JOIN orders o ON o.id = li.order_id WHERE o.org_id = @org_id)",
     )
-  result |> string.inspect |> birdie.snap(title: "update with in subquery named param")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "update with in subquery named param")
 }
 
 pub fn introspect_insert_select_with_named_params_in_select_list_test() {
@@ -729,7 +757,9 @@ pub fn introspect_insert_select_with_named_params_in_select_list_test() {
        FROM item_features lf
        WHERE lf.item_id = @source_item_id",
     )
-  result |> string.inspect |> birdie.snap(title: "insert select with named params in select list")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "insert select with named params in select list")
 }
 
 // Note: CTEs currently lose type information because SQLite's EXPLAIN output
@@ -1038,7 +1068,9 @@ pub fn introspect_update_with_eq_subquery_multiple_named_params_test() {
          LIMIT 1
        )",
     )
-  result |> string.inspect |> birdie.snap(title: "update with eq subquery multiple named params")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "update with eq subquery multiple named params")
 }
 
 pub fn introspect_case_with_exists_subquery_test() {
@@ -1075,7 +1107,9 @@ pub fn insert_values_with_string_containing_comma_test() {
       db,
       "INSERT INTO notes (id, title, body) VALUES (?, 'hello, world', ?)",
     )
-  result |> string.inspect |> birdie.snap(title: "insert values with string containing comma")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "insert values with string containing comma")
 }
 
 pub fn insert_values_with_escaped_quote_in_string_test() {
@@ -1090,7 +1124,9 @@ pub fn insert_values_with_escaped_quote_in_string_test() {
       db,
       "INSERT INTO notes (id, title) VALUES (?, 'it''s, complicated')",
     )
-  result |> string.inspect |> birdie.snap(title: "insert values with escaped quote in string")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "insert values with escaped quote in string")
 }
 
 pub fn where_with_string_containing_and_test() {
@@ -1106,7 +1142,9 @@ pub fn where_with_string_containing_and_test() {
       db,
       "SELECT id FROM users WHERE name != 'foo AND bar' AND email = ?",
     )
-  result |> string.inspect |> birdie.snap(title: "where with string containing and")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "where with string containing and")
 }
 
 pub fn where_with_string_containing_or_test() {
@@ -1121,7 +1159,9 @@ pub fn where_with_string_containing_or_test() {
       db,
       "SELECT id FROM users WHERE name != 'yes or no' AND status = ?",
     )
-  result |> string.inspect |> birdie.snap(title: "where with string containing or")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "where with string containing or")
 }
 
 pub fn select_with_string_literal_containing_comma_test() {
@@ -1137,7 +1177,9 @@ pub fn select_with_string_literal_containing_comma_test() {
       db,
       "SELECT COALESCE(name, 'unknown, unnamed') AS display_name FROM users WHERE id = ?",
     )
-  result |> string.inspect |> birdie.snap(title: "select with string literal containing comma")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "select with string literal containing comma")
 }
 
 // --- Tests for previously untested fixes ---
@@ -1223,7 +1265,9 @@ pub fn introspect_keyword_inside_string_literal_test() {
       db,
       "UPDATE t SET name = 'hello WHERE world' WHERE id = ?",
     )
-  result |> string.inspect |> birdie.snap(title: "keyword inside string literal")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "keyword inside string literal")
 }
 
 pub fn introspect_double_quoted_identifier_containing_placeholder_test() {
@@ -1235,7 +1279,9 @@ pub fn introspect_double_quoted_identifier_containing_placeholder_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(db, "SELECT \"what?\", val FROM t WHERE val = ?")
-  result |> string.inspect |> birdie.snap(title: "double quoted identifier containing placeholder")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "double quoted identifier containing placeholder")
 }
 
 pub fn introspect_nested_function_unwrap_test() {
@@ -1265,7 +1311,9 @@ pub fn introspect_case_with_string_containing_end_test() {
       db,
       "SELECT CASE WHEN active THEN 'THE END' ELSE 'no END here' END AS label FROM t",
     )
-  result |> string.inspect |> birdie.snap(title: "case with string containing end")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "case with string containing end")
 }
 
 pub fn introspect_placeholder_after_escaped_quote_test() {
@@ -1280,7 +1328,9 @@ pub fn introspect_placeholder_after_escaped_quote_test() {
       db,
       "SELECT id FROM t WHERE name != 'it''s' AND id = ?",
     )
-  result |> string.inspect |> birdie.snap(title: "placeholder after escaped quote")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "placeholder after escaped quote")
 }
 
 pub fn introspect_string_literal_containing_close_paren_test() {
@@ -1295,7 +1345,9 @@ pub fn introspect_string_literal_containing_close_paren_test() {
       db,
       "SELECT COALESCE(name, 'default)value') AS display FROM t WHERE id = ?",
     )
-  result |> string.inspect |> birdie.snap(title: "string literal containing close paren")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "string literal containing close paren")
 }
 
 pub fn introspect_keyword_in_subquery_not_matched_test() {
@@ -1315,7 +1367,9 @@ pub fn introspect_keyword_in_subquery_not_matched_test() {
       db,
       "SELECT id, name FROM users WHERE id IN (SELECT user_id FROM orders WHERE total > ?)",
     )
-  result |> string.inspect |> birdie.snap(title: "keyword in subquery not matched")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "keyword in subquery not matched")
 }
 
 pub fn introspect_double_quoted_keyword_identifier_in_where_test() {
@@ -1327,7 +1381,9 @@ pub fn introspect_double_quoted_keyword_identifier_in_where_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(db, "SELECT id FROM t WHERE \"AND\" = ?")
-  result |> string.inspect |> birdie.snap(title: "double quoted keyword identifier in where")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "double quoted keyword identifier in where")
 }
 
 // Regression: CAST(COUNT(*) AS INTEGER) should infer IntType, not
@@ -1379,7 +1435,9 @@ pub fn introspect_cast_subquery_column_as_integer_test() {
       "SELECT CAST(sub.val AS INTEGER) AS v
        FROM (SELECT val FROM t) sub",
     )
-  result |> string.inspect |> birdie.snap(title: "cast subquery column as integer")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "cast subquery column as integer")
 }
 
 pub fn between_named_params_infer_column_type_test() {
@@ -1398,7 +1456,9 @@ pub fn between_named_params_infer_column_type_test() {
       db,
       "SELECT id, name FROM events WHERE created_at BETWEEN @from_ts AND @to_ts",
     )
-  result |> string.inspect |> birdie.snap(title: "between named params infer column type")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "between named params infer column type")
 }
 
 pub fn coalesce_max_plus_literal_returns_int_test() {
@@ -1419,7 +1479,9 @@ pub fn coalesce_max_plus_literal_returns_int_test() {
       db,
       "SELECT COALESCE(MAX(position), 0) + 1 AS next_position FROM items WHERE org_id = @org_id AND item_type = @item_type AND season IS @season",
     )
-  result |> string.inspect |> birdie.snap(title: "coalesce max plus literal returns int")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "coalesce max plus literal returns int")
 }
 
 // ---- SELECT DISTINCT ----
@@ -1432,10 +1494,15 @@ pub fn introspect_select_distinct_single_column_test() {
       on: db,
     )
   let assert Ok(_) =
-    sqlight.exec("INSERT INTO t (id, status) VALUES (1, 'active'), (2, 'active')", on: db)
+    sqlight.exec(
+      "INSERT INTO t (id, status) VALUES (1, 'active'), (2, 'active')",
+      on: db,
+    )
   let assert Ok(result) =
     sqlite.introspect_query(db, "SELECT DISTINCT status FROM t")
-  result |> string.inspect |> birdie.snap(title: "select distinct single column")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "select distinct single column")
 }
 
 pub fn introspect_select_distinct_multiple_columns_test() {
@@ -1447,7 +1514,9 @@ pub fn introspect_select_distinct_multiple_columns_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(db, "SELECT DISTINCT status, priority FROM t")
-  result |> string.inspect |> birdie.snap(title: "select distinct multiple columns")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "select distinct multiple columns")
 }
 
 pub fn introspect_select_distinct_with_where_param_test() {
@@ -1458,11 +1527,10 @@ pub fn introspect_select_distinct_with_where_param_test() {
       on: db,
     )
   let assert Ok(result) =
-    sqlite.introspect_query(
-      db,
-      "SELECT DISTINCT status FROM t WHERE id > ?",
-    )
-  result |> string.inspect |> birdie.snap(title: "select distinct with where param")
+    sqlite.introspect_query(db, "SELECT DISTINCT status FROM t WHERE id > ?")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "select distinct with where param")
 }
 
 pub fn introspect_select_distinct_with_order_by_test() {
@@ -1473,11 +1541,10 @@ pub fn introspect_select_distinct_with_order_by_test() {
       on: db,
     )
   let assert Ok(result) =
-    sqlite.introspect_query(
-      db,
-      "SELECT DISTINCT name FROM t ORDER BY name",
-    )
-  result |> string.inspect |> birdie.snap(title: "select distinct with order by")
+    sqlite.introspect_query(db, "SELECT DISTINCT name FROM t ORDER BY name")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "select distinct with order by")
 }
 
 // ---- GROUP BY ----
@@ -1554,7 +1621,9 @@ pub fn introspect_group_by_with_multiple_aggregates_test() {
       db,
       "SELECT grp, COUNT(*) AS cnt, AVG(val) AS avg_val, MAX(val) AS max_val FROM t GROUP BY grp",
     )
-  result |> string.inspect |> birdie.snap(title: "group by with multiple aggregates")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "group by with multiple aggregates")
 }
 
 // ---- UNION / INTERSECT / EXCEPT ----
@@ -1622,40 +1691,22 @@ pub fn introspect_union_with_where_param_test() {
 pub fn introspect_intersect_test() {
   use db <- sqlight.with_connection(":memory:")
   let assert Ok(_) =
-    sqlight.exec(
-      "CREATE TABLE t1 (id INTEGER NOT NULL PRIMARY KEY)",
-      on: db,
-    )
+    sqlight.exec("CREATE TABLE t1 (id INTEGER NOT NULL PRIMARY KEY)", on: db)
   let assert Ok(_) =
-    sqlight.exec(
-      "CREATE TABLE t2 (id INTEGER NOT NULL PRIMARY KEY)",
-      on: db,
-    )
+    sqlight.exec("CREATE TABLE t2 (id INTEGER NOT NULL PRIMARY KEY)", on: db)
   let assert Ok(result) =
-    sqlite.introspect_query(
-      db,
-      "SELECT id FROM t1 INTERSECT SELECT id FROM t2",
-    )
+    sqlite.introspect_query(db, "SELECT id FROM t1 INTERSECT SELECT id FROM t2")
   result |> string.inspect |> birdie.snap(title: "intersect")
 }
 
 pub fn introspect_except_test() {
   use db <- sqlight.with_connection(":memory:")
   let assert Ok(_) =
-    sqlight.exec(
-      "CREATE TABLE t1 (id INTEGER NOT NULL PRIMARY KEY)",
-      on: db,
-    )
+    sqlight.exec("CREATE TABLE t1 (id INTEGER NOT NULL PRIMARY KEY)", on: db)
   let assert Ok(_) =
-    sqlight.exec(
-      "CREATE TABLE t2 (id INTEGER NOT NULL PRIMARY KEY)",
-      on: db,
-    )
+    sqlight.exec("CREATE TABLE t2 (id INTEGER NOT NULL PRIMARY KEY)", on: db)
   let assert Ok(result) =
-    sqlite.introspect_query(
-      db,
-      "SELECT id FROM t1 EXCEPT SELECT id FROM t2",
-    )
+    sqlite.introspect_query(db, "SELECT id FROM t1 EXCEPT SELECT id FROM t2")
   result |> string.inspect |> birdie.snap(title: "except")
 }
 
@@ -1723,7 +1774,9 @@ pub fn introspect_upsert_do_update_with_named_params_test() {
       db,
       "INSERT INTO t (id, val, counter) VALUES (@id, @val, @counter) ON CONFLICT(id) DO UPDATE SET val = @val, counter = @counter",
     )
-  result |> string.inspect |> birdie.snap(title: "upsert do update with named params")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "upsert do update with named params")
 }
 
 pub fn introspect_upsert_do_update_set_with_where_test() {
@@ -1738,7 +1791,9 @@ pub fn introspect_upsert_do_update_set_with_where_test() {
       db,
       "INSERT INTO t (id, val, version) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET val = ?, version = ? WHERE version < ? RETURNING id, val, version",
     )
-  result |> string.inspect |> birdie.snap(title: "upsert do update set with where")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "upsert do update set with where")
 }
 
 pub fn introspect_upsert_do_nothing_no_returning_test() {
@@ -1753,7 +1808,9 @@ pub fn introspect_upsert_do_nothing_no_returning_test() {
       db,
       "INSERT INTO t (id, val) VALUES (?, ?) ON CONFLICT(id) DO NOTHING",
     )
-  result |> string.inspect |> birdie.snap(title: "upsert do nothing no returning")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "upsert do nothing no returning")
 }
 
 pub fn introspect_upsert_no_conflict_target_test() {
@@ -1809,10 +1866,7 @@ pub fn introspect_like_param_test() {
       on: db,
     )
   let assert Ok(result) =
-    sqlite.introspect_query(
-      db,
-      "SELECT id, name FROM users WHERE name LIKE ?",
-    )
+    sqlite.introspect_query(db, "SELECT id, name FROM users WHERE name LIKE ?")
   result |> string.inspect |> birdie.snap(title: "like param")
 }
 
@@ -1827,10 +1881,7 @@ pub fn introspect_like_named_param_test() {
       on: db,
     )
   let assert Ok(result) =
-    sqlite.introspect_query(
-      db,
-      "SELECT id FROM users WHERE name LIKE @pattern",
-    )
+    sqlite.introspect_query(db, "SELECT id FROM users WHERE name LIKE @pattern")
   result |> string.inspect |> birdie.snap(title: "like named param")
 }
 
@@ -1848,7 +1899,10 @@ pub fn introspect_is_null_test() {
       on: db,
     )
   let assert Ok(result) =
-    sqlite.introspect_query(db, "SELECT id, name FROM users WHERE deleted_at IS NULL")
+    sqlite.introspect_query(
+      db,
+      "SELECT id, name FROM users WHERE deleted_at IS NULL",
+    )
   result |> string.inspect |> birdie.snap(title: "is null")
 }
 
@@ -1864,7 +1918,10 @@ pub fn introspect_is_not_null_test() {
       on: db,
     )
   let assert Ok(result) =
-    sqlite.introspect_query(db, "SELECT id, name FROM users WHERE email IS NOT NULL")
+    sqlite.introspect_query(
+      db,
+      "SELECT id, name FROM users WHERE email IS NOT NULL",
+    )
   result |> string.inspect |> birdie.snap(title: "is not null")
 }
 
@@ -2003,10 +2060,7 @@ pub fn introspect_replace_into_test() {
       on: db,
     )
   let assert Ok(result) =
-    sqlite.introspect_query(
-      db,
-      "REPLACE INTO users (id, name) VALUES (?, ?)",
-    )
+    sqlite.introspect_query(db, "REPLACE INTO users (id, name) VALUES (?, ?)")
   result |> string.inspect |> birdie.snap(title: "replace into")
 }
 
@@ -2023,10 +2077,7 @@ pub fn introspect_not_in_subquery_param_test() {
       on: db,
     )
   let assert Ok(_) =
-    sqlight.exec(
-      "CREATE TABLE deleted (user_id INTEGER NOT NULL)",
-      on: db,
-    )
+    sqlight.exec("CREATE TABLE deleted (user_id INTEGER NOT NULL)", on: db)
   let assert Ok(result) =
     sqlite.introspect_query(
       db,
@@ -2046,10 +2097,7 @@ pub fn introspect_not_like_param_test() {
       on: db,
     )
   let assert Ok(result) =
-    sqlite.introspect_query(
-      db,
-      "SELECT id FROM users WHERE name NOT LIKE ?",
-    )
+    sqlite.introspect_query(db, "SELECT id FROM users WHERE name NOT LIKE ?")
   result |> string.inspect |> birdie.snap(title: "not like param")
 }
 
@@ -2133,15 +2181,13 @@ pub fn introspect_query_empty_sql_test() {
 }
 
 pub fn parse_returns_annotation_invalid_test() {
-  let assert Error(_) = sqlite.parse_returns_annotation(
-    "-- returns: NotARowType\nSELECT 1",
-  )
+  let assert Error(_) =
+    sqlite.parse_returns_annotation("-- returns: NotARowType\nSELECT 1")
 }
 
 pub fn parse_returns_annotation_valid_test() {
-  let assert Ok(option.Some("OrgRow")) = sqlite.parse_returns_annotation(
-    "-- returns: OrgRow\nSELECT id FROM orgs",
-  )
+  let assert Ok(option.Some("OrgRow")) =
+    sqlite.parse_returns_annotation("-- returns: OrgRow\nSELECT id FROM orgs")
 }
 
 pub fn parse_returns_annotation_missing_test() {
@@ -2168,7 +2214,9 @@ pub fn introspect_insert_or_replace_into_table_name_test() {
       db,
       "INSERT OR REPLACE INTO users (id, name) VALUES (?, ?)",
     )
-  result |> string.inspect |> birdie.snap(title: "insert or replace into table name")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "insert or replace into table name")
 }
 
 pub fn introspect_replace_into_table_name_test() {
@@ -2182,10 +2230,7 @@ pub fn introspect_replace_into_table_name_test() {
       on: db,
     )
   let assert Ok(result) =
-    sqlite.introspect_query(
-      db,
-      "REPLACE INTO users (id, name) VALUES (?, ?)",
-    )
+    sqlite.introspect_query(db, "REPLACE INTO users (id, name) VALUES (?, ?)")
   result |> string.inspect |> birdie.snap(title: "replace into table name")
 }
 
@@ -2277,10 +2322,7 @@ pub fn introspect_natural_join_test() {
       on: db,
     )
   let assert Ok(result) =
-    sqlite.introspect_query(
-      db,
-      "SELECT a.id, a.val_a FROM a NATURAL JOIN b",
-    )
+    sqlite.introspect_query(db, "SELECT a.id, a.val_a FROM a NATURAL JOIN b")
   result |> string.inspect |> birdie.snap(title: "natural join")
 }
 
@@ -2326,10 +2368,7 @@ pub fn introspect_limit_param_type_is_int_test() {
       on: db,
     )
   let assert Ok(result) =
-    sqlite.introspect_query(
-      db,
-      "SELECT id, name FROM users LIMIT ?",
-    )
+    sqlite.introspect_query(db, "SELECT id, name FROM users LIMIT ?")
   let assert Ok(param) = list.first(result.parameters)
   param |> string.inspect |> birdie.snap(title: "limit param type is int")
 }
@@ -2342,11 +2381,10 @@ pub fn introspect_limit_offset_param_types_are_int_test() {
       on: db,
     )
   let assert Ok(result) =
-    sqlite.introspect_query(
-      db,
-      "SELECT id, name FROM users LIMIT ? OFFSET ?",
-    )
-  result.parameters |> string.inspect |> birdie.snap(title: "limit offset param types are int")
+    sqlite.introspect_query(db, "SELECT id, name FROM users LIMIT ? OFFSET ?")
+  result.parameters
+  |> string.inspect
+  |> birdie.snap(title: "limit offset param types are int")
 }
 
 pub fn introspect_limit_named_param_type_is_int_test() {
@@ -2361,7 +2399,9 @@ pub fn introspect_limit_named_param_type_is_int_test() {
       db,
       "SELECT id, name FROM users LIMIT @limit OFFSET @offset",
     )
-  result.parameters |> string.inspect |> birdie.snap(title: "limit named param type is int")
+  result.parameters
+  |> string.inspect
+  |> birdie.snap(title: "limit named param type is int")
 }
 
 // ---- GROUP BY / HAVING param text-based inference (marmot-gqwq) ----
@@ -2382,5 +2422,7 @@ pub fn introspect_having_named_param_infers_column_type_test() {
       db,
       "SELECT region, SUM(amount) AS total FROM sales GROUP BY region HAVING SUM(amount) > @min_amount",
     )
-  result |> string.inspect |> birdie.snap(title: "having named param infers column type")
+  result
+  |> string.inspect
+  |> birdie.snap(title: "having named param infers column type")
 }

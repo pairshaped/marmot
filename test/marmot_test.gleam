@@ -142,8 +142,7 @@ pub fn validate_sql_trailing_semicolon_test() {
 }
 
 pub fn validate_sql_multiple_statements_test() {
-  let assert Error(Nil) =
-    marmot.validate_sql("SELECT 1; SELECT 2", "test.sql")
+  let assert Error(Nil) = marmot.validate_sql("SELECT 1; SELECT 2", "test.sql")
 }
 
 pub fn validate_sql_semicolon_in_string_test() {
@@ -167,12 +166,23 @@ pub fn validate_sql_trailing_semicolon_with_block_comment_test() {
     marmot.validate_sql("SELECT 1; /* comment */", "test.sql")
 }
 
+pub fn validate_sql_preserves_leading_annotations_test() {
+  let assert Ok("-- returns: Foo\nSELECT 1") =
+    marmot.validate_sql("-- returns: Foo\nSELECT 1; -- comment", "test.sql")
+}
+
+pub fn validate_sql_preserves_annotations_trailing_comment_line_test() {
+  let assert Ok("-- returns: Foo\nSELECT 1") =
+    marmot.validate_sql("-- returns: Foo\nSELECT 1;\n-- comment", "test.sql")
+}
+
 pub fn contains_semicolon_outside_strings_none_test() {
   let assert False = marmot.contains_semicolon_outside_strings("SELECT 1")
 }
 
 pub fn contains_semicolon_outside_strings_simple_test() {
-  let assert True = marmot.contains_semicolon_outside_strings("SELECT 1; SELECT 2")
+  let assert True =
+    marmot.contains_semicolon_outside_strings("SELECT 1; SELECT 2")
 }
 
 pub fn contains_semicolon_outside_strings_in_string_test() {

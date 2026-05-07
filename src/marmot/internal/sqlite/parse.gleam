@@ -168,8 +168,8 @@ pub fn parse_select_items(tokens: List(Token)) -> List(SelectItem) {
     _ -> {
       let select_tokens =
         tokenize.take_until_keywords(after_select, [
-          "FROM", "WHERE", "GROUP", "HAVING", "ORDER", "LIMIT",
-          "UNION", "INTERSECT", "EXCEPT",
+          "FROM", "WHERE", "GROUP", "HAVING", "ORDER", "LIMIT", "UNION",
+          "INTERSECT", "EXCEPT",
         ])
       tokenize.split_on_commas(select_tokens)
       |> list.map(parse_select_item)
@@ -352,8 +352,8 @@ pub fn parse_from_tables(tokens: List(Token)) -> List(String) {
     Ok(#(_, from_tokens)) -> {
       let from_part =
         tokenize.take_until_keywords(from_tokens, [
-          "WHERE", "GROUP", "HAVING", "ORDER", "LIMIT", "RETURNING",
-          "UNION", "INTERSECT", "EXCEPT",
+          "WHERE", "GROUP", "HAVING", "ORDER", "LIMIT", "RETURNING", "UNION",
+          "INTERSECT", "EXCEPT",
         ])
       extract_table_names_from_from(from_part)
     }
@@ -557,7 +557,9 @@ pub fn parse_values_placeholder_positions(tokens: List(Token)) -> List(Int) {
 
 // ---- UPDATE SET parsing ----
 
-pub fn parse_update_set_columns(tokens: List(Token)) -> List(#(String, String)) {
+pub fn parse_update_set_columns(
+  tokens: List(Token),
+) -> List(#(String, String)) {
   case tokenize.split_at_keyword(tokens, "SET") {
     Error(_) -> []
     Ok(#(_, after_set)) -> {
@@ -691,7 +693,9 @@ fn do_has_subquery(tokens: List(Token)) -> Bool {
   }
 }
 
-fn parse_simple_where_condition(tokens: List(Token)) -> List(#(String, String)) {
+fn parse_simple_where_condition(
+  tokens: List(Token),
+) -> List(#(String, String)) {
   // Find the operator and extract LHS column
   let lhs_result = extract_lhs_column(tokens)
   case lhs_result {
@@ -981,7 +985,8 @@ fn extract_column_word(prev: List(Token)) -> Option(String) {
   case prev {
     // Skip NOT that precedes a keyword operator (e.g., NOT LIKE, NOT IN,
     // NOT BETWEEN). prev is reversed, so NOT is the first word after the op.
-    [Word("NOT"), Word(col), Dot, Word(table), ..] -> option.Some(table <> "." <> col)
+    [Word("NOT"), Word(col), Dot, Word(table), ..] ->
+      option.Some(table <> "." <> col)
     [Word("NOT"), Word(col), ..] -> option.Some(col)
     [Word("NOT"), QuotedId(col), ..] -> option.Some(col)
     [Word("NOT"), CloseParen, ..rest] -> {
@@ -1195,13 +1200,19 @@ fn infer_arithmetic_type(tokens: List(Token)) -> Option(query.ColumnType) {
       let is_op = case prev, t {
         _, Plus -> True
         _, Slash -> True
-        option.Some(OpenParen), Star -> False // COUNT(*) or SELECT *
-        option.Some(Dot), Star -> False // table.*
+        option.Some(OpenParen), Star -> False
+        // COUNT(*) or SELECT *
+        option.Some(Dot), Star -> False
+        // table.*
         _, Star -> True
-        option.Some(Number(_)), Minus -> True // binary subtraction
-        option.Some(Word(_)), Minus -> True // column - x
-        option.Some(CloseParen), Minus -> True // ) - 1
-        _, Minus -> False // unary negation
+        option.Some(Number(_)), Minus -> True
+        // binary subtraction
+        option.Some(Word(_)), Minus -> True
+        // column - x
+        option.Some(CloseParen), Minus -> True
+        // ) - 1
+        _, Minus -> False
+        // unary negation
         _, _ -> False
       }
       #(found || is_op, option.Some(t))

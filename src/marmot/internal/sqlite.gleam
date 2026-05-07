@@ -379,43 +379,46 @@ fn extract_parameters(
         })
       }
 
-      fix_limit_offset_param_types(case stmt_type {
-        parse.Insert | parse.Replace -> {
-          case tokenize.has_keyword(tokens, "VALUES") {
-            True -> {
-              let parsed = extract_insert_parameters(table_schemas, tokens)
-              case list.length(parsed) == param_count {
-                True -> parsed
-                False -> opcode_fallback()
+      fix_limit_offset_param_types(
+        case stmt_type {
+          parse.Insert | parse.Replace -> {
+            case tokenize.has_keyword(tokens, "VALUES") {
+              True -> {
+                let parsed = extract_insert_parameters(table_schemas, tokens)
+                case list.length(parsed) == param_count {
+                  True -> parsed
+                  False -> opcode_fallback()
+                }
+              }
+              False -> {
+                let parsed =
+                  extract_insert_select_parameters(table_schemas, tokens)
+                case list.length(parsed) == param_count {
+                  True -> parsed
+                  False -> opcode_fallback()
+                }
               }
             }
-            False -> {
-              let parsed =
-                extract_insert_select_parameters(table_schemas, tokens)
-              case list.length(parsed) == param_count {
-                True -> parsed
-                False -> opcode_fallback()
-              }
+          }
+          parse.Update -> {
+            let parsed = extract_update_parameters(table_schemas, tokens)
+            case list.length(parsed) == param_count {
+              True -> parsed
+              False -> opcode_fallback()
             }
           }
-        }
-        parse.Update -> {
-          let parsed = extract_update_parameters(table_schemas, tokens)
-          case list.length(parsed) == param_count {
-            True -> parsed
-            False -> opcode_fallback()
+          parse.Select | parse.Delete -> {
+            let parsed =
+              extract_select_parameters(table_schemas, tokens, stmt_type)
+            case list.length(parsed) == param_count {
+              True -> parsed
+              False -> opcode_fallback()
+            }
           }
-        }
-        parse.Select | parse.Delete -> {
-          let parsed =
-            extract_select_parameters(table_schemas, tokens, stmt_type)
-          case list.length(parsed) == param_count {
-            True -> parsed
-            False -> opcode_fallback()
-          }
-        }
-        parse.Other -> opcode_fallback()
-      }, tokens)
+          parse.Other -> opcode_fallback()
+        },
+        tokens,
+      )
     }
   }
 }
@@ -482,13 +485,7 @@ fn find_limit_offset_param_positions(
         True -> True
         False -> prev_is_limit_offset
       }
-      find_limit_offset_param_positions(
-        rest,
-        param_count,
-        depth,
-        acc,
-        new_prev,
-      )
+      find_limit_offset_param_positions(rest, param_count, depth, acc, new_prev)
     }
     [_, ..rest] ->
       find_limit_offset_param_positions(
@@ -830,41 +827,39 @@ fn get_table_metadata(
     decode.success(#(name, rootpage))
   }
 
-  let tables =
-    case
-      sqlight.query(
-        "SELECT name, rootpage FROM sqlite_master WHERE type='table'",
-        on: db,
-        with: [],
-        expecting: master_decoder,
+  let tables = case
+    sqlight.query(
+      "SELECT name, rootpage FROM sqlite_master WHERE type='table'",
+      on: db,
+      with: [],
+      expecting: master_decoder,
+    )
+  {
+    Ok(rows) -> rows
+    Error(err) -> {
+      io.println_error(
+        "warning: Could not read table metadata: " <> err.message,
       )
-    {
-      Ok(rows) -> rows
-      Error(err) -> {
-        io.println_error(
-          "warning: Could not read table metadata: " <> err.message,
-        )
-        []
-      }
+      []
     }
+  }
 
   let index_parent_decoder = {
     use rootpage <- decode.field(0, decode.int)
     use tbl_name <- decode.field(1, decode.string)
     decode.success(#(rootpage, tbl_name))
   }
-  let indexes =
-    case
-      sqlight.query(
-        "SELECT rootpage, tbl_name FROM sqlite_master WHERE type='index'",
-        on: db,
-        with: [],
-        expecting: index_parent_decoder,
-      )
-    {
-      Ok(rows) -> rows
-      Error(_) -> []
-    }
+  let indexes = case
+    sqlight.query(
+      "SELECT rootpage, tbl_name FROM sqlite_master WHERE type='index'",
+      on: db,
+      with: [],
+      expecting: index_parent_decoder,
+    )
+  {
+    Ok(rows) -> rows
+    Error(_) -> []
+  }
 
   let pragma_decoder = {
     use col_name <- decode.field(1, decode.string)

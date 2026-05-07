@@ -68,7 +68,12 @@ pub fn parse_config(
     option.None -> toml_output
   }
 
-  Config(database:, output:, query_function: toml_query_function, sql_dir: toml_sql_dir)
+  Config(
+    database:,
+    output:,
+    query_function: toml_query_function,
+    sql_dir: toml_sql_dir,
+  )
 }
 
 type CliArgs {
@@ -105,7 +110,10 @@ fn parse_cli_args_loop(args: List(String), acc: CliArgs) -> CliArgs {
 /// When sql_dir is configured, recursively finds all directories containing
 /// .sql files under sql_dir.
 /// Otherwise, recursively finds directories named "sql" under src/.
-pub fn find_sql_directories(root: String, sql_dir: Option(String)) -> List(String) {
+pub fn find_sql_directories(
+  root: String,
+  sql_dir: Option(String),
+) -> List(String) {
   case sql_dir {
     option.Some(dir) -> find_dirs_with_sql_files(dir)
     option.None -> find_sql_directories_recursive(root)
@@ -115,7 +123,8 @@ pub fn find_sql_directories(root: String, sql_dir: Option(String)) -> List(Strin
 fn find_dirs_with_sql_files(dir: String) -> List(String) {
   case simplifile.read_directory(at: dir) {
     Ok(entries) -> {
-      let has_sql_here = list.any(entries, fn(f) { string.ends_with(f, ".sql") })
+      let has_sql_here =
+        list.any(entries, fn(f) { string.ends_with(f, ".sql") })
       let child_dirs =
         entries
         |> list.flat_map(fn(entry) {
@@ -178,7 +187,10 @@ pub fn list_sql_files(dir: String) -> List(String) {
 ///   - `src/app/users/sql` -> `src/generated/sql/users_sql.gleam`
 ///   - `src/server/accounts/sql` with output `src/server/generated/sql`
 ///     -> `src/server/generated/sql/accounts_sql.gleam`
-pub fn output_path(sql_dir: String, configured_output: Option(String)) -> String {
+pub fn output_path(
+  sql_dir: String,
+  configured_output: Option(String),
+) -> String {
   let output = case configured_output {
     option.Some(o) -> o
     option.None -> "src/generated/sql"

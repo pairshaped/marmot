@@ -120,12 +120,23 @@ pub fn find_sql_directories_test() {
 pub fn find_sql_directories_with_sql_dir_test() {
   use <- with_temp_dir("test_tmp_sqldir")
 
-  let assert Ok(_) = simplifile.create_directory_all("test_tmp_sqldir/src/sql/likes")
-  let assert Ok(_) = simplifile.write("test_tmp_sqldir/src/sql/likes/get_likes.sql", "SELECT 1")
-  let assert Ok(_) = simplifile.create_directory_all("test_tmp_sqldir/src/sql/articles")
-  let assert Ok(_) = simplifile.write("test_tmp_sqldir/src/sql/articles/get_articles.sql", "SELECT 1")
+  let assert Ok(_) =
+    simplifile.create_directory_all("test_tmp_sqldir/src/sql/likes")
+  let assert Ok(_) =
+    simplifile.write("test_tmp_sqldir/src/sql/likes/get_likes.sql", "SELECT 1")
+  let assert Ok(_) =
+    simplifile.create_directory_all("test_tmp_sqldir/src/sql/articles")
+  let assert Ok(_) =
+    simplifile.write(
+      "test_tmp_sqldir/src/sql/articles/get_articles.sql",
+      "SELECT 1",
+    )
 
-  let dirs = project.find_sql_directories("test_tmp_sqldir/src", option.Some("test_tmp_sqldir/src/sql"))
+  let dirs =
+    project.find_sql_directories(
+      "test_tmp_sqldir/src",
+      option.Some("test_tmp_sqldir/src/sql"),
+    )
   let assert True = list.contains(dirs, "test_tmp_sqldir/src/sql/likes")
   let assert True = list.contains(dirs, "test_tmp_sqldir/src/sql/articles")
   let assert 2 = list.length(dirs)
@@ -135,11 +146,18 @@ pub fn find_sql_directories_with_sql_dir_test() {
 pub fn find_sql_directories_with_sql_dir_root_files_test() {
   use <- with_temp_dir("test_tmp_sqldir2")
 
-  let assert Ok(_) = simplifile.create_directory_all("test_tmp_sqldir2/src/sql/likes")
-  let assert Ok(_) = simplifile.write("test_tmp_sqldir2/src/sql/likes/get_likes.sql", "SELECT 1")
-  let assert Ok(_) = simplifile.write("test_tmp_sqldir2/src/sql/get_settings.sql", "SELECT 1")
+  let assert Ok(_) =
+    simplifile.create_directory_all("test_tmp_sqldir2/src/sql/likes")
+  let assert Ok(_) =
+    simplifile.write("test_tmp_sqldir2/src/sql/likes/get_likes.sql", "SELECT 1")
+  let assert Ok(_) =
+    simplifile.write("test_tmp_sqldir2/src/sql/get_settings.sql", "SELECT 1")
 
-  let dirs = project.find_sql_directories("test_tmp_sqldir2/src", option.Some("test_tmp_sqldir2/src/sql"))
+  let dirs =
+    project.find_sql_directories(
+      "test_tmp_sqldir2/src",
+      option.Some("test_tmp_sqldir2/src/sql"),
+    )
   let assert True = list.contains(dirs, "test_tmp_sqldir2/src/sql")
   let assert True = list.contains(dirs, "test_tmp_sqldir2/src/sql/likes")
   let assert 2 = list.length(dirs)
@@ -149,11 +167,18 @@ pub fn find_sql_directories_with_sql_dir_root_files_test() {
 pub fn find_sql_directories_with_sql_dir_empty_subdir_test() {
   use <- with_temp_dir("test_tmp_sqldir3")
 
-  let assert Ok(_) = simplifile.create_directory_all("test_tmp_sqldir3/src/sql/empty")
-  let assert Ok(_) = simplifile.create_directory_all("test_tmp_sqldir3/src/sql/likes")
-  let assert Ok(_) = simplifile.write("test_tmp_sqldir3/src/sql/likes/get_likes.sql", "SELECT 1")
+  let assert Ok(_) =
+    simplifile.create_directory_all("test_tmp_sqldir3/src/sql/empty")
+  let assert Ok(_) =
+    simplifile.create_directory_all("test_tmp_sqldir3/src/sql/likes")
+  let assert Ok(_) =
+    simplifile.write("test_tmp_sqldir3/src/sql/likes/get_likes.sql", "SELECT 1")
 
-  let dirs = project.find_sql_directories("test_tmp_sqldir3/src", option.Some("test_tmp_sqldir3/src/sql"))
+  let dirs =
+    project.find_sql_directories(
+      "test_tmp_sqldir3/src",
+      option.Some("test_tmp_sqldir3/src/sql"),
+    )
   let assert True = list.contains(dirs, "test_tmp_sqldir3/src/sql/likes")
   let assert 1 = list.length(dirs)
   Nil
@@ -275,7 +300,10 @@ pub fn output_path_sql_dir_with_subdirs_test() {
 pub fn output_path_sql_segment_stripping_test() {
   // likes/sql/queries path should strip the "sql" segment
   let assert "src/generated/sql/likes/queries_sql.gleam" =
-    project.output_path("src/likes/sql/queries/sql", option.Some("src/generated/sql"))
+    project.output_path(
+      "src/likes/sql/queries/sql",
+      option.Some("src/generated/sql"),
+    )
 }
 
 pub fn output_path_sql_dir_root_test() {
@@ -287,12 +315,26 @@ pub fn output_path_sql_dir_root_test() {
 pub fn find_sql_directories_with_sql_dir_nested_test() {
   use <- with_temp_dir("test_tmp_sqldir4")
 
-  let assert Ok(_) = simplifile.create_directory_all("test_tmp_sqldir4/src/sql/likes/sql")
-  let assert Ok(_) = simplifile.write("test_tmp_sqldir4/src/sql/likes/sql/get_likes.sql", "SELECT 1")
-  let assert Ok(_) = simplifile.create_directory_all("test_tmp_sqldir4/src/sql/articles")
-  let assert Ok(_) = simplifile.write("test_tmp_sqldir4/src/sql/articles/get_articles.sql", "SELECT 1")
+  let assert Ok(_) =
+    simplifile.create_directory_all("test_tmp_sqldir4/src/sql/likes/sql")
+  let assert Ok(_) =
+    simplifile.write(
+      "test_tmp_sqldir4/src/sql/likes/sql/get_likes.sql",
+      "SELECT 1",
+    )
+  let assert Ok(_) =
+    simplifile.create_directory_all("test_tmp_sqldir4/src/sql/articles")
+  let assert Ok(_) =
+    simplifile.write(
+      "test_tmp_sqldir4/src/sql/articles/get_articles.sql",
+      "SELECT 1",
+    )
 
-  let dirs = project.find_sql_directories("test_tmp_sqldir4/src", option.Some("test_tmp_sqldir4/src/sql"))
+  let dirs =
+    project.find_sql_directories(
+      "test_tmp_sqldir4/src",
+      option.Some("test_tmp_sqldir4/src/sql"),
+    )
   let assert True = list.contains(dirs, "test_tmp_sqldir4/src/sql/likes/sql")
   let assert True = list.contains(dirs, "test_tmp_sqldir4/src/sql/articles")
   let assert 2 = list.length(dirs)

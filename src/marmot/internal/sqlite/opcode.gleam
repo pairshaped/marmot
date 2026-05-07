@@ -3,9 +3,7 @@ import gleam/dynamic/decode
 import gleam/int
 import gleam/io
 import gleam/list
-import marmot/internal/query.{
-  type Column, type Parameter, Column, Parameter,
-}
+import marmot/internal/query.{type Column, type Parameter, Column, Parameter}
 import marmot/internal/sqlite/parse
 
 /// Opcode from EXPLAIN output
@@ -203,8 +201,7 @@ pub fn find_column_for_register(
 
       case column_op {
         Ok(op) -> resolve_column(op.p1, op.p2, cursor_table, table_schemas)
-        Error(_) ->
-          query.unknown_column()
+        Error(_) -> query.unknown_column()
       }
     }
   }
@@ -263,7 +260,9 @@ pub fn resolve_column(
       }
     Error(_) -> {
       io.println_error(
-        "warning: cursor " <> int.to_string(cursor) <> " not found in cursor-to-table map",
+        "warning: cursor "
+        <> int.to_string(cursor)
+        <> " not found in cursor-to-table map",
       )
       query.unknown_column()
     }
@@ -469,7 +468,9 @@ fn resolve_column_to_parameter(
           }
         Error(_) -> {
           io.println_error(
-            "warning: table " <> table_name <> " not found in schema for parameter resolution",
+            "warning: table "
+            <> table_name
+            <> " not found in schema for parameter resolution",
           )
           query.unknown_param()
         }
@@ -506,7 +507,6 @@ fn do_dedupe_variables(
       }
   }
 }
-
 
 /// A decoder that handles both string and non-string p4 values from EXPLAIN
 pub fn flexible_string_decoder() -> decode.Decoder(String) {

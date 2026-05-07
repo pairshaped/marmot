@@ -491,8 +491,7 @@ pub fn is_keyword_test() {
 
 pub fn split_at_last_keyword_test() {
   let tokens = tokenize.tokenize("SELECT a AS b AS c FROM users")
-  let assert Ok(#(before, after)) =
-    tokenize.split_at_last_keyword(tokens, "AS")
+  let assert Ok(#(before, after)) = tokenize.split_at_last_keyword(tokens, "AS")
   let assert "SELECT a AS b" = tokenize.tokens_to_text(before)
   let assert "c FROM users" = tokenize.tokens_to_text(after)
 }
@@ -566,8 +565,7 @@ pub fn tokenize_empty_string_test() {
 pub fn tokenize_unicode_identifier_test() {
   // Non-ASCII chars like é break the word — tokenizer only handles ASCII
   let tokens = tokenize.tokenize("SELECT café FROM menu")
-  let assert "caf FROM menu" =
-    tokenize.tokens_to_text(list.drop(tokens, 1))
+  let assert "caf FROM menu" = tokenize.tokens_to_text(list.drop(tokens, 1))
   // The é character is dropped during tokenization
 }
 
@@ -613,8 +611,7 @@ pub fn split_on_and_or_between_nested_test() {
   // AND inside parens at depth > 0 should not be consumed as BETWEEN's AND.
   // The AND at depth 0 after the close paren IS BETWEEN's AND, so it should
   // be consumed into the BETWEEN group, resulting in 2 groups total.
-  let tokens =
-    tokenize.tokenize("a = 1 AND b BETWEEN (SELECT x AND y) AND c")
+  let tokens = tokenize.tokenize("a = 1 AND b BETWEEN (SELECT x AND y) AND c")
   let groups = tokenize.split_on_and_or(tokens)
   let assert 2 = list.length(groups)
   // Verify the BETWEEN group contains the nested AND (preserved) and the
@@ -622,8 +619,7 @@ pub fn split_on_and_or_between_nested_test() {
   let and_count =
     groups
     |> list.fold(0, fn(acc, g) {
-      acc
-      + list.length(list.filter(g, fn(t) { t == Word("AND") }))
+      acc + list.length(list.filter(g, fn(t) { t == Word("AND") }))
     })
   let assert 2 = and_count
 }

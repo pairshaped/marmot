@@ -162,8 +162,7 @@ pub fn strip_comments_block_comment_inserts_space_test() {
 pub fn strip_comments_block_comment_multiline_test() {
   // Block comment content (including newlines) is fully stripped, leaving
   // only the space inserted at the closing */ to prevent token fusion
-  let assert "SELECT   id" =
-    query.strip_comments("SELECT /* a\ncomment */ id")
+  let assert "SELECT   id" = query.strip_comments("SELECT /* a\ncomment */ id")
 }
 
 pub fn strip_comments_unterminated_block_comment_test() {
@@ -245,10 +244,10 @@ pub fn is_digit_accepts_only_ascii_test() {
 // ---- find_column tests ----
 
 pub fn find_column_found_test() {
-  let schemas = dict.from_list([#(
-    "users",
-    [Column(name: "id", column_type: IntType, nullable: False)],
-  )])
+  let schemas =
+    dict.from_list([
+      #("users", [Column(name: "id", column_type: IntType, nullable: False)]),
+    ])
   let assert Ok(Column(name: "id", column_type: IntType, nullable: False)) =
     query.find_column(schemas, "users", "id")
 }
@@ -259,18 +258,18 @@ pub fn find_column_table_not_found_test() {
 }
 
 pub fn find_column_column_not_found_test() {
-  let schemas = dict.from_list([#(
-    "users",
-    [Column(name: "id", column_type: IntType, nullable: False)],
-  )])
+  let schemas =
+    dict.from_list([
+      #("users", [Column(name: "id", column_type: IntType, nullable: False)]),
+    ])
   let assert Error(Nil) = query.find_column(schemas, "users", "name")
 }
 
 pub fn find_column_ci_case_insensitive_test() {
-  let schemas = dict.from_list([#(
-    "users",
-    [Column(name: "UserId", column_type: IntType, nullable: False)],
-  )])
+  let schemas =
+    dict.from_list([
+      #("users", [Column(name: "UserId", column_type: IntType, nullable: False)]),
+    ])
   let assert Ok(_) = query.find_column_ci(schemas, "users", "userid")
 }
 

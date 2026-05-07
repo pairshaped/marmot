@@ -33,7 +33,9 @@ pub type QueryFunctionConfig {
 
 /// Parse a `query_function` config string of the form "module/path.function".
 /// Returns `None` if input is `None` or malformed (no dot, empty parts).
-pub fn parse_query_function(raw: Option(String)) -> Option(QueryFunctionConfig) {
+pub fn parse_query_function(
+  raw: Option(String),
+) -> Option(QueryFunctionConfig) {
   use value <- option.then(raw)
   // Split on the LAST "." so that paths with dots are handled correctly:
   // "server/db.query" -> #("server/db", "query").
@@ -84,7 +86,6 @@ pub fn parse_query_function(raw: Option(String)) -> Option(QueryFunctionConfig) 
   }
 }
 
-
 /// Check that a name is a valid Gleam module segment or function name:
 /// non-empty, starts with a lowercase letter or underscore, and contains
 /// only lowercase letters, digits, and underscores.
@@ -92,7 +93,8 @@ fn is_valid_gleam_name(name: String) -> Bool {
   case string.to_graphemes(name) {
     [] -> False
     [first, ..rest] ->
-      query.is_identifier_char(first) && !query.is_digit(first)
+      query.is_identifier_char(first)
+      && !query.is_digit(first)
       && list.all(rest, query.is_identifier_char)
   }
 }
@@ -333,7 +335,11 @@ fn generate_shared_decoder(type_name: String, columns: List(Column)) -> String {
   <> "}"
 }
 
-fn decoder_body(type_name: String, columns: List(Column), indent: String) -> String {
+fn decoder_body(
+  type_name: String,
+  columns: List(Column),
+  indent: String,
+) -> String {
   let fields =
     columns
     |> list.index_map(fn(col, idx) {
@@ -514,7 +520,11 @@ fn generate_with_args(params: List(Parameter)) -> String {
   |> string.join(", ")
 }
 
-fn sqlight_encoder(name: String, col_type: ColumnType, nullable: Bool) -> String {
+fn sqlight_encoder(
+  name: String,
+  col_type: ColumnType,
+  nullable: Bool,
+) -> String {
   let base_fn = case col_type {
     IntType -> "sqlight.int"
     FloatType -> "sqlight.float"
@@ -697,8 +707,7 @@ fn validate_group_shapes(
 ) -> Result(List(Column), error.MarmotError) {
   case queries {
     [] -> Ok([])
-    [first, ..rest] ->
-      validate_group_shapes_rest(name, first, rest)
+    [first, ..rest] -> validate_group_shapes_rest(name, first, rest)
   }
 }
 
@@ -712,12 +721,13 @@ fn validate_group_shapes_rest(
   case mismatched {
     [] -> Ok(first.columns)
     _ -> {
-      let conflicts =
-        list.map(mismatched, fn(q) { #(q.path, q.columns) })
-      Error(error.SharedTypeMismatch(name: name, conflicts: [
-        #(first.path, first.columns),
-        ..conflicts,
-      ]))
+      let conflicts = list.map(mismatched, fn(q) { #(q.path, q.columns) })
+      Error(
+        error.SharedTypeMismatch(name: name, conflicts: [
+          #(first.path, first.columns),
+          ..conflicts
+        ]),
+      )
     }
   }
 }

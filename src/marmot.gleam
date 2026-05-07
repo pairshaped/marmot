@@ -199,9 +199,7 @@ fn warn_subdirectories(sql_dir: String) -> Nil {
       }
     }
     Error(_) ->
-      io.println_error(
-        "warning: Could not read directory " <> sql_dir,
-      )
+      io.println_error("warning: Could not read directory " <> sql_dir)
   }
 }
 
@@ -309,7 +307,7 @@ pub fn validate_sql(trimmed: String, file_path: String) -> Result(String, Nil) {
           let without_comments = query.strip_comments(sql)
           case string.ends_with(string.trim(without_comments), ";") {
             True ->
-              without_comments
+              strip_trailing_comments(sql)
               |> string.trim
               |> string.drop_end(1)
               |> string.trim
@@ -325,6 +323,28 @@ pub fn validate_sql(trimmed: String, file_path: String) -> Result(String, Nil) {
           Error(Nil)
         }
         False -> Ok(stripped)
+      }
+    }
+  }
+}
+
+fn strip_trailing_comments(sql: String) -> String {
+  sql
+  |> string.split("\n")
+  |> list.reverse
+  |> do_strip_trailing_comments
+  |> list.reverse
+  |> string.join("\n")
+}
+
+fn do_strip_trailing_comments(lines: List(String)) -> List(String) {
+  case lines {
+    [] -> []
+    [line, ..rest] -> {
+      let clean = string.trim(query.strip_comments(line))
+      case clean {
+        "" -> do_strip_trailing_comments(rest)
+        _ -> [clean, ..rest]
       }
     }
   }
@@ -396,9 +416,7 @@ fn format_gleam(code: String) -> String {
             }
           }
         -1 -> {
-          io.println_error(
-            "warning: gleam not found on PATH, skipping format",
-          )
+          io.println_error("warning: gleam not found on PATH, skipping format")
           code
         }
         -2 -> {
