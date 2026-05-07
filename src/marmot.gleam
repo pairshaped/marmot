@@ -414,8 +414,7 @@ fn find_duplicates(names: List(String)) -> List(String) {
 /// block comments. Delegates to the tokenizer which already handles all
 /// quoting and comment styles correctly.
 pub fn contains_semicolon_outside_strings(sql: String) -> Bool {
-  tokenize.tokenize(sql)
-  |> list.any(fn(t) { t == tokenize.Semicolon })
+  count_semicolons(sql) > 0
 }
 
 /// Run `gleam format` on generated code. Falls back to the original string

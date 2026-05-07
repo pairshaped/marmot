@@ -278,6 +278,10 @@ pub fn validate_sql_semicolon_in_string_test() {
     marmot.validate_sql("SELECT 'hello;world'", "test.sql")
 }
 
+pub fn validate_sql_string_literal_semicolon_with_trailing_semicolon_test() {
+  let assert Ok("SELECT ';'") = marmot.validate_sql("SELECT ';';", "test.sql")
+}
+
 pub fn validate_sql_semicolon_in_comment_test() {
   let assert Ok("SELECT 1 -- comment; still a comment") =
     marmot.validate_sql("SELECT 1 -- comment; still a comment", "test.sql")

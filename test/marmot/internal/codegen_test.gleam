@@ -715,6 +715,36 @@ pub fn parse_query_function_rejects_embedded_traversal_test() {
     codegen.parse_query_function(option.Some("app/../../../evil.exec"))
 }
 
+pub fn parse_query_function_rejects_none_test() {
+  let assert option.None = codegen.parse_query_function(option.None)
+}
+
+pub fn parse_query_function_rejects_empty_string_test() {
+  let assert option.None = codegen.parse_query_function(option.Some(""))
+}
+
+pub fn parse_query_function_rejects_missing_dot_test() {
+  let assert option.None = codegen.parse_query_function(option.Some("module"))
+}
+
+pub fn parse_query_function_rejects_trailing_dot_test() {
+  let assert option.None = codegen.parse_query_function(option.Some("module."))
+}
+
+pub fn parse_query_function_rejects_just_dot_test() {
+  let assert option.None = codegen.parse_query_function(option.Some("."))
+}
+
+pub fn parse_query_function_rejects_invalid_function_name_test() {
+  let assert option.None =
+    codegen.parse_query_function(option.Some("mod.123bad"))
+}
+
+pub fn parse_query_function_rejects_invalid_module_segment_test() {
+  let assert option.None =
+    codegen.parse_query_function(option.Some("123bad.func"))
+}
+
 pub fn parse_query_function_allows_normal_path_test() {
   let assert option.Some(_) =
     codegen.parse_query_function(option.Some("server/db.query"))
