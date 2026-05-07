@@ -1,6 +1,8 @@
 ---
 version: 1.5.5
 title: e2e generate module two queries
+file: ./test/marmot/e2e_test.gleam
+test_name: e2e_generate_module_test
 ---
 import gleam/dynamic/decode
 import sqlight

@@ -417,7 +417,7 @@ fn walk_tokens(
             CloseParen -> depth - 1
             _ -> depth
           }
-          walk_tokens(rest, next_state, next_depth, step)
+          walk_tokens(rest, from: next_state, at_depth: next_depth, with: step)
         }
         Stop(next_state) -> #(next_state, rest)
       }
@@ -441,7 +441,7 @@ fn fold_tokens(
         CloseParen -> depth - 1
         _ -> depth
       }
-      fold_tokens(rest, next_state, next_depth, fold)
+      fold_tokens(rest, from: next_state, at_depth: next_depth, with: fold)
     }
   }
 }
@@ -513,7 +513,7 @@ fn do_find_keyword(
   let #(state, _) =
     walk_tokens(
       tokens,
-      #(idx, option.None),
+      from: #(idx, option.None),
       at_depth: depth,
       with: fn(state, token, depth) {
         let #(idx, found) = state
@@ -545,7 +545,7 @@ fn do_find_last_keyword(
 ) -> Option(Int) {
   fold_tokens(
     tokens,
-    #(idx, last),
+    from: #(idx, last),
     at_depth: depth,
     with: fn(state, token, depth) {
       let #(idx, last) = state
@@ -602,7 +602,7 @@ fn do_take_until_keywords(
   keywords: List(String),
 ) -> List(Token) {
   let #(acc, _) =
-    walk_tokens(tokens, [], at_depth: 0, with: fn(acc, token, depth) {
+    walk_tokens(tokens, from: [], at_depth: 0, with: fn(acc, token, depth) {
       case token {
         Word(w) if depth == 0 ->
           case list.contains(keywords, string.uppercase(w)) {
@@ -636,13 +636,18 @@ pub fn drop_until_keyword(tokens: List(Token), keyword: String) -> List(Token) {
 /// Split token list on Comma tokens at paren depth 0.
 pub fn split_on_commas(tokens: List(Token)) -> List(List(Token)) {
   let #(current, groups) =
-    fold_tokens(tokens, #([], []), at_depth: 0, with: fn(state, token, depth) {
-      let #(current, groups) = state
-      case token {
-        Comma if depth == 0 -> #([], [list.reverse(current), ..groups])
-        _ -> #([token, ..current], groups)
-      }
-    })
+    fold_tokens(
+      tokens,
+      from: #([], []),
+      at_depth: 0,
+      with: fn(state, token, depth) {
+        let #(current, groups) = state
+        case token {
+          Comma if depth == 0 -> #([], [list.reverse(current), ..groups])
+          _ -> #([token, ..current], groups)
+        }
+      },
+    )
   case current {
     [] -> list.reverse(groups)
     _ -> list.reverse([list.reverse(current), ..groups])
@@ -654,7 +659,7 @@ pub fn split_on_and_or(tokens: List(Token)) -> List(List(Token)) {
   let #(inner, _) =
     fold_tokens(
       tokens,
-      #(#([], []), False),
+      from: #(#([], []), False),
       at_depth: 0,
       with: fn(state, token, depth) {
         let #(#(current, groups), in_between) = state
@@ -691,7 +696,7 @@ pub fn skip_matching_paren(tokens: List(Token), depth: Int) -> List(Token) {
     0 -> tokens
     _ -> {
       let #(_, remaining) =
-        walk_tokens(tokens, [], at_depth: depth, with: fn(_, token, d) {
+        walk_tokens(tokens, from: [], at_depth: depth, with: fn(_, token, d) {
           case token {
             CloseParen if d == 1 -> Stop([])
             _ -> Continue([])
@@ -708,7 +713,7 @@ pub fn collect_inside_parens(
   tokens: List(Token),
 ) -> #(List(Token), List(Token)) {
   let #(acc, remaining) =
-    walk_tokens(tokens, [], at_depth: 1, with: fn(acc, token, depth) {
+    walk_tokens(tokens, from: [], at_depth: 1, with: fn(acc, token, depth) {
       case token {
         CloseParen if depth == 1 -> Stop(acc)
         _ -> Continue([token, ..acc])

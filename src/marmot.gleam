@@ -290,39 +290,48 @@ fn process_sql_file(
 }
 
 pub fn validate_sql(trimmed: String, file_path: String) -> Result(String, Nil) {
-  case trimmed {
+  // Detect comment-only files: strip comments and check for empty SQL.
+  case query.strip_comments(trimmed) |> string.trim {
     "" -> {
       io.println_error(error.to_string(error.EmptySqlFile(path: file_path)))
       Error(Nil)
     }
-    sql -> {
-      // Strip comments so trailing semicolons followed by comments are
-      // recognised (e.g., "SELECT 1; -- comment").
-      let stripped = case string.ends_with(sql, ";") {
-        True ->
-          sql
-          |> string.drop_end(1)
-          |> string.trim
-        False -> {
-          let without_comments = query.strip_comments(sql)
-          case string.ends_with(string.trim(without_comments), ";") {
-            True ->
-              strip_trailing_comments(sql)
-              |> string.trim
-              |> string.drop_end(1)
-              |> string.trim
-            False -> sql
-          }
-        }
-      }
-      case contains_semicolon_outside_strings(stripped) {
-        True -> {
-          io.println_error(
-            error.to_string(error.MultipleQueries(path: file_path)),
-          )
+    _ -> {
+      case trimmed {
+        "" -> {
+          io.println_error(error.to_string(error.EmptySqlFile(path: file_path)))
           Error(Nil)
         }
-        False -> Ok(stripped)
+        sql -> {
+          // Strip comments so trailing semicolons followed by comments are
+          // recognised (e.g., "SELECT 1; -- comment").
+          let stripped = case string.ends_with(sql, ";") {
+            True ->
+              sql
+              |> string.drop_end(1)
+              |> string.trim
+            False -> {
+              let without_comments = query.strip_comments(sql)
+              case string.ends_with(string.trim(without_comments), ";") {
+                True ->
+                  strip_trailing_comments(sql)
+                  |> string.trim
+                  |> string.drop_end(1)
+                  |> string.trim
+                False -> sql
+              }
+            }
+          }
+          case contains_semicolon_outside_strings(stripped) {
+            True -> {
+              io.println_error(
+                error.to_string(error.MultipleQueries(path: file_path)),
+              )
+              Error(Nil)
+            }
+            False -> Ok(stripped)
+          }
+        }
       }
     }
   }
@@ -481,10 +490,24 @@ fn erlang_halt(code: Int) -> Nil
 @external(erlang, "timer", "sleep")
 fn timer_sleep(ms: Int) -> Nil
 
+type MakeTmpFileError {
+  MakeTmpFileError(String)
+}
+
 /// Create a temp file with a cryptographically random name and write content
 /// atomically using exclusive mode (prevents symlink races).
+fn make_tmp_file(
+  dir: String,
+  content: String,
+) -> Result(String, MakeTmpFileError) {
+  case make_tmp_file_raw(dir, content) {
+    Ok(v) -> Ok(v)
+    Error(e) -> Error(MakeTmpFileError(e))
+  }
+}
+
 @external(erlang, "marmot_ffi", "make_tmp_file")
-fn make_tmp_file(dir: String, content: String) -> Result(String, String)
+fn make_tmp_file_raw(dir: String, content: String) -> Result(String, String)
 
 /// Look up a single environment variable by name. The FFI handles
 /// binary-to-charlist conversion for OTP 27+ compatibility.

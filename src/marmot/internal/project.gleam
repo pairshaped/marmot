@@ -206,7 +206,7 @@ pub fn output_path(
   let entity_parts = list.filter(relative, fn(seg) { seg != "sql" })
   let entity_path = string.join(entity_parts, "/")
   case entity_path {
-    "" -> trimmed <> "_sql.gleam"
+    "" -> trimmed <> "/sql.gleam"
     path -> trimmed <> "/" <> path <> "_sql.gleam"
   }
 }
@@ -284,8 +284,7 @@ fn warn_marmot_section(parsed: dict.Dict(String, tom.Toml)) -> Nil {
   case tom.get_table(parsed, ["marmot"]) {
     Ok(_) ->
       io.println_error(
-        "warning: Found [marmot] section in gleam.toml. "
-        <> "Marmot configuration belongs under [tools.marmot].",
+        "warning: Found [marmot] section in gleam.toml. Marmot configuration belongs under [tools.marmot].",
       )
     Error(_) -> Nil
   }

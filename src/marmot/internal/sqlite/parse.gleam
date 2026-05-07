@@ -1,3 +1,4 @@
+import gleam/bool
 import gleam/list
 import gleam/option.{type Option}
 import gleam/string
@@ -261,10 +262,11 @@ pub fn parse_select_item(tokens: List(Token)) -> SelectItem {
 fn strip_override_from_alias(alias: String) -> String {
   // Override tokens are separate, so the alias text from tokens
   // shouldn't include them. But if it does (edge case), strip it.
-  case string.ends_with(alias, "!") || string.ends_with(alias, "?") {
-    True -> string.drop_end(alias, 1)
-    False -> alias
-  }
+  use <- bool.guard(
+    when: !string.ends_with(alias, "!") && !string.ends_with(alias, "?"),
+    return: alias,
+  )
+  string.drop_end(alias, 1)
 }
 
 fn detect_bare_column(tokens: List(Token)) -> Option(String) {
@@ -837,15 +839,14 @@ fn extract_column_before_param(s: String) -> String {
 }
 
 fn strip_trailing_arithmetic_op(s: String) -> String {
-  case
-    string.ends_with(s, "+")
-    || string.ends_with(s, "-")
-    || string.ends_with(s, "*")
-    || string.ends_with(s, "/")
-  {
-    True -> string.drop_end(s, 1) |> string.trim
-    False -> s
-  }
+  use <- bool.guard(
+    when: !string.ends_with(s, "+")
+      && !string.ends_with(s, "-")
+      && !string.ends_with(s, "*")
+      && !string.ends_with(s, "/"),
+    return: s,
+  )
+  string.drop_end(s, 1) |> string.trim
 }
 
 fn extract_all_named_params_from_tokens(tokens: List(Token)) -> List(String) {

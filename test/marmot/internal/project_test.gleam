@@ -285,7 +285,8 @@ pub fn output_path_multi_dir_no_collision_test() {
 pub fn output_path_single_sql_dir_test() {
   // When there's just src/sql and an output dir, the sql_dir relative to the
   // common prefix is just "sql", which gets stripped, yielding no entity path.
-  let assert "src/generated_sql.gleam" =
+  // File goes inside the output directory, not alongside it.
+  let assert "src/generated/sql.gleam" =
     project.output_path("src/sql", option.Some("src/generated"))
 }
 
@@ -307,8 +308,9 @@ pub fn output_path_sql_segment_stripping_test() {
 }
 
 pub fn output_path_sql_dir_root_test() {
-  // Files directly in sql_dir root: "sql" segment gets stripped
-  let assert "src/generated_sql.gleam" =
+  // Files directly in sql_dir root: "sql" segment gets stripped.
+  // File goes inside the output directory, not alongside it.
+  let assert "src/generated/sql.gleam" =
     project.output_path("src/sql", option.Some("src/generated"))
 }
 
