@@ -22,6 +22,15 @@ fn with_temp_dir(base: String, body: fn() -> Nil) -> Nil {
 @external(erlang, "marmot_test_ffi", "rescue")
 fn rescue(body: fn() -> Nil) -> Result(Nil, String)
 
+@external(erlang, "timer", "sleep")
+fn sleep(ms: Int) -> Nil
+
+const cli_build_cache = "build/e2e_cli_shared"
+
+const cli_build_cache_lock = "build/e2e_cli_shared.lock"
+
+const cli_build_cache_ready = "build/e2e_cli_shared/.ready"
+
 pub fn e2e_compile_generated_code_test() {
   let base = "test_e2e_compile_tmp"
   use <- with_temp_dir(base)
@@ -173,6 +182,7 @@ pub fn e2e_shared_row_types_compiles_test() {
 
 fn write_cli_project(name: String, base: String) -> Nil {
   let assert Ok(_) = simplifile.create_directory_all(base <> "/src")
+  link_cli_project_build(base)
   let assert Ok(_) =
     simplifile.write(
       base <> "/gleam.toml",
@@ -192,6 +202,7 @@ fn write_cli_project_with_config(
   config: String,
 ) -> Nil {
   let assert Ok(_) = simplifile.create_directory_all(base <> "/src")
+  link_cli_project_build(base)
   let assert Ok(_) =
     simplifile.write(
       base <> "/gleam.toml",
@@ -204,6 +215,54 @@ fn write_cli_project_with_config(
         <> config,
     )
   Nil
+}
+
+fn link_cli_project_build(base: String) -> Nil {
+  ensure_cli_build_cache()
+  let assert Ok(_) =
+    simplifile.create_symlink("../" <> cli_build_cache, base <> "/build")
+  Nil
+}
+
+fn ensure_cli_build_cache() -> Nil {
+  case simplifile.is_file(cli_build_cache_ready) {
+    Ok(True) -> Nil
+    _ -> prepare_cli_build_cache()
+  }
+}
+
+fn prepare_cli_build_cache() -> Nil {
+  case simplifile.create_directory(cli_build_cache_lock) {
+    Ok(_) -> {
+      let _ = simplifile.delete(cli_build_cache)
+      let assert Ok(_) = simplifile.create_directory_all(cli_build_cache)
+      let assert Ok(_) =
+        simplifile.copy_directory(
+          at: "build/packages",
+          to: cli_build_cache <> "/packages",
+        )
+      let assert Ok(_) =
+        simplifile.copy_directory(
+          at: "build/dev",
+          to: cli_build_cache <> "/dev",
+        )
+      let assert Ok(_) = simplifile.write(cli_build_cache_ready, "ready")
+      let _ = simplifile.delete(cli_build_cache_lock)
+      Nil
+    }
+    Error(_) -> wait_for_cli_build_cache(100)
+  }
+}
+
+fn wait_for_cli_build_cache(attempts: Int) -> Nil {
+  case simplifile.is_file(cli_build_cache_ready) {
+    Ok(True) -> Nil
+    _ if attempts > 0 -> {
+      sleep(100)
+      wait_for_cli_build_cache(attempts - 1)
+    }
+    _ -> panic as "Timed out waiting for shared CLI build cache"
+  }
 }
 
 pub fn e2e_cli_missing_database_test() {
