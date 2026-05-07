@@ -127,6 +127,7 @@ pub fn get_org(db db: ..., id id: Int) -> Result(List(OrgRow), sqlight.Error) {
 
 **Design decisions:**
 - `TIMESTAMP`/`DATETIME` stored as integer Unix seconds. Sub-second precision not preserved.
+- `BOOLEAN`/`BOOL` types require non-STRICT tables. SQLite STRICT mode only allows `INTEGER`, `REAL`, `TEXT`, `BLOB`, and `ANY` as column types, rejecting `BOOLEAN` at CREATE TABLE time. If you want marmot to generate `Bool` fields, declare columns as `BOOLEAN` in your DDL and do not use `STRICT` on that table. SQLite stores booleans as 0/1 integers regardless; the declared type is what marmot reads from `PRAGMA table_info` to decide the Gleam type.
 
 **Hard limits (SQLite protocol):**
 - Repeated anonymous `?` produce distinct function args. Use named parameters (`@name`). SQLite deduplicates them natively.
