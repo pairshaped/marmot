@@ -176,6 +176,14 @@ pub fn validate_sql_preserves_annotations_trailing_comment_line_test() {
     marmot.validate_sql("-- returns: Foo\nSELECT 1;\n-- comment", "test.sql")
 }
 
+pub fn validate_sql_comment_only_line_test() {
+  let assert Error(Nil) = marmot.validate_sql("-- only comment", "test.sql")
+}
+
+pub fn validate_sql_comment_only_block_test() {
+  let assert Error(Nil) = marmot.validate_sql("/* only comment */", "test.sql")
+}
+
 pub fn contains_semicolon_outside_strings_none_test() {
   let assert False = marmot.contains_semicolon_outside_strings("SELECT 1")
 }
