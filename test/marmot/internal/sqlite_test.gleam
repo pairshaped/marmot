@@ -315,6 +315,26 @@ pub fn introspect_duplicate_parameter_names_test() {
   result |> string.inspect |> birdie.snap(title: "duplicate parameter names")
 }
 
+pub fn introspect_three_duplicate_parameter_names_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        age INTEGER NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "SELECT id FROM users WHERE age > ? AND age < ? AND age = ?",
+    )
+  result
+  |> string.inspect
+  |> birdie.snap(title: "three duplicate parameter names")
+}
+
 pub fn introspect_delete_returning_test() {
   use db <- sqlight.with_connection(":memory:")
   let assert Ok(_) =

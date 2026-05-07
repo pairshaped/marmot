@@ -87,7 +87,7 @@ fn parse_cli_args(args: List(String)) -> CliArgs {
 fn parse_cli_args_loop(args: List(String), acc: CliArgs) -> CliArgs {
   case args {
     ["--database", value, ..rest] ->
-      case string.starts_with(value, "--") {
+      case is_missing_flag_value(value) {
         True -> parse_cli_args_loop([value, ..rest], acc)
         False ->
           parse_cli_args_loop(
@@ -96,14 +96,57 @@ fn parse_cli_args_loop(args: List(String), acc: CliArgs) -> CliArgs {
           )
       }
     ["--output", value, ..rest] ->
-      case string.starts_with(value, "--") {
+      case is_missing_flag_value(value) {
         True -> parse_cli_args_loop([value, ..rest], acc)
         False ->
           parse_cli_args_loop(rest, CliArgs(..acc, output: option.Some(value)))
       }
-    [_, ..rest] -> parse_cli_args_loop(rest, acc)
+    [arg, ..rest] -> parse_cli_equals_arg(arg, rest, acc)
     [] -> acc
   }
+}
+
+fn parse_cli_equals_arg(
+  arg: String,
+  rest: List(String),
+  acc: CliArgs,
+) -> CliArgs {
+  case string.starts_with(arg, "--database=") {
+    True -> {
+      let value = string.drop_start(arg, string.length("--database="))
+      case is_empty_flag_value(value) {
+        True -> parse_cli_args_loop(rest, acc)
+        False ->
+          parse_cli_args_loop(
+            rest,
+            CliArgs(..acc, database: option.Some(value)),
+          )
+      }
+    }
+    False ->
+      case string.starts_with(arg, "--output=") {
+        True -> {
+          let value = string.drop_start(arg, string.length("--output="))
+          case is_empty_flag_value(value) {
+            True -> parse_cli_args_loop(rest, acc)
+            False ->
+              parse_cli_args_loop(
+                rest,
+                CliArgs(..acc, output: option.Some(value)),
+              )
+          }
+        }
+        False -> parse_cli_args_loop(rest, acc)
+      }
+  }
+}
+
+fn is_missing_flag_value(value: String) -> Bool {
+  string.starts_with(value, "--") || is_empty_flag_value(value)
+}
+
+fn is_empty_flag_value(value: String) -> Bool {
+  string.trim(value) == ""
 }
 
 /// Find SQL directories to process.
@@ -114,13 +157,22 @@ pub fn find_sql_directories(
   root: String,
   sql_dir: Option(String),
 ) -> List(String) {
+  find_sql_directories_result(root, sql_dir)
+  |> result.unwrap([])
+}
+
+@internal
+pub fn find_sql_directories_result(
+  root: String,
+  sql_dir: Option(String),
+) -> Result(List(String), Nil) {
   case sql_dir {
     option.Some(dir) -> find_dirs_with_sql_files(dir)
-    option.None -> find_sql_directories_recursive(root)
+    option.None -> Ok(find_sql_directories_recursive(root))
   }
 }
 
-fn find_dirs_with_sql_files(dir: String) -> List(String) {
+fn find_dirs_with_sql_files(dir: String) -> Result(List(String), Nil) {
   case simplifile.read_directory(at: dir) {
     Ok(entries) -> {
       let has_sql_here =
@@ -130,17 +182,19 @@ fn find_dirs_with_sql_files(dir: String) -> List(String) {
         |> list.flat_map(fn(entry) {
           let path = dir <> "/" <> entry
           case simplifile.is_directory(path) {
-            Ok(True) -> find_dirs_with_sql_files(path)
+            Ok(True) ->
+              find_dirs_with_sql_files(path)
+              |> result.unwrap([])
             _ -> []
           }
         })
 
       case has_sql_here {
-        True -> list.sort([dir, ..child_dirs], string.compare)
-        False -> list.sort(child_dirs, string.compare)
+        True -> Ok(list.sort([dir, ..child_dirs], string.compare))
+        False -> Ok(list.sort(child_dirs, string.compare))
       }
     }
-    Error(_) -> []
+    Error(_) -> Error(Nil)
   }
 }
 
@@ -281,11 +335,28 @@ fn warn_unknown_config_keys(parsed: dict.Dict(String, tom.Toml)) -> Nil {
 }
 
 fn warn_marmot_section(parsed: dict.Dict(String, tom.Toml)) -> Nil {
+  case legacy_marmot_section_warning_from_parsed(parsed) {
+    option.Some(warning) -> io.println_error(warning)
+    option.None -> Nil
+  }
+}
+
+@internal
+pub fn legacy_marmot_section_warning(toml_content: String) -> Option(String) {
+  case tom.parse(toml_content) {
+    Ok(parsed) -> legacy_marmot_section_warning_from_parsed(parsed)
+    Error(_) -> option.None
+  }
+}
+
+fn legacy_marmot_section_warning_from_parsed(
+  parsed: dict.Dict(String, tom.Toml),
+) -> Option(String) {
   case tom.get_table(parsed, ["marmot"]) {
     Ok(_) ->
-      io.println_error(
+      option.Some(
         "warning: Found [marmot] section in gleam.toml. Marmot configuration belongs under [tools.marmot].",
       )
-    Error(_) -> Nil
+    Error(_) -> option.None
   }
 }

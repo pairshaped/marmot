@@ -221,6 +221,26 @@ pub fn parse_config_flag_without_value_test() {
   ) = config
 }
 
+pub fn parse_config_database_empty_value_test() {
+  let config = project.parse_config("", ["--database", ""], option.None)
+  let assert Config(database: option.None, ..) = config
+}
+
+pub fn parse_config_database_equals_empty_value_test() {
+  let config = project.parse_config("", ["--database="], option.None)
+  let assert Config(database: option.None, ..) = config
+}
+
+pub fn parse_config_database_equals_value_test() {
+  let config = project.parse_config("", ["--database=test.sqlite"], option.None)
+  let assert Config(database: option.Some("test.sqlite"), ..) = config
+}
+
+pub fn parse_config_output_equals_value_test() {
+  let config = project.parse_config("", ["--output=src/gen"], option.None)
+  let assert Config(output: option.Some("src/gen"), ..) = config
+}
+
 pub fn parse_config_flag_as_last_arg_test() {
   let config = project.parse_config("", ["--database"], option.None)
   let assert Config(
@@ -351,6 +371,15 @@ pub fn find_sql_directories_with_sql_dir_nested_test() {
   Nil
 }
 
+pub fn find_sql_directories_result_missing_configured_dir_test() {
+  let result =
+    project.find_sql_directories_result(
+      "test_tmp_missing/src",
+      option.Some("test_tmp_missing/src/sql"),
+    )
+  let assert Error(Nil) = result
+}
+
 pub fn validate_output_under_src_test() {
   let config =
     Config(
@@ -415,4 +444,20 @@ pub fn validate_output_double_traversal_test() {
       sql_dir: option.None,
     )
   let assert Error(Nil) = project.validate_output(config)
+}
+
+pub fn legacy_marmot_section_warning_test() {
+  let warning =
+    project.legacy_marmot_section_warning(
+      "[marmot]\ndatabase = \"dev.sqlite\"\n",
+    )
+  let assert option.Some(_) = warning
+}
+
+pub fn legacy_marmot_section_warning_none_test() {
+  let warning =
+    project.legacy_marmot_section_warning(
+      "[tools.marmot]\ndatabase = \"dev.sqlite\"\n",
+    )
+  let assert option.None = warning
 }

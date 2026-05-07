@@ -86,7 +86,17 @@ fn generate_all(db: sqlight.Connection, config: project.Config) -> Nil {
       }
     option.None -> Nil
   }
-  let sql_dirs = project.find_sql_directories("src", config.sql_dir)
+  let sql_dirs = case
+    project.find_sql_directories_result("src", config.sql_dir)
+  {
+    Ok(dirs) -> dirs
+    Error(_) -> {
+      let sql_dir = option.unwrap(config.sql_dir, "src")
+      io.println_error("error: Could not read SQL directory " <> sql_dir)
+      halt(1)
+      []
+    }
+  }
   case sql_dirs {
     [] -> io.println("No sql/ directories found under src/")
     dirs -> {
@@ -203,7 +213,8 @@ fn warn_subdirectories(sql_dir: String) -> Nil {
   }
 }
 
-fn ensure_parent_dir(path: String) -> Result(Nil, Nil) {
+@internal
+pub fn ensure_parent_dir(path: String) -> Result(Nil, Nil) {
   let parent =
     path
     |> string.split("/")
@@ -414,38 +425,47 @@ pub fn format_gleam(code: String) -> String {
     }
     Ok(tmp) -> {
       let exit_code = run_executable("gleam", ["format", tmp])
-      let formatted = case exit_code {
-        0 ->
-          case simplifile.read(tmp) {
-            Ok(result) -> result
-            Error(_) -> {
-              io.println_error(
-                "warning: Could not read formatted file, using unformatted output",
-              )
-              code
-            }
-          }
-        -1 -> {
-          io.println_error("warning: gleam not found on PATH, skipping format")
-          code
-        }
-        -2 -> {
+      let formatted = format_gleam_after_run(code, tmp, exit_code)
+      let _delete_result = simplifile.delete(tmp)
+      formatted
+    }
+  }
+}
+
+@internal
+pub fn format_gleam_after_run(
+  code: String,
+  tmp: String,
+  exit_code: Int,
+) -> String {
+  case exit_code {
+    0 ->
+      case simplifile.read(tmp) {
+        Ok(result) -> result
+        Error(_) -> {
           io.println_error(
-            "warning: gleam format timed out, using unformatted output",
-          )
-          code
-        }
-        _ -> {
-          io.println_error(
-            "warning: gleam format failed (exit code "
-            <> int.to_string(exit_code)
-            <> "), using unformatted output",
+            "warning: Could not read formatted file, using unformatted output",
           )
           code
         }
       }
-      let _delete_result = simplifile.delete(tmp)
-      formatted
+    -1 -> {
+      io.println_error("warning: gleam not found on PATH, skipping format")
+      code
+    }
+    -2 -> {
+      io.println_error(
+        "warning: gleam format timed out, using unformatted output",
+      )
+      code
+    }
+    _ -> {
+      io.println_error(
+        "warning: gleam format failed (exit code "
+        <> int.to_string(exit_code)
+        <> "), using unformatted output",
+      )
+      code
     }
   }
 }

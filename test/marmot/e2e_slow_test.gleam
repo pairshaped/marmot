@@ -356,6 +356,40 @@ pub fn e2e_cli_no_sql_directories_test() {
   }
 }
 
+pub fn e2e_cli_configured_sql_dir_missing_test() {
+  let base = "test_e2e_cli_missing_sql_dir"
+  let result =
+    rescue(fn() {
+      write_cli_project_with_config(
+        "cli_missing_sql_dir",
+        base,
+        "\n[tools.marmot]\ndatabase = \"test.db\"\nsql_dir = \"src/sql\"\n",
+      )
+
+      use db <- sqlight.with_connection(base <> "/test.db")
+      let assert Ok(_) =
+        sqlight.exec(
+          "CREATE TABLE users (id INTEGER NOT NULL PRIMARY KEY)",
+          on: db,
+        )
+
+      let exit_code =
+        marmot.run_executable_in_timeout(
+          "gleam",
+          ["run", "-m", "marmot"],
+          base,
+          120_000,
+        )
+      let assert 1 = exit_code
+      Nil
+    })
+  let _ = simplifile.delete(base)
+  case result {
+    Ok(Nil) -> Nil
+    Error(msg) -> panic as msg
+  }
+}
+
 pub fn e2e_cli_database_open_error_test() {
   let base = "test_e2e_cli_bad_db"
   let result =

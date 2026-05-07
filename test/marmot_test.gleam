@@ -13,6 +13,9 @@ import marmot/internal/sqlite
 import simplifile
 import sqlight
 
+@external(erlang, "marmot_test_ffi", "rescue")
+fn rescue(body: fn() -> Nil) -> Result(Nil, String)
+
 pub fn main() -> Nil {
   let args = argv.load().arguments
   let suite = parse_suite(args)
@@ -408,5 +411,38 @@ pub fn format_gleam_happy_path_test() {
       let assert 0 = exit_code
     }
     Error(_) -> panic as "could not create temp file"
+  }
+}
+
+pub fn format_gleam_not_found_falls_back_test() {
+  let input = "pub fn main(){1 + 1}"
+  let assert "pub fn main(){1 + 1}" =
+    marmot.format_gleam_after_run(input, "/tmp/missing", -1)
+}
+
+pub fn format_gleam_timeout_falls_back_test() {
+  let input = "pub fn main(){1 + 1}"
+  let assert "pub fn main(){1 + 1}" =
+    marmot.format_gleam_after_run(input, "/tmp/missing", -2)
+}
+
+pub fn format_gleam_nonzero_exit_falls_back_test() {
+  let input = "pub fn main(){1 + 1}"
+  let assert "pub fn main(){1 + 1}" =
+    marmot.format_gleam_after_run(input, "/tmp/missing", 2)
+}
+
+pub fn ensure_parent_dir_file_blocks_directory_test() {
+  let base = "test_parent_dir_blocked"
+  let result =
+    rescue(fn() {
+      let assert Ok(_) = simplifile.write(base, "blocking file")
+      let assert Error(Nil) = marmot.ensure_parent_dir(base <> "/out.gleam")
+      Nil
+    })
+  let _ = simplifile.delete(base)
+  case result {
+    Ok(Nil) -> Nil
+    Error(msg) -> panic as msg
   }
 }
