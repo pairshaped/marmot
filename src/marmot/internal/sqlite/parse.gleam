@@ -1,17 +1,5 @@
 import gleam/list
-import gleam/option.{type Option}
 import marmot/internal/sqlite/parse/text
-
-// ---- Types ----
-//
-// During migration, types are kept here while implementation moves into
-// focused sub-modules under parse/. Callers outside parse/ should prefer
-// the submodule that owns the function they need. Types defined here are
-// imported by submodules — the import direction avoids Gleam cycles.
-
-pub type Binder {
-  Binder(name: String, binder_column: Option(String))
-}
 
 // ---- String operations (pre-tokenization) ----
 
