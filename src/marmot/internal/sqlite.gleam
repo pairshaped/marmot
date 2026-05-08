@@ -12,6 +12,7 @@ import marmot/internal/query.{
 import marmot/internal/sqlite/opcode.{type JoinNullability, type Opcode, Opcode}
 import marmot/internal/sqlite/parse
 import marmot/internal/sqlite/parse/expression
+import marmot/internal/sqlite/parse/select
 import marmot/internal/sqlite/parse/statement
 import marmot/internal/sqlite/tokenize.{
   type Token, CloseParen, OpenParen, ParamAnon, ParamNamed, Word,
@@ -208,8 +209,8 @@ fn extract_result_columns(
       let base_reg = rr.p1
       let count = rr.p2
       let result_regs = parse.make_range(base_reg, count)
-      let select_items = parse.parse_select_items(tokens)
-      let from_tables = parse.parse_from_tables(tokens)
+      let select_items = select.parse_select_items(tokens)
+      let from_tables = select.parse_from_tables(tokens)
 
       list.index_map(result_regs, fn(reg, idx) {
         let opcode_column = {
@@ -289,7 +290,7 @@ fn extract_result_columns(
 /// Resolve a result column via SELECT-list text parsing.
 fn resolve_select_item(
   idx: Int,
-  select_items: List(parse.SelectItem),
+  select_items: List(select.SelectItem),
   from_tables: List(String),
   table_schemas: Dict(String, List(Column)),
   join_nullability: JoinNullability,
@@ -332,7 +333,7 @@ fn extract_returning_columns(
   table_name: String,
   table_schemas: Dict(String, List(Column)),
 ) -> List(Column) {
-  let returning_cols = parse.parse_returning_columns(tokens)
+  let returning_cols = select.parse_returning_columns(tokens)
   case returning_cols {
     [] -> []
     ["*"] ->
@@ -730,7 +731,7 @@ fn collect_all_tables(
   table_schemas: Dict(String, List(Column)),
 ) -> List(String) {
   let from_tables = case stmt_type {
-    statement.Select -> parse.parse_from_tables(tokens)
+    statement.Select -> select.parse_from_tables(tokens)
     statement.Delete -> [statement.parse_delete_table_name(tokens)]
     _ -> []
   }

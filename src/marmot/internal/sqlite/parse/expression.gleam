@@ -4,7 +4,7 @@ import gleam/list
 import gleam/option.{type Option}
 import gleam/string
 import marmot/internal/query.{type Column, type ColumnType, Column, StringType}
-import marmot/internal/sqlite/parse.{
+import marmot/internal/sqlite/parse/select.{
   type NullabilityOverride, type SelectItem, OverrideNonNull, OverrideNone,
   OverrideNullable,
 }

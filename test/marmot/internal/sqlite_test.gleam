@@ -2217,7 +2217,7 @@ pub fn parse_returns_annotation_missing_test() {
 
 // ---- INSERT / REPLACE table name extraction (marmot-b10o) ----
 // SQLite requires INTO for INSERT/REPLACE statements. These tests verify
-// parse_insert_table_name correctly handles the INSERT [OR ...] [INTO] prefix.
+// statement.parse_insert_table_name correctly handles the INSERT [OR ...] [INTO] prefix.
 
 pub fn introspect_insert_or_replace_into_table_name_test() {
   use db <- sqlight.with_connection(":memory:")
