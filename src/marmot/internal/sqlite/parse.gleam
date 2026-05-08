@@ -3,6 +3,7 @@ import gleam/list
 import gleam/option.{type Option}
 import gleam/string
 import marmot/internal/query.{type Column, type ColumnType, Column, StringType}
+import marmot/internal/sqlite/parse/text
 import marmot/internal/sqlite/tokenize.{
   type Token, CloseParen, Comma, Dot, Eq, Ge, Gt, Le, Lt, Minus, Ne,
   NullOverride, NullableOverride, Number, OpenParen, ParamAnon, ParamNamed, Plus,
@@ -50,10 +51,7 @@ pub type Binder {
 /// Normalize SQL whitespace: strip comments, replace newlines/tabs with spaces
 /// (preserving string literals), collapse runs, and trim.
 pub fn normalize_sql_whitespace(sql: String) -> String {
-  sql
-  |> query.strip_comments
-  |> query.normalize_whitespace
-  |> string.trim
+  text.normalize_sql_whitespace(sql)
 }
 
 /// Strip Marmot-specific `!`/`?` nullability suffixes from alias names
@@ -71,62 +69,12 @@ pub fn normalize_sql_whitespace(sql: String) -> String {
 /// unchanged. Nullability suffixes follow an ident char and a boundary,
 /// which is the only case this function strips.
 pub fn strip_nullability_suffixes(sql: String) -> String {
-  let graphemes = string.to_graphemes(sql)
-  do_strip_suffixes(graphemes, [], "", False, False)
-  |> list.reverse
-  |> string.join("")
+  text.strip_nullability_suffixes(sql)
 }
 
-fn do_strip_suffixes(
-  chars: List(String),
-  acc: List(String),
-  prev: String,
-  in_single: Bool,
-  in_double: Bool,
-) -> List(String) {
-  case chars {
-    [] -> acc
-    ["'", ..rest] ->
-      case in_double {
-        True -> do_strip_suffixes(rest, ["'", ..acc], "'", in_single, True)
-        False ->
-          case in_single {
-            True ->
-              case rest {
-                ["'", ..rest2] ->
-                  do_strip_suffixes(rest2, ["'", "'", ..acc], "'", True, False)
-                _ -> do_strip_suffixes(rest, ["'", ..acc], "'", False, False)
-              }
-            False -> do_strip_suffixes(rest, ["'", ..acc], "'", True, False)
-          }
-      }
-    ["\"", ..rest] ->
-      case in_single {
-        True -> do_strip_suffixes(rest, ["\"", ..acc], "\"", True, in_double)
-        False -> do_strip_suffixes(rest, ["\"", ..acc], "\"", False, !in_double)
-      }
-    [ch, ..rest] ->
-      case in_single || in_double {
-        True -> do_strip_suffixes(rest, [ch, ..acc], ch, in_single, in_double)
-        False ->
-          case { ch == "!" || ch == "?" } && is_ident_char(prev) {
-            True -> {
-              let next_ok = case rest {
-                [] -> True
-                [c, ..] ->
-                  c == " " || c == "," || c == ")" || c == "\t" || c == "\n"
-              }
-              case next_ok {
-                True -> do_strip_suffixes(rest, acc, prev, in_single, in_double)
-                False ->
-                  do_strip_suffixes(rest, [ch, ..acc], ch, in_single, in_double)
-              }
-            }
-            False ->
-              do_strip_suffixes(rest, [ch, ..acc], ch, in_single, in_double)
-          }
-      }
-  }
+/// Escape double quotes in an identifier to prevent SQL injection.
+pub fn quote_identifier(name: String) -> String {
+  text.quote_identifier(name)
 }
 
 /// Delegates to query.is_sql_ident_char. This is intentionally separate from
@@ -134,11 +82,6 @@ fn do_strip_suffixes(
 /// (suffix-stripping context vs. token boundary detection).
 fn is_ident_char(c: String) -> Bool {
   query.is_sql_ident_char(c)
-}
-
-/// Escape double quotes in an identifier to prevent SQL injection.
-pub fn quote_identifier(name: String) -> String {
-  string.replace(name, "\"", "\"\"")
 }
 
 // ---- Statement classification ----
