@@ -5,9 +5,9 @@ import gleam/list
 import gleam/option
 import marmot/internal/query.{type Column, Column, StringType}
 import marmot/internal/sqlite/opcode.{type JoinNullability, type Opcode}
-import marmot/internal/sqlite/parse
 import marmot/internal/sqlite/parse/expression
 import marmot/internal/sqlite/parse/select
+import marmot/internal/sqlite/parse/util
 import marmot/internal/sqlite/tokenize.{type Token}
 
 /// Extract result columns for regular (non-INSERT) queries.
@@ -31,7 +31,7 @@ pub fn extract_result_columns(
     Ok(rr) -> {
       let base_reg = rr.p1
       let count = rr.p2
-      let result_regs = parse.make_range(base_reg, count)
+      let result_regs = util.make_range(base_reg, count)
       let select_items = select.parse_select_items(tokens)
       let from_tables = select.parse_from_tables(tokens)
 
@@ -47,7 +47,7 @@ pub fn extract_result_columns(
             )
           opcode.apply_cursor_nullability(base, reg, opcodes, join_nullability)
         }
-        let select_item = parse.list_at(select_items, idx)
+        let select_item = util.list_at(select_items, idx)
         case select_item {
           Error(_) -> opcode_column
           Ok(item) -> {

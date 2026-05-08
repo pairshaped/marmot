@@ -6,14 +6,13 @@ import gleam/option.{type Option}
 import gleam/string
 import marmot/internal/query
 import marmot/internal/sqlite/parse/util.{token_list_to_name}
-
-pub type Binder {
-  Binder(name: String, binder_column: Option(String))
-}
-
 import marmot/internal/sqlite/tokenize.{
   type Token, CloseParen, Dot, Eq, Ge, Gt, Le, Lt, Minus, Ne, OpenParen,
   ParamAnon, ParamNamed, Plus, QuotedId, Slash, Star, Word,
+}
+
+pub type Binder {
+  Binder(name: String, binder_column: Option(String))
 }
 
 // ---- INSERT column parsing ----

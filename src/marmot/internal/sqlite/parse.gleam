@@ -1,4 +1,3 @@
-import gleam/list
 import marmot/internal/sqlite/parse/text
 
 // ---- String operations (pre-tokenization) ----
@@ -30,24 +29,4 @@ pub fn strip_nullability_suffixes(sql: String) -> String {
 /// Escape double quotes in an identifier to prevent SQL injection.
 pub fn quote_identifier(name: String) -> String {
   text.quote_identifier(name)
-}
-
-// ---- Utility ----
-
-pub fn list_at(lst: List(a), idx: Int) -> Result(a, Nil) {
-  lst |> list.drop(idx) |> list.first
-}
-
-pub fn make_range(start: Int, count: Int) -> List(Int) {
-  case count <= 0 {
-    True -> []
-    False -> do_make_range(start, start + count, [])
-  }
-}
-
-fn do_make_range(current: Int, end: Int, acc: List(Int)) -> List(Int) {
-  case current >= end {
-    True -> list.reverse(acc)
-    False -> do_make_range(current + 1, end, [current, ..acc])
-  }
 }

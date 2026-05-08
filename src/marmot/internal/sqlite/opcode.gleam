@@ -4,7 +4,7 @@ import gleam/int
 import gleam/io
 import gleam/list
 import marmot/internal/query.{type Column, type Parameter, Column, Parameter}
-import marmot/internal/sqlite/parse
+import marmot/internal/sqlite/parse/util
 
 /// Opcode from EXPLAIN output
 pub type Opcode {
@@ -239,7 +239,7 @@ pub fn resolve_column(
     Ok(table_name) ->
       case dict.get(table_schemas, table_name) {
         Ok(table_cols) ->
-          case parse.list_at(table_cols, col_idx) {
+          case util.list_at(table_cols, col_idx) {
             Ok(col) -> col
             Error(_) -> {
               io.println_error(
@@ -447,7 +447,7 @@ fn resolve_column_to_parameter(
     Ok(table_name) ->
       case dict.get(table_schemas, table_name) {
         Ok(table_cols) ->
-          case parse.list_at(table_cols, col_idx) {
+          case util.list_at(table_cols, col_idx) {
             Ok(col) ->
               Parameter(
                 name: col.name,

@@ -406,8 +406,7 @@ Steps:
 - Create `marmot/internal/sqlite/parse/expression.gleam`.
 - Move `infer_expression_type`, CASE branch scanning, CAST/COALESCE inference,
   literal inference, and override application if it fits.
-- Keep `parse.gleam` exporting the same internal functions by delegating to the
-  new module.
+- Have callers import directly from the new module (see import rule, line 137).
 - Move or add focused tests for expression inference.
 - Run the full test suite and compare snapshots.
 
@@ -417,8 +416,8 @@ Checkpoint 1A:
 
 - Commit suggested: `Refactor parser text helpers`
 - Move pre-tokenization string helpers only.
-- Keep `parse.gleam` exporting the same helper functions by delegating to
-  `parse/text.gleam`.
+- Have callers import directly from `parse/text.gleam` (or keep the
+  parse.gleam delegations since text.gleam has no parse.gleam dependency).
 - Pause after tests pass and wait for reviewer feedback.
 
 Checkpoint 1B:
@@ -439,7 +438,7 @@ Steps:
 - Create `parse/statement.gleam` for statement classification and table names.
 - Create `parse/select.gleam` for select items, CTE handling, FROM tables, and
   RETURNING columns.
-- Keep facade exports in `parse.gleam` while callers are migrated.
+- Have callers import directly from the new modules.
 - Rename internal helpers where names are vague after the split.
 
 Expected result: SELECT/result parsing can be read without parameter binding or
@@ -628,7 +627,7 @@ The implementing agent must pause for reviewer feedback:
 - After Checkpoint 2A and 2B.
 - After Checkpoint 3A and 3B.
 - After Checkpoint 4A, 4B, and 4C.
-- Before Checkpoint 5 removes facade exports.
+- Before Checkpoint 5 moves remaining types.
 - Before any intentional public behavior change.
 - Before accepting snapshot drift.
 - Before broad renames that touch more than one phase.
@@ -651,8 +650,8 @@ At each checkpoint, the reviewer should be able to answer yes to these:
 
 ## Success Criteria
 
-- `parse.gleam` is a facade or a small coordinator, not the home for every SQL
-  parser behavior.
+- `parse.gleam` is a small coordinator for text operations, not the home for
+  every SQL parser behavior.
 - `sqlite.gleam` exposes the high-level introspection API while delegating
   schema, parameter, and result-column work.
 - Public behavior remains stable across the refactor.
