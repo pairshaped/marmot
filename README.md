@@ -137,7 +137,7 @@ As long as you follow a couple of conventions, Marmot will work out of the box:
 > ```gleam
 > import generated/sql/users_sql
 >
-> users_sql.find_user(db, id: 1)
+> users_sql.find_user(db: db, id: 1)
 > ```
 
 ### Talking to the database

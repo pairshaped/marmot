@@ -19,6 +19,9 @@ birdie = ">= 1.5.5 and < 2.0.0"
 glinter = ">= 2.17.0 and < 3.0.0"
 
 [tools.glinter.rules]
+# Tech debt: re-enable as warnings are resolved.
+# label_possible (203), thrown_away_error (83), deep_nesting (46),
+# unused_exports (15), error_context_lost (2), stringly_typed_error (1)
 label_possible = "off"
 unused_exports = "off"
 thrown_away_error = "off"

@@ -563,10 +563,9 @@ pub fn tokenize_empty_string_test() {
 }
 
 pub fn tokenize_unicode_identifier_test() {
-  // Non-ASCII chars like é break the word — tokenizer only handles ASCII
+  // Non-ASCII chars are accepted as identifier characters
   let tokens = tokenize.tokenize("SELECT café FROM menu")
-  let assert "caf FROM menu" = tokenize.tokens_to_text(list.drop(tokens, 1))
-  // The é character is dropped during tokenization
+  let assert "café FROM menu" = tokenize.tokens_to_text(list.drop(tokens, 1))
 }
 
 pub fn tokenize_hex_literal_test() {

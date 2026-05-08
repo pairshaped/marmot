@@ -154,16 +154,6 @@ pub fn has_return_columns(query: Query) -> Bool {
   query.columns != []
 }
 
-/// Sentinel column used when column metadata cannot be resolved.
-pub fn unknown_column() -> Column {
-  Column(name: "unknown", column_type: StringType, nullable: True)
-}
-
-/// Sentinel parameter used when parameter metadata cannot be resolved.
-pub fn unknown_param() -> Parameter {
-  Parameter(name: "param", column_type: StringType, nullable: False)
-}
-
 /// Look up a column by exact name from table schemas.
 pub fn find_column(
   table_schemas: Dict(String, List(Column)),

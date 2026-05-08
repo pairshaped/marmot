@@ -131,20 +131,27 @@ pub fn compute_join_nullability(
 /// nullable cursor (LEFT-JOIN right side), mark the column nullable. The
 /// `Column` opcode format is `Column P1=cursor P2=col_idx P3=dest_reg`.
 pub fn apply_cursor_nullability(
-  base: Column,
+  base: Result(Column, Nil),
   dest_reg: Int,
   opcodes: List(Opcode),
   join_nullability: JoinNullability,
-) -> Column {
-  let producer =
-    list.find(opcodes, fn(op) { op.opcode == "Column" && op.p3 == dest_reg })
-  case producer {
-    Ok(op) ->
-      case dict.has_key(join_nullability.nullable_cursors, op.p1) {
-        True -> Column(..base, nullable: True)
-        False -> base
+) -> Result(Column, Nil) {
+  case base {
+    Error(_) -> Error(Nil)
+    Ok(col) -> {
+      let producer =
+        list.find(opcodes, fn(op) {
+          op.opcode == "Column" && op.p3 == dest_reg
+        })
+      case producer {
+        Ok(op) ->
+          case dict.has_key(join_nullability.nullable_cursors, op.p1) {
+            True -> Ok(Column(..col, nullable: True))
+            False -> Ok(col)
+          }
+        Error(_) -> Ok(col)
       }
-    Error(_) -> base
+    }
   }
 }
 
@@ -155,7 +162,7 @@ pub fn find_column_for_register(
   cursor_table: Dict(Int, String),
   table_schemas: Dict(String, List(Column)),
   pk_columns: Dict(String, String),
-) -> Column {
+) -> Result(Column, Nil) {
   // Rowid-like opcodes write the rowid (PK) of cursor p1 into register p2.
   //   Rowid       - direct table cursor
   //   IdxRowid    - index cursor (resolves via parent table)
@@ -171,9 +178,9 @@ pub fn find_column_for_register(
   case rowid_op {
     Ok(op) ->
       case dict.get(cursor_table, op.p1) {
-        Ok(table) -> resolve_rowid_column(table, table_schemas, pk_columns)
+        Ok(table) -> Ok(resolve_rowid_column(table, table_schemas, pk_columns))
         Error(_) ->
-          Column(name: "rowid", column_type: query.IntType, nullable: False)
+          Ok(Column(name: "rowid", column_type: query.IntType, nullable: False))
       }
     Error(_) -> {
       // Find the ResultRow address so we can prefer Column opcodes in the
@@ -201,7 +208,7 @@ pub fn find_column_for_register(
 
       case column_op {
         Ok(op) -> resolve_column(op.p1, op.p2, cursor_table, table_schemas)
-        Error(_) -> query.unknown_column()
+        Error(_) -> Error(Nil)
       }
     }
   }
@@ -227,20 +234,20 @@ fn resolve_rowid_column(
 }
 
 /// Look up a column by cursor and index.
-/// Logs a warning when falling back to `unknown_column()` so users can diagnose
-/// type inference gaps.
+/// Returns Error(Nil) when column resolution fails, after logging a warning
+/// so users can diagnose type inference gaps.
 pub fn resolve_column(
   cursor: Int,
   col_idx: Int,
   cursor_table: Dict(Int, String),
   table_schemas: Dict(String, List(Column)),
-) -> Column {
+) -> Result(Column, Nil) {
   case dict.get(cursor_table, cursor) {
     Ok(table_name) ->
       case dict.get(table_schemas, table_name) {
         Ok(table_cols) ->
           case util.list_at(table_cols, col_idx) {
-            Ok(col) -> col
+            Ok(col) -> Ok(col)
             Error(_) -> {
               io.println_error(
                 "warning: column at index "
@@ -248,14 +255,14 @@ pub fn resolve_column(
                 <> " not found in table "
                 <> table_name,
               )
-              query.unknown_column()
+              Error(Nil)
             }
           }
         Error(_) -> {
           io.println_error(
             "warning: table " <> table_name <> " not found in schema",
           )
-          query.unknown_column()
+          Error(Nil)
         }
       }
     Error(_) -> {
@@ -264,7 +271,7 @@ pub fn resolve_column(
         <> int.to_string(cursor)
         <> " not found in cursor-to-table map",
       )
-      query.unknown_column()
+      Error(Nil)
     }
   }
 }
@@ -278,7 +285,7 @@ pub fn infer_parameter_type(
   cursor_table: Dict(Int, String),
   table_schemas: Dict(String, List(Column)),
   pk_columns: Dict(String, String),
-) -> Parameter {
+) -> Result(Parameter, Nil) {
   let var_reg = var_op.p2
   // Eq/Ne/Lt/Le/Gt/Ge: p1 and p3 are both registers being compared.
   // SeekGE/SeekGT/SeekLE/SeekLT: p1 is a CURSOR; p3 is the key register.
@@ -334,20 +341,20 @@ pub fn infer_parameter_type(
             Ok(table) ->
               case dict.get(pk_columns, table) {
                 Ok(pk_name) ->
-                  Parameter(
+                  Ok(Parameter(
                     name: pk_name,
                     column_type: query.IntType,
                     nullable: False,
-                  )
+                  ))
                 Error(_) ->
-                  Parameter(
+                  Ok(Parameter(
                     name: "id",
                     column_type: query.IntType,
                     nullable: False,
-                  )
+                  ))
               }
             Error(_) ->
-              Parameter(name: "id", column_type: query.IntType, nullable: False)
+              Ok(Parameter(name: "id", column_type: query.IntType, nullable: False))
           }
         Error(_) -> {
           io.println_error(
@@ -356,7 +363,7 @@ pub fn infer_parameter_type(
             <> " register p2="
             <> int.to_string(var_op.p2),
           )
-          query.unknown_param()
+          Error(Nil)
         }
       }
     }
@@ -370,7 +377,7 @@ fn find_nearest_column_source(
   opcodes: List(Opcode),
   cursor_table: Dict(Int, String),
   table_schemas: Dict(String, List(Column)),
-) -> Parameter {
+) -> Result(Parameter, Nil) {
   let candidates =
     list.filter(opcodes, fn(op) {
       op.opcode == "Column" && op.p3 == target_reg && op.addr < cmp_addr
@@ -396,7 +403,7 @@ fn find_nearest_column_source(
         "warning: no Column opcode found writing to register "
         <> int.to_string(target_reg),
       )
-      query.unknown_param()
+      Error(Nil)
     }
   }
 }
@@ -408,7 +415,7 @@ fn resolve_seek_cursor_key(
   seek_op: Opcode,
   cursor_table: Dict(Int, String),
   table_schemas: Dict(String, List(Column)),
-) -> Parameter {
+) -> Result(Parameter, Nil) {
   let cursor = seek_op.p1
   case dict.get(cursor_table, cursor) {
     Ok(table_name) ->
@@ -416,23 +423,16 @@ fn resolve_seek_cursor_key(
         Ok(table_cols) ->
           case list.first(table_cols) {
             Ok(col) ->
-              Parameter(
+              Ok(Parameter(
                 name: col.name,
                 column_type: col.column_type,
                 nullable: col.nullable,
-              )
-            Error(_) ->
-              Parameter(
-                name: "param",
-                column_type: query.IntType,
-                nullable: False,
-              )
+              ))
+            Error(_) -> Error(Nil)
           }
-        Error(_) ->
-          Parameter(name: "param", column_type: query.IntType, nullable: False)
+        Error(_) -> Error(Nil)
       }
-    Error(_) ->
-      Parameter(name: "param", column_type: query.IntType, nullable: False)
+    Error(_) -> Error(Nil)
   }
 }
 
@@ -442,18 +442,18 @@ fn resolve_column_to_parameter(
   col_idx: Int,
   cursor_table: Dict(Int, String),
   table_schemas: Dict(String, List(Column)),
-) -> Parameter {
+) -> Result(Parameter, Nil) {
   case dict.get(cursor_table, cursor) {
     Ok(table_name) ->
       case dict.get(table_schemas, table_name) {
         Ok(table_cols) ->
           case util.list_at(table_cols, col_idx) {
             Ok(col) ->
-              Parameter(
+              Ok(Parameter(
                 name: col.name,
                 column_type: col.column_type,
                 nullable: col.nullable,
-              )
+              ))
             Error(_) -> {
               io.println_error(
                 "warning: parameter cursor "
@@ -463,7 +463,7 @@ fn resolve_column_to_parameter(
                 <> " not found in table "
                 <> table_name,
               )
-              query.unknown_param()
+              Error(Nil)
             }
           }
         Error(_) -> {
@@ -472,7 +472,7 @@ fn resolve_column_to_parameter(
             <> table_name
             <> " not found in schema for parameter resolution",
           )
-          query.unknown_param()
+          Error(Nil)
         }
       }
     Error(_) -> {
@@ -481,7 +481,7 @@ fn resolve_column_to_parameter(
         <> int.to_string(cursor)
         <> " not found in cursor-to-table map for parameter",
       )
-      query.unknown_param()
+      Error(Nil)
     }
   }
 }

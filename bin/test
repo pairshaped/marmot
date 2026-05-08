@@ -17,3 +17,4 @@ case "$suite" in
 esac
 
 gleam test -- --suite "$suite" --workers "$workers"
+gleam run -m glinter

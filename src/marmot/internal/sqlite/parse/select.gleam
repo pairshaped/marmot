@@ -4,7 +4,7 @@ import gleam/bool
 import gleam/list
 import gleam/option.{type Option}
 import gleam/string
-import marmot/internal/sqlite/parse/util.{token_list_to_name}
+import marmot/internal/sqlite/parse/util
 import marmot/internal/sqlite/tokenize.{
   type Token, Comma, Dot, NullOverride, NullableOverride, OpenParen, QuotedId,
   Word,
@@ -78,12 +78,12 @@ pub fn parse_select_item(tokens: List(Token)) -> SelectItem {
   }
 
   let alias_text = case has_as {
-    True -> token_list_to_name(alias_tokens)
+    True -> util.token_list_to_name(alias_tokens)
     False ->
       // No explicit AS. For "table.col", use "col" as alias.
       case list.reverse(tokens) {
         [Word(name), Dot, _, ..] -> name
-        _ -> token_list_to_name(tokens)
+        _ -> util.token_list_to_name(tokens)
       }
   }
 
@@ -282,8 +282,8 @@ pub fn parse_returning_columns(tokens: List(Token)) -> List(String) {
       |> list.map(fn(group) {
         // Handle "expr AS alias"
         case tokenize.split_at_last_keyword(group, "AS") {
-          Ok(#(_, alias_tokens)) -> token_list_to_name(alias_tokens)
-          Error(_) -> token_list_to_name(group)
+          Ok(#(_, alias_tokens)) -> util.token_list_to_name(alias_tokens)
+          Error(_) -> util.token_list_to_name(group)
         }
       })
   }

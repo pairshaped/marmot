@@ -42,6 +42,8 @@ pub type Token {
   ShiftRight
   BitAnd
   BitOr
+  // Unknown character (produced instead of silent drop)
+  UnknownToken(char: String)
 }
 
 // ---- Tokenizer ----
@@ -64,6 +66,7 @@ fn do_tokenize(chars: List(String), acc: List(Token)) -> List(Token) {
     ["\t", ..rest] -> do_tokenize(rest, acc)
     ["\n", ..rest] -> do_tokenize(rest, acc)
     ["\r", ..rest] -> do_tokenize(rest, acc)
+    ["\r\n", ..rest] -> do_tokenize(rest, acc)
 
     // Line comment --
     ["-", "-", ..rest] -> skip_line_comment(rest, acc)
@@ -137,13 +140,13 @@ fn do_tokenize(chars: List(String), acc: List(Token)) -> List(Token) {
               let #(word, remaining) = consume_word(chars, [])
               do_tokenize(remaining, [Word(word), ..acc])
             }
-            // Skip unknown characters
+            // Emit unknown characters as tokens so parsing can surface them
             False -> {
               let rest = case chars {
                 [_, ..r] -> r
                 _ -> []
               }
-              do_tokenize(rest, acc)
+              do_tokenize(rest, [UnknownToken(c), ..acc])
             }
           }
       }
@@ -378,7 +381,9 @@ fn is_alpha_or_underscore(c: String) -> Bool {
   c == "_"
   || {
     let code = query.char_code(c)
-    { code >= 65 && code <= 90 } || { code >= 97 && code <= 122 }
+    { code >= 65 && code <= 90 }
+    || { code >= 97 && code <= 122 }
+    || code >= 128
   }
 }
 
@@ -480,6 +485,7 @@ pub fn token_text(token: Token) -> String {
     ShiftRight -> ">>"
     BitAnd -> "&"
     BitOr -> "|"
+    UnknownToken(c) -> c
   }
 }
 

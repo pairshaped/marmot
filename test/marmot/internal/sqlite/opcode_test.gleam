@@ -45,7 +45,7 @@ pub fn find_column_for_register_column_opcode_test() {
   let pk = pk_map([#("t", "id")])
 
   let result = find_column_for_register(1, opcodes, cursor_table, schemas, pk)
-  let assert Column(name: "id", column_type: IntType, nullable: False) = result
+  let assert Ok(Column(name: "id", column_type: IntType, nullable: False)) = result
 }
 
 pub fn find_column_for_register_rowid_opcode_test() {
@@ -62,7 +62,7 @@ pub fn find_column_for_register_rowid_opcode_test() {
   let pk = pk_map([#("t", "id")])
 
   let result = find_column_for_register(2, opcodes, cursor_table, schemas, pk)
-  let assert Column(name: "id", column_type: IntType, nullable: False) = result
+  let assert Ok(Column(name: "id", column_type: IntType, nullable: False)) = result
 }
 
 pub fn find_column_for_register_seek_rowid_test() {
@@ -77,7 +77,7 @@ pub fn find_column_for_register_seek_rowid_test() {
   let pk = pk_map([#("t", "id")])
 
   let result = find_column_for_register(2, opcodes, cursor_table, schemas, pk)
-  let assert Column(name: "id", column_type: IntType, nullable: False) = result
+  let assert Ok(Column(name: "id", column_type: IntType, nullable: False)) = result
 }
 
 pub fn find_column_for_register_idx_rowid_test() {
@@ -92,12 +92,12 @@ pub fn find_column_for_register_idx_rowid_test() {
   let pk = pk_map([#("t", "pk_col")])
 
   let result = find_column_for_register(3, opcodes, cursor_table, schemas, pk)
-  let assert Column(name: "pk_col", column_type: IntType, nullable: False) =
+  let assert Ok(Column(name: "pk_col", column_type: IntType, nullable: False)) =
     result
 }
 
 pub fn find_column_for_register_not_found_test() {
-  // No opcode writes to register 99. Returns unknown_column.
+  // No opcode writes to register 99. Returns Error(Nil).
   let opcodes = [
     op(5, "OpenRead", 0, 1, 0),
     op(8, "Column", 0, 0, 1),
@@ -108,9 +108,7 @@ pub fn find_column_for_register_not_found_test() {
   let pk = pk_map([#("t", "id")])
 
   let result = find_column_for_register(99, opcodes, cursor_table, schemas, pk)
-  let assert "unknown" = result.name
-  let assert StringType = result.column_type
-  let assert True = result.nullable
+  let assert Error(Nil) = result
 }
 
 pub fn find_column_for_register_sorter_aware_test() {
@@ -135,7 +133,7 @@ pub fn find_column_for_register_sorter_aware_test() {
 
   let result = find_column_for_register(1, opcodes, cursor_table, schemas, pk)
   // Should pick the output-phase Column (col_idx=0 -> "id"), not the fill-phase
-  let assert Column(name: "id", column_type: IntType, nullable: False) = result
+  let assert Ok(Column(name: "id", column_type: IntType, nullable: False)) = result
 }
 
 pub fn find_column_for_register_multiple_cursors_test() {
@@ -157,7 +155,7 @@ pub fn find_column_for_register_multiple_cursors_test() {
   let pk = pk_map([])
 
   let result = find_column_for_register(2, opcodes, cursor_table, schemas, pk)
-  let assert Column(name: "b", column_type: StringType, nullable: False) =
+  let assert Ok(Column(name: "b", column_type: StringType, nullable: False)) =
     result
 }
 
@@ -174,7 +172,7 @@ pub fn find_column_for_register_rowid_no_pk_test() {
   let pk = pk_map([])
 
   let result = find_column_for_register(2, opcodes, cursor_table, schemas, pk)
-  let assert Column(name: "rowid", column_type: IntType, nullable: False) =
+  let assert Ok(Column(name: "rowid", column_type: IntType, nullable: False)) =
     result
 }
 
@@ -199,7 +197,7 @@ pub fn infer_parameter_eq_comparison_test() {
   let pk = pk_map([#("t", "id")])
 
   let result = infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk)
-  let assert Parameter(name: "id", column_type: IntType, nullable: False) =
+  let assert Ok(Parameter(name: "id", column_type: IntType, nullable: False)) =
     result
 }
 
@@ -219,7 +217,7 @@ pub fn infer_parameter_ne_comparison_test() {
   let pk = pk_map([#("t", "id")])
 
   let result = infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk)
-  let assert Parameter(name: "name", column_type: StringType, nullable: False) =
+  let assert Ok(Parameter(name: "name", column_type: StringType, nullable: False)) =
     result
 }
 
@@ -239,7 +237,7 @@ pub fn infer_parameter_variable_is_p3_test() {
   let pk = pk_map([#("t", "id")])
 
   let result = infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk)
-  let assert Parameter(name: "id", column_type: IntType, nullable: False) =
+  let assert Ok(Parameter(name: "id", column_type: IntType, nullable: False)) =
     result
 }
 
@@ -261,7 +259,7 @@ pub fn infer_parameter_seek_ge_test() {
 
   let result = infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk)
   // SeekGE resolves via cursor -> table -> first column
-  let assert Parameter(name: "id", column_type: IntType, nullable: False) =
+  let assert Ok(Parameter(name: "id", column_type: IntType, nullable: False)) =
     result
 }
 
@@ -278,7 +276,7 @@ pub fn infer_parameter_seek_lt_test() {
   let pk = pk_map([#("t", "name")])
 
   let result = infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk)
-  let assert Parameter(name: "name", column_type: StringType, nullable: False) =
+  let assert Ok(Parameter(name: "name", column_type: StringType, nullable: False)) =
     result
 }
 
@@ -298,12 +296,12 @@ pub fn infer_parameter_seek_rowid_test() {
   let pk = pk_map([#("t", "user_id")])
 
   let result = infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk)
-  let assert Parameter(name: "user_id", column_type: IntType, nullable: False) =
+  let assert Ok(Parameter(name: "user_id", column_type: IntType, nullable: False)) =
     result
 }
 
 pub fn infer_parameter_no_comparison_test() {
-  // Variable op without any matching comparison returns unknown_param
+  // Variable op without any matching comparison returns Error(Nil)
   let opcodes = [
     op(5, "OpenRead", 0, 1, 0),
     op(6, "Variable", 1, 1, 0),
@@ -316,12 +314,11 @@ pub fn infer_parameter_no_comparison_test() {
   let pk = pk_map([#("t", "id")])
 
   let result = infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk)
-  let assert "param" = result.name
-  let assert StringType = result.column_type
+  let assert Error(Nil) = result
 }
 
 pub fn infer_parameter_seek_rowid_no_pk_test() {
-  // SeekRowid but no PK info available — defaults to "id" + IntType
+  // SeekRowid but no PK info available - defaults to "id" + IntType
   let opcodes = [
     op(5, "OpenRead", 0, 1, 0),
     op(6, "Variable", 1, 3, 0),
@@ -334,12 +331,12 @@ pub fn infer_parameter_seek_rowid_no_pk_test() {
   let pk = pk_map([])
 
   let result = infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk)
-  let assert Parameter(name: "id", column_type: IntType, nullable: False) =
+  let assert Ok(Parameter(name: "id", column_type: IntType, nullable: False)) =
     result
 }
 
 pub fn infer_parameter_seek_rowid_unknown_cursor_test() {
-  // SeekRowid cursor not in cursor_table — defaults to "id" + IntType
+  // SeekRowid cursor not in cursor_table - defaults to "id" + IntType
   let opcodes = [
     op(5, "OpenRead", 0, 1, 0),
     op(6, "Variable", 1, 3, 0),
@@ -352,12 +349,12 @@ pub fn infer_parameter_seek_rowid_unknown_cursor_test() {
   let pk = pk_map([])
 
   let result = infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk)
-  let assert Parameter(name: "id", column_type: IntType, nullable: False) =
+  let assert Ok(Parameter(name: "id", column_type: IntType, nullable: False)) =
     result
 }
 
 pub fn infer_parameter_seek_ge_empty_schema_test() {
-  // SeekGE on a cursor with an empty table schema — defaults to IntType param
+  // SeekGE on a cursor with an empty table schema - returns Error(Nil)
   let opcodes = [
     op(5, "OpenRead", 0, 1, 0),
     op(6, "Variable", 1, 3, 0),
@@ -370,7 +367,5 @@ pub fn infer_parameter_seek_ge_empty_schema_test() {
   let pk = pk_map([])
 
   let result = infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk)
-  let assert "param" = result.name
-  let assert IntType = result.column_type
-  let assert False = result.nullable
+  let assert Error(Nil) = result
 }

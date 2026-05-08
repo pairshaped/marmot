@@ -3,6 +3,7 @@
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/option
+import gleam/result
 import marmot/internal/query.{type Column, Column, StringType}
 import marmot/internal/sqlite/opcode.{type JoinNullability, type Opcode}
 import marmot/internal/sqlite/parse/expression
@@ -36,70 +37,43 @@ pub fn extract_result_columns(
       let from_tables = select.parse_from_tables(tokens)
 
       list.index_map(result_regs, fn(reg, idx) {
-        let opcode_column = {
-          let base =
-            opcode.find_column_for_register(
-              reg,
-              opcodes,
-              cursor_table,
-              table_schemas,
-              pk_columns,
-            )
-          opcode.apply_cursor_nullability(base, reg, opcodes, join_nullability)
-        }
+        let opcode_column =
+          opcode.find_column_for_register(
+            reg,
+            opcodes,
+            cursor_table,
+            table_schemas,
+            pk_columns,
+          )
+          |> opcode.apply_cursor_nullability(reg, opcodes, join_nullability)
+        let text_column =
+          resolve_select_item(idx, select_items, from_tables, table_schemas, join_nullability)
         let select_item = util.list_at(select_items, idx)
         case select_item {
-          Error(_) -> opcode_column
+          Error(_) -> result.unwrap(opcode_column, default_column())
           Ok(item) -> {
-            let resolved_col = case item.bare_column {
-              option.Some(_) ->
-                case
-                  resolve_select_item(
-                    idx,
-                    select_items,
-                    from_tables,
-                    table_schemas,
-                    join_nullability,
-                  )
-                {
-                  Column(name: "unknown", ..) ->
-                    Column(..opcode_column, name: item.alias)
-                  resolved -> {
-                    let opcode_nullable = case opcode_column.name {
-                      "unknown" -> False
-                      _ -> opcode_column.nullable
-                    }
-                    Column(
-                      ..resolved,
-                      nullable: resolved.nullable || opcode_nullable,
-                    )
-                  }
+            let resolved_col = case item.bare_column, opcode_column {
+              option.Some(_), Ok(op) ->
+                case text_column {
+                  Ok(tc) -> Column(..tc, nullable: tc.nullable || op.nullable)
+                  Error(_) -> Column(..op, name: item.alias)
                 }
-              option.None ->
-                case opcode_column.name {
-                  "unknown" ->
-                    resolve_select_item(
-                      idx,
-                      select_items,
-                      from_tables,
-                      table_schemas,
-                      join_nullability,
-                    )
-                  _ -> {
-                    let expr_col =
-                      resolve_select_item(
-                        idx,
-                        select_items,
-                        from_tables,
-                        table_schemas,
-                        join_nullability,
-                      )
-                    Column(
-                      name: item.alias,
-                      column_type: expr_col.column_type,
-                      nullable: opcode_column.nullable,
-                    )
-                  }
+              option.Some(_), Error(_) ->
+                case text_column {
+                  Ok(tc) -> tc
+                  Error(_) -> Column(name: item.alias, column_type: StringType, nullable: True)
+                }
+              option.None, Ok(op) -> {
+                let base_type = case text_column {
+                  Ok(tc) -> tc.column_type
+                  Error(_) -> op.column_type
+                }
+                Column(name: item.alias, column_type: base_type, nullable: op.nullable)
+              }
+              option.None, Error(_) ->
+                case text_column {
+                  Ok(tc) -> tc
+                  Error(_) -> Column(name: item.alias, column_type: StringType, nullable: True)
                 }
             }
             expression.apply_override(resolved_col, item.override)
@@ -110,6 +84,10 @@ pub fn extract_result_columns(
   }
 }
 
+fn default_column() -> Column {
+  Column(name: "unknown", column_type: StringType, nullable: True)
+}
+
 /// Resolve a result column via SELECT-list text parsing.
 fn resolve_select_item(
   idx: Int,
@@ -117,9 +95,9 @@ fn resolve_select_item(
   from_tables: List(String),
   table_schemas: Dict(String, List(Column)),
   join_nullability: JoinNullability,
-) -> Column {
+) -> Result(Column, Nil) {
   case list.drop(select_items, idx) |> list.first {
-    Error(_) -> query.unknown_column()
+    Error(_) -> Error(Nil)
     Ok(item) -> {
       let resolved =
         list.find_map(from_tables, fn(table) {
@@ -144,7 +122,7 @@ fn resolve_select_item(
         Ok(c) -> c
         Error(_) -> expression.infer_expression_type(item)
       }
-      expression.apply_override(col, item.override)
+      Ok(expression.apply_override(col, item.override))
     }
   }
 }
