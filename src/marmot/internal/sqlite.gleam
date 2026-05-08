@@ -163,7 +163,7 @@ pub fn introspect_query(
   // so `col_name?` and `col_name!` aliases produce ParamAnon/NullableOverride
   // correctly in each context.
   let param_tokens = tokenize.tokenize(sanitized_sql)
-  let parameters =
+  let raw_parameters =
     parameters.extract_parameters(
       opcodes,
       cursor_table,
@@ -172,7 +172,7 @@ pub fn introspect_query(
       param_tokens,
     )
 
-  let parameters = parameters.deduplicate_parameter_names(parameters)
+  let parameters = parameters.deduplicate_parameter_names(raw_parameters)
   Ok(QueryInfo(columns: columns, parameters: parameters))
 }
 

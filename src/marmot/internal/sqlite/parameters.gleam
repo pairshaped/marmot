@@ -8,7 +8,7 @@ import gleam/result
 import gleam/string
 import marmot/internal/query.{type Column, type Parameter, Parameter, StringType}
 import marmot/internal/sqlite/opcode.{type Opcode}
-import marmot/internal/sqlite/parse/parameters
+import marmot/internal/sqlite/parse/parameters as parse_params
 import marmot/internal/sqlite/parse/select
 import marmot/internal/sqlite/parse/statement
 import marmot/internal/sqlite/tokenize
@@ -167,9 +167,9 @@ fn extract_insert_parameters(
   table_schemas: Dict(String, List(Column)),
   tokens: List(tokenize.Token),
 ) -> List(Parameter) {
-  let columns = parameters.parse_insert_columns(tokens)
+  let columns = parse_params.parse_insert_columns(tokens)
   let table = statement.parse_insert_table_name(tokens)
-  let values_positions = parameters.parse_values_placeholder_positions(tokens)
+  let values_positions = parse_params.parse_values_placeholder_positions(tokens)
   let bound_columns = case values_positions {
     [] -> columns
     _ ->
@@ -202,7 +202,7 @@ fn extract_insert_select_parameters(
   table_schemas: Dict(String, List(Column)),
   tokens: List(tokenize.Token),
 ) -> List(Parameter) {
-  let target_cols = parameters.parse_insert_columns(tokens)
+  let target_cols = parse_params.parse_insert_columns(tokens)
   let target_table = statement.parse_insert_table_name(tokens)
   let target_col_types = case dict.get(table_schemas, target_table) {
     Ok(cols) -> cols
@@ -269,14 +269,14 @@ fn extract_insert_select_parameters(
       // Tokens from FROM onward for WHERE params
       let from_onwards = tokenize.drop_until_keyword(after_select, "FROM")
       let where_tables =
-        parameters.find_all_subquery_tables(from_onwards)
+        parse_params.find_all_subquery_tables(from_onwards)
         |> list.filter(fn(t) {
           case dict.get(table_schemas, t) {
             Ok(_) -> True
             Error(_) -> False
           }
         })
-      let where_binders = parameters.find_param_binders(from_onwards)
+      let where_binders = parse_params.find_param_binders(from_onwards)
       let select_param_names = list.map(select_params, fn(p) { p.name })
       let unmatched_where_binders =
         list.filter(where_binders, fn(b) {
@@ -330,7 +330,7 @@ fn extract_select_parameters(
   stmt_type: statement.StatementType,
 ) -> List(Parameter) {
   let all_tables = collect_all_tables(tokens, stmt_type, table_schemas)
-  let binders = parameters.find_param_binders(tokens)
+  let binders = parse_params.find_param_binders(tokens)
   case list.is_empty(binders) {
     True -> []
     False ->
@@ -394,7 +394,7 @@ fn collect_all_tables(
     statement.Delete -> [statement.parse_delete_table_name(tokens)]
     _ -> []
   }
-  let subquery_tables = parameters.find_all_subquery_tables(tokens)
+  let subquery_tables = parse_params.find_all_subquery_tables(tokens)
   let combined = list.append(from_tables, subquery_tables)
   combined
   |> list.filter(fn(t) {
@@ -412,8 +412,8 @@ fn extract_update_parameters(
   tokens: List(tokenize.Token),
 ) -> List(Parameter) {
   let table_name = statement.parse_update_table_name(tokens)
-  let set_params = parameters.parse_update_set_columns(tokens)
-  let where_params = parameters.parse_where_columns(tokens)
+  let set_params = parse_params.parse_update_set_columns(tokens)
+  let where_params = parse_params.parse_where_columns(tokens)
 
   case dict.get(table_schemas, table_name) {
     Ok(table_cols) -> {
