@@ -14,7 +14,10 @@ import marmot/internal/sqlite/tokenize.{
 //
 // During migration, types and public functions are kept available here
 // while implementation moves into focused sub-modules under parse/.
-// Callers outside parse/ should continue to use this module.
+// Callers outside parse/ should prefer this module. When a submodule
+// needs types defined here (e.g. SelectItem, NullabilityOverride),
+// callers import that submodule directly — re-exporting through the
+// facade would create a Gleam import cycle.
 
 pub type StatementType {
   Select
