@@ -5,9 +5,10 @@ import marmot/internal/query.{
   BitArrayType, Column, FloatType, IntType, StringType,
 }
 import marmot/internal/sqlite/parse.{
-  type SelectItem, OverrideNone, SelectItem, infer_expression_type,
-  normalize_sql_whitespace, parse_values_placeholder_positions,
+  type SelectItem, OverrideNone, SelectItem, normalize_sql_whitespace,
+  parse_values_placeholder_positions,
 }
+import marmot/internal/sqlite/parse/expression.{infer_expression_type}
 import marmot/internal/sqlite/tokenize.{
   type Token, CloseParen, Comma, Gt, Minus, Number, OpenParen, Star, StringLit,
   Word,

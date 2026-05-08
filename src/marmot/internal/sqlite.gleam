@@ -11,6 +11,7 @@ import marmot/internal/query.{
 }
 import marmot/internal/sqlite/opcode.{type JoinNullability, type Opcode, Opcode}
 import marmot/internal/sqlite/parse
+import marmot/internal/sqlite/parse/expression
 import marmot/internal/sqlite/tokenize.{
   type Token, CloseParen, OpenParen, ParamAnon, ParamNamed, Word,
 }
@@ -274,7 +275,7 @@ fn extract_result_columns(
                   }
                 }
             }
-            parse.apply_override(resolved_col, item.override)
+            expression.apply_override(resolved_col, item.override)
           }
         }
       })
@@ -314,9 +315,9 @@ fn resolve_select_item(
         })
       let col = case resolved {
         Ok(c) -> c
-        Error(_) -> parse.infer_expression_type(item)
+        Error(_) -> expression.infer_expression_type(item)
       }
-      parse.apply_override(col, item.override)
+      expression.apply_override(col, item.override)
     }
   }
 }
