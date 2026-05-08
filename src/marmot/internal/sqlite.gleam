@@ -12,6 +12,7 @@ import marmot/internal/query.{
 import marmot/internal/sqlite/opcode.{type JoinNullability, type Opcode, Opcode}
 import marmot/internal/sqlite/parse
 import marmot/internal/sqlite/parse/expression
+import marmot/internal/sqlite/parse/statement
 import marmot/internal/sqlite/tokenize.{
   type Token, CloseParen, OpenParen, ParamAnon, ParamNamed, Word,
 }
@@ -129,17 +130,19 @@ pub fn introspect_query(
   let tokens = tokenize.tokenize(normalized_sql)
 
   // Check statement type
-  let stmt_type = parse.classify_statement(tokens)
-  let is_insert = stmt_type == parse.Insert || stmt_type == parse.Replace
+  let stmt_type = statement.classify_statement(tokens)
+  let is_insert =
+    stmt_type == statement.Insert || stmt_type == statement.Replace
   let has_returning = tokenize.has_keyword(tokens, "RETURNING")
 
   // Determine result columns
   let columns = case has_returning {
     True -> {
       let table_name = case stmt_type {
-        parse.Insert | parse.Replace -> parse.parse_insert_table_name(tokens)
-        parse.Update -> parse.parse_update_table_name(tokens)
-        parse.Delete -> parse.parse_delete_table_name(tokens)
+        statement.Insert | statement.Replace ->
+          statement.parse_insert_table_name(tokens)
+        statement.Update -> statement.parse_update_table_name(tokens)
+        statement.Delete -> statement.parse_delete_table_name(tokens)
         _ -> ""
       }
       extract_returning_columns(tokens, table_name, table_schemas)
@@ -367,7 +370,7 @@ fn extract_parameters(
   case param_count {
     0 -> []
     _ -> {
-      let stmt_type = parse.classify_statement(tokens)
+      let stmt_type = statement.classify_statement(tokens)
       let opcode_fallback = fn() {
         list.map(variable_ops, fn(var_op) {
           opcode.infer_parameter_type(
@@ -382,7 +385,7 @@ fn extract_parameters(
 
       fix_limit_offset_param_types(
         case stmt_type {
-          parse.Insert | parse.Replace -> {
+          statement.Insert | statement.Replace -> {
             case tokenize.has_keyword(tokens, "VALUES") {
               True -> {
                 let parsed = extract_insert_parameters(table_schemas, tokens)
@@ -401,14 +404,14 @@ fn extract_parameters(
               }
             }
           }
-          parse.Update -> {
+          statement.Update -> {
             let parsed = extract_update_parameters(table_schemas, tokens)
             case list.length(parsed) == param_count {
               True -> parsed
               False -> opcode_fallback()
             }
           }
-          parse.Select | parse.Delete -> {
+          statement.Select | statement.Delete -> {
             let parsed =
               extract_select_parameters(table_schemas, tokens, stmt_type)
             case list.length(parsed) == param_count {
@@ -416,7 +419,7 @@ fn extract_parameters(
               False -> opcode_fallback()
             }
           }
-          parse.Other -> opcode_fallback()
+          statement.Other -> opcode_fallback()
         },
         tokens,
       )
@@ -505,7 +508,7 @@ fn extract_insert_parameters(
   tokens: List(Token),
 ) -> List(Parameter) {
   let columns = parse.parse_insert_columns(tokens)
-  let table = parse.parse_insert_table_name(tokens)
+  let table = statement.parse_insert_table_name(tokens)
   let values_positions = parse.parse_values_placeholder_positions(tokens)
   let bound_columns = case values_positions {
     [] -> columns
@@ -540,7 +543,7 @@ fn extract_insert_select_parameters(
   tokens: List(Token),
 ) -> List(Parameter) {
   let target_cols = parse.parse_insert_columns(tokens)
-  let target_table = parse.parse_insert_table_name(tokens)
+  let target_table = statement.parse_insert_table_name(tokens)
   let target_col_types = case dict.get(table_schemas, target_table) {
     Ok(cols) -> cols
     Error(_) -> []
@@ -664,7 +667,7 @@ fn extract_insert_select_parameters(
 fn extract_select_parameters(
   table_schemas: Dict(String, List(Column)),
   tokens: List(Token),
-  stmt_type: parse.StatementType,
+  stmt_type: statement.StatementType,
 ) -> List(Parameter) {
   let all_tables = collect_all_tables(tokens, stmt_type, table_schemas)
   let binders = parse.find_param_binders(tokens)
@@ -723,12 +726,12 @@ fn resolve_binder_type(
 /// Collect every table referenced in the tokens
 fn collect_all_tables(
   tokens: List(Token),
-  stmt_type: parse.StatementType,
+  stmt_type: statement.StatementType,
   table_schemas: Dict(String, List(Column)),
 ) -> List(String) {
   let from_tables = case stmt_type {
-    parse.Select -> parse.parse_from_tables(tokens)
-    parse.Delete -> [parse.parse_delete_table_name(tokens)]
+    statement.Select -> parse.parse_from_tables(tokens)
+    statement.Delete -> [statement.parse_delete_table_name(tokens)]
     _ -> []
   }
   let subquery_tables = parse.find_all_subquery_tables(tokens)
@@ -748,7 +751,7 @@ fn extract_update_parameters(
   table_schemas: Dict(String, List(Column)),
   tokens: List(Token),
 ) -> List(Parameter) {
-  let table_name = parse.parse_update_table_name(tokens)
+  let table_name = statement.parse_update_table_name(tokens)
   let set_params = parse.parse_update_set_columns(tokens)
   let where_params = parse.parse_where_columns(tokens)
 
