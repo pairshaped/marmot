@@ -4,6 +4,7 @@ import gleam/bool
 import gleam/list
 import gleam/option.{type Option}
 import gleam/string
+import marmot/internal/sqlite/parse/util.{token_list_to_name}
 import marmot/internal/sqlite/tokenize.{
   type Token, Comma, Dot, NullOverride, NullableOverride, OpenParen, QuotedId,
   Word,
@@ -141,27 +142,6 @@ fn detect_bare_column(tokens: List(Token)) -> Option(String) {
     [QuotedId(name)] -> option.Some(name)
     [Word(_), Dot, Word(name)] -> option.Some(name)
     _ -> option.None
-  }
-}
-
-/// Get a clean name from a token list (first Word or QuotedId).
-pub fn token_list_to_name(tokens: List(Token)) -> String {
-  case tokens {
-    [] -> ""
-    [Word(t), ..] -> t
-    [QuotedId(t), ..] -> t
-    [NullOverride, ..] -> ""
-    [NullableOverride, ..] -> ""
-    _ ->
-      tokens
-      |> list.filter(fn(t) {
-        case t {
-          NullOverride | NullableOverride -> False
-          _ -> True
-        }
-      })
-      |> list.map(tokenize.token_text)
-      |> string.join("")
   }
 }
 

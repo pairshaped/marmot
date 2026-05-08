@@ -4,10 +4,11 @@ import gleam/string
 import marmot/internal/query.{
   BitArrayType, Column, FloatType, IntType, StringType,
 }
-import marmot/internal/sqlite/parse.{
-  normalize_sql_whitespace, parse_values_placeholder_positions,
-}
+import marmot/internal/sqlite/parse.{normalize_sql_whitespace}
 import marmot/internal/sqlite/parse/expression.{infer_expression_type}
+import marmot/internal/sqlite/parse/parameters.{
+  parse_values_placeholder_positions,
+}
 import marmot/internal/sqlite/parse/select.{
   type SelectItem, OverrideNone, SelectItem,
 }
