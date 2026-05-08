@@ -7,8 +7,8 @@ import gleam/string
 import marmot/internal/query
 import marmot/internal/sqlite/parse/util
 import marmot/internal/sqlite/tokenize.{
-  type Token, Dot, Eq, Ge, Gt, Le, Lt, Minus, Ne, OpenParen,
-  ParamAnon, ParamNamed, Plus, QuotedId, Slash, Star, Word,
+  type Token, Dot, Eq, Ge, Gt, Le, Lt, Minus, Ne, OpenParen, ParamAnon,
+  ParamNamed, Plus, QuotedId, Slash, Star, Word,
 }
 
 // ---- INSERT column parsing ----

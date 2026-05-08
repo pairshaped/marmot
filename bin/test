@@ -16,5 +16,6 @@ case "$suite" in
     ;;
 esac
 
+gleam format --check src test
 gleam test -- --suite "$suite" --workers "$workers"
 gleam run -m glinter

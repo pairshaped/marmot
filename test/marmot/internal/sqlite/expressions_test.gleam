@@ -841,4 +841,3 @@ pub fn introspect_compound_query_as_subquery_test() {
     )
   result |> string.inspect |> birdie.snap(title: "compound query as subquery")
 }
-

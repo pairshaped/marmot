@@ -140,9 +140,7 @@ pub fn apply_cursor_nullability(
     Error(_) -> Error(Nil)
     Ok(col) -> {
       let producer =
-        list.find(opcodes, fn(op) {
-          op.opcode == "Column" && op.p3 == dest_reg
-        })
+        list.find(opcodes, fn(op) { op.opcode == "Column" && op.p3 == dest_reg })
       case producer {
         Ok(op) ->
           case dict.has_key(join_nullability.nullable_cursors, op.p1) {
@@ -354,7 +352,11 @@ pub fn infer_parameter_type(
                   ))
               }
             Error(_) ->
-              Ok(Parameter(name: "id", column_type: query.IntType, nullable: False))
+              Ok(Parameter(
+                name: "id",
+                column_type: query.IntType,
+                nullable: False,
+              ))
           }
         Error(_) -> {
           io.println_error(

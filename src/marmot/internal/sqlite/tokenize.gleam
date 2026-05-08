@@ -381,9 +381,7 @@ fn is_alpha_or_underscore(c: String) -> Bool {
   c == "_"
   || {
     let code = query.char_code(c)
-    { code >= 65 && code <= 90 }
-    || { code >= 97 && code <= 122 }
-    || code >= 128
+    { code >= 65 && code <= 90 } || { code >= 97 && code <= 122 } || code >= 128
   }
 }
 

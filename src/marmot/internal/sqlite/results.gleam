@@ -47,7 +47,13 @@ pub fn extract_result_columns(
           )
           |> opcode.apply_cursor_nullability(reg, opcodes, join_nullability)
         let text_column =
-          resolve_select_item(idx, select_items, from_tables, table_schemas, join_nullability)
+          resolve_select_item(
+            idx,
+            select_items,
+            from_tables,
+            table_schemas,
+            join_nullability,
+          )
         let select_item = util.list_at(select_items, idx)
         case select_item {
           Error(_) -> result.unwrap(opcode_column, default_column())
@@ -61,19 +67,33 @@ pub fn extract_result_columns(
               option.Some(_), Error(_) ->
                 case text_column {
                   Ok(tc) -> tc
-                  Error(_) -> Column(name: item.alias, column_type: StringType, nullable: True)
+                  Error(_) ->
+                    Column(
+                      name: item.alias,
+                      column_type: StringType,
+                      nullable: True,
+                    )
                 }
               option.None, Ok(op) -> {
                 let base_type = case text_column {
                   Ok(tc) -> tc.column_type
                   Error(_) -> op.column_type
                 }
-                Column(name: item.alias, column_type: base_type, nullable: op.nullable)
+                Column(
+                  name: item.alias,
+                  column_type: base_type,
+                  nullable: op.nullable,
+                )
               }
               option.None, Error(_) ->
                 case text_column {
                   Ok(tc) -> tc
-                  Error(_) -> Column(name: item.alias, column_type: StringType, nullable: True)
+                  Error(_) ->
+                    Column(
+                      name: item.alias,
+                      column_type: StringType,
+                      nullable: True,
+                    )
                 }
             }
             expression.apply_override(resolved_col, item.override)

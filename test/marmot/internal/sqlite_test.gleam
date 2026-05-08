@@ -911,4 +911,3 @@ pub fn parse_returns_invalid_identifier_special_char_test() {
   let assert Error(_) =
     sqlite.parse_returns_annotation("-- returns: Org-Row\nSELECT 1")
 }
-

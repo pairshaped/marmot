@@ -11,8 +11,8 @@ import marmot/internal/sqlite/opcode.{type Opcode}
 import marmot/internal/sqlite/parse/binder
 import marmot/internal/sqlite/parse/parameters as parse_params
 import marmot/internal/sqlite/parse/select
-import marmot/internal/sqlite/parse/subquery
 import marmot/internal/sqlite/parse/statement
+import marmot/internal/sqlite/parse/subquery
 import marmot/internal/sqlite/tokenize
 
 /// Extract parameters
