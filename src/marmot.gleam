@@ -290,6 +290,10 @@ fn process_sql_file(
     }),
   )
   use _ <- result.try(check_duplicate_columns(query_info.columns, file_path))
+  use _ <- result.try(check_generated_column_names(query_info.columns, file_path))
+  use _ <- result.try(
+    check_generated_parameter_names(query_info.parameters, file_path),
+  )
   Ok(query.Query(
     name: name,
     sql: sqlite.strip_nullability_suffixes(sql),
@@ -415,6 +419,56 @@ fn find_duplicates(names: List(String)) -> List(String) {
 /// quoting and comment styles correctly.
 pub fn contains_semicolon_outside_strings(sql: String) -> Bool {
   count_semicolons(sql) > 0
+}
+
+pub fn check_generated_column_names(
+  columns: List(query.Column),
+  file_path: String,
+) -> Result(Nil, Nil) {
+  let generated =
+    columns
+    |> list.map(fn(c) { #(c.name, generated_name(c.name)) })
+  check_generated_name_pairs(generated, file_path)
+}
+
+pub fn check_generated_parameter_names(
+  parameters: List(query.Parameter),
+  file_path: String,
+) -> Result(Nil, Nil) {
+  let generated =
+    parameters
+    |> list.map(fn(p) { #(p.name, generated_name(p.name)) })
+  check_generated_name_pairs(generated, file_path)
+}
+
+fn generated_name(name: String) -> String {
+  name
+  |> query.sanitize_identifier
+  |> query.safe_name
+}
+
+fn check_generated_name_pairs(
+  pairs: List(#(String, String)),
+  file_path: String,
+) -> Result(Nil, Nil) {
+  let generated_names = list.map(pairs, fn(pair) { pair.1 })
+  let dupes = find_duplicates(generated_names)
+
+  case dupes {
+    [] -> Ok(Nil)
+    _ -> {
+      let conflicts =
+        pairs
+        |> list.filter(fn(pair) { list.contains(dupes, pair.1) })
+      io.println_error(
+        error.to_string(error.GeneratedNameCollision(
+          path: file_path,
+          names: conflicts,
+        )),
+      )
+      Error(Nil)
+    }
+  }
 }
 
 /// Run `gleam format` on generated code. Falls back to the original string

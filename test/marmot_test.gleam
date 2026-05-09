@@ -372,6 +372,26 @@ pub fn check_duplicate_columns_single_test() {
   let assert Ok(Nil) = marmot.check_duplicate_columns(cols, "test.sql")
 }
 
+pub fn check_generated_column_names_collide_test() {
+  let cols = [
+    query.Column(name: "foo-bar", column_type: query.StringType, nullable: False),
+    query.Column(name: "foo_bar", column_type: query.StringType, nullable: False),
+  ]
+
+  let assert Error(Nil) =
+    marmot.check_generated_column_names(cols, "test.sql")
+}
+
+pub fn check_generated_column_names_no_collision_test() {
+  let cols = [
+    query.Column(name: "foo-bar", column_type: query.StringType, nullable: False),
+    query.Column(name: "bar_baz", column_type: query.StringType, nullable: False),
+  ]
+
+  let assert Ok(Nil) =
+    marmot.check_generated_column_names(cols, "test.sql")
+}
+
 // ---- FFI failure paths ----
 
 pub fn run_executable_not_found_test() {
