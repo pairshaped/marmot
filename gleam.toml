@@ -4,6 +4,10 @@ description = "Type-safe SQL for SQLite in Gleam. Write .sql files, generate typ
 licences = ["MIT"]
 repository = { type = "github", user = "pairshaped", repo = "marmot" }
 target = "erlang"
+links = [
+  { title = "Internals", href = "https://github.com/pairshaped/marmot/blob/master/src/marmot/internal/README.md" },
+  { title = "llms.txt", href = "https://github.com/pairshaped/marmot/blob/master/llms.txt" },
+]
 
 [dependencies]
 gleam_stdlib = ">= 0.34.0 and < 2.0.0"
@@ -12,12 +16,6 @@ simplifile = ">= 2.0.0 and < 3.0.0"
 tom = ">= 1.0.0 and < 3.0.0"
 argv = ">= 1.0.0 and < 2.0.0"
 gleam_time = ">= 1.0.0 and < 2.0.0"
-
-[documentation]
-pages = [
-  { title = "Internals", path = "internals", source = "./src/marmot/internal/README.md" },
-  { title = "llms.txt", path = "llms.txt", source = "./llms.txt" },
-]
 
 [dev-dependencies]
 gleeunit = ">= 1.0.0 and < 2.0.0"
