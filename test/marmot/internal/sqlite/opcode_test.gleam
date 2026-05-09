@@ -3,8 +3,8 @@ import marmot/internal/query.{
   type Column, Column, IntType, Parameter, StringType,
 }
 import marmot/internal/sqlite/opcode.{
-  type Opcode, Opcode, debug_warning, find_column_for_register, infer_parameter_type,
-  marmot_debug_warnings_enabled,
+  type Opcode, Opcode, debug_warning, find_column_for_register,
+  infer_parameter_type, marmot_debug_warnings_enabled,
 }
 
 // ---- Helpers ----

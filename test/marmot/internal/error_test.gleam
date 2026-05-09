@@ -107,10 +107,10 @@ pub fn sql_error_no_such_column_hint_test() {
 }
 
 pub fn generated_name_collision_error_test() {
-  error.GeneratedNameCollision(
-    path: "src/app/sql/find_user.sql",
-    names: [#("foo-bar", "foo_bar"), #("foo_bar", "foo_bar")],
-  )
+  error.GeneratedNameCollision(path: "src/app/sql/find_user.sql", names: [
+    #("foo-bar", "foo_bar"),
+    #("foo_bar", "foo_bar"),
+  ])
   |> error.to_string
   |> birdie.snap(title: "generated name collision error")
 }

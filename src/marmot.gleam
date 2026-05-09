@@ -204,16 +204,17 @@ fn write_module_file(output: String, module_content: String) -> Bool {
       )
       False
     }
-    Ok(_) -> case simplifile.write(output, module_content) {
-      Ok(_) -> {
-        io.println("  wrote " <> output)
-        True
+    Ok(_) ->
+      case simplifile.write(output, module_content) {
+        Ok(_) -> {
+          io.println("  wrote " <> output)
+          True
+        }
+        Error(_) -> {
+          io.println_error("error: Could not write to " <> output)
+          False
+        }
       }
-      Error(_) -> {
-        io.println_error("error: Could not write to " <> output)
-        False
-      }
-    }
   }
 }
 
@@ -242,35 +243,31 @@ fn process_sql_file(
   db: sqlight.Connection,
   file_path: String,
 ) -> Result(query.Query, Nil) {
-  use content <- result.try(
-    case simplifile.read(file_path) {
-      Ok(content) -> Ok(content)
-      Error(read_err) -> {
-        io.println_error(
-          error.to_string(error.FileReadError(
-            path: file_path,
-            message: "Could not read file: " <> string.inspect(read_err),
-          )),
-        )
-        Error(Nil)
-      }
-    },
-  )
+  use content <- result.try(case simplifile.read(file_path) {
+    Ok(content) -> Ok(content)
+    Error(read_err) -> {
+      io.println_error(
+        error.to_string(error.FileReadError(
+          path: file_path,
+          message: "Could not read file: " <> string.inspect(read_err),
+        )),
+      )
+      Error(Nil)
+    }
+  })
 
   let filename =
     file_path
     |> string.split("/")
     |> list.last
     |> result.unwrap("query.sql")
-  use name <- result.try(
-    case query.function_name(filename) {
-      Ok(n) -> Ok(n)
-      Error(_) -> {
-        io.println_error(error.to_string(error.InvalidFilename(path: file_path)))
-        Error(Nil)
-      }
-    },
-  )
+  use name <- result.try(case query.function_name(filename) {
+    Ok(n) -> Ok(n)
+    Error(_) -> {
+      io.println_error(error.to_string(error.InvalidFilename(path: file_path)))
+      Error(Nil)
+    }
+  })
 
   let trimmed = string.trim(content)
   use sql <- result.try(validate_sql(trimmed, file_path))
@@ -298,10 +295,14 @@ fn process_sql_file(
     }),
   )
   use _ <- result.try(check_duplicate_columns(query_info.columns, file_path))
-  use _ <- result.try(check_generated_column_names(query_info.columns, file_path))
-  use _ <- result.try(
-    check_generated_parameter_names(query_info.parameters, file_path),
-  )
+  use _ <- result.try(check_generated_column_names(
+    query_info.columns,
+    file_path,
+  ))
+  use _ <- result.try(check_generated_parameter_names(
+    query_info.parameters,
+    file_path,
+  ))
   Ok(query.Query(
     name: name,
     sql: sqlite.strip_nullability_suffixes(sql),
@@ -636,7 +637,10 @@ pub fn make_tmp_file(
 }
 
 @external(erlang, "marmot_ffi", "make_tmp_file")
-fn make_tmp_file_raw(dir: String, content: String) -> Result(String, MakeTmpFileError)
+fn make_tmp_file_raw(
+  dir: String,
+  content: String,
+) -> Result(String, MakeTmpFileError)
 
 /// Look up a single environment variable by name. The FFI handles
 /// binary-to-charlist conversion for OTP 27+ compatibility.

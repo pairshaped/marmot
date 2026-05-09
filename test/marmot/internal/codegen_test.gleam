@@ -778,8 +778,7 @@ pub fn parse_query_function_allows_slash_module_path_test() {
     module_path: "some/module/path",
     module_alias: "path",
     function: "func",
-  )) =
-    codegen.parse_query_function(option.Some("some/module/path.func"))
+  )) = codegen.parse_query_function(option.Some("some/module/path.func"))
 }
 
 pub fn generate_module_returns_error_on_shared_type_mismatch_test() {

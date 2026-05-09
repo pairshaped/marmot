@@ -272,9 +272,7 @@ fn check_generated_query_names(
       let conflicts =
         pairs
         |> list.filter(fn(pair) { list.contains(dupes, pair.1) })
-      Error(
-        error.GeneratedNameCollision(path: module_path, names: conflicts),
-      )
+      Error(error.GeneratedNameCollision(path: module_path, names: conflicts))
     }
   }
 }
@@ -313,12 +311,10 @@ fn check_generated_row_type_names(
       case list.unique(custom_names) {
         [option.Some(_)] -> Ok(Nil)
         _ ->
-          Error(
-            error.GeneratedNameCollision(
-              path: module_path,
-              names: list.map(conflicts, fn(t) { #(t.0, t.1) }),
-            ),
-          )
+          Error(error.GeneratedNameCollision(
+            path: module_path,
+            names: list.map(conflicts, fn(t) { #(t.0, t.1) }),
+          ))
       }
     }
   }
