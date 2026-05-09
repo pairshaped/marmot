@@ -15,7 +15,13 @@ import marmot/internal/sqlite/parse/statement
 import marmot/internal/sqlite/parse/subquery
 import marmot/internal/sqlite/tokenize
 
-/// Extract parameters
+/// Extract parameters from opcodes and parsed SQL context.
+///
+/// Uses EXPLAIN opcodes (Variable) for `?` placeholder positions and types,
+/// with text-based parsing for named parameters (`@name`) and complex WHERE
+/// clauses. The text-based parser handles simple `col = ?` patterns but may
+/// miss types on deeply nested subqueries in WHERE; those fall back to
+/// StringType. See "subquery in where" test in sqlite_test.
 pub fn extract_parameters(
   opcodes: List(Opcode),
   cursor_table: Dict(Int, String),

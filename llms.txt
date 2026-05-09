@@ -25,6 +25,7 @@ Write SQL in `src/**/sql/*.sql`, one query per file. Filename becomes the functi
 |---|---|---|
 | `database` | — | Path to the SQLite file used for introspection (also `DATABASE_URL` env, `--database` CLI) |
 | `output` | `src/generated/sql` | Output directory for generated modules (must be under `src/`). Marmot infers the directory structure by finding the longest common path prefix between `output` and each `sql/` directory, then uses the remainder as the namespace (e.g. `src/app/users/sql/` with default output produces `src/generated/sql/app/users_sql.gleam`). |
+| `sql_dir` | — | Custom directory for SQL file discovery. When set, Marmot recursively finds all directories under this path that contain `.sql` files, instead of the default `src/**/sql/` convention. |
 | `query_function` | `sqlight.query` | Fully-qualified function (`module/path.name`) that generated code calls instead of `sqlight.query`. Wrapper must match `sqlight.query`'s labelled signature (`sql: String, on connection, with parameters, expecting decoder`). Useful for logging, timing, instrumentation. |
 
 ## Project structure

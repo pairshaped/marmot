@@ -21,8 +21,8 @@ import marmot/internal/query.{
 /// parameter named `db` (the sqlight connection). If `module_alias` is also
 /// "db" the generated code looks like `db.query(..., on: db, ...)`. Gleam's
 /// resolver disambiguates this correctly: `db.query` is a module-qualified
-/// call, while `on: db` references the parameter value. Verified by compile
-/// test at codegen design time.
+/// call, while `on: db` references the parameter value. The compile test
+/// in `codegen_test.gleam` protects this behavior.
 pub type QueryFunctionConfig {
   QueryFunctionConfig(
     module_path: String,
@@ -136,6 +136,22 @@ pub fn generate_function_with_config(
 }
 
 /// Generate a complete module from a list of queries.
+///
+/// Build phases (in order):
+/// 1. Parse `query_function` config if present.
+/// 2. Import selection: scan all queries/parameters for needed modules
+///    (`sqlight`, `decode`, `option`, `timestamp`, `calendar`, custom wrapper).
+/// 3. Helper emission: conditionally add `timestamp_to_int`, `date_decoder`,
+///    and `date_to_string` private helpers.
+/// 4. Shared row groups: group queries by `-- returns:` annotation, validate
+///    column shape agreement, generate one row type + decoder per group.
+/// 5. Row type generation: per-query custom types for unannotated SELECTs.
+/// 6. Function generation: `pub fn name(db db: ..., labelled params...)` for
+///    each query, with inline or shared decoders.
+/// 7. Encoder/decoder mapping: `ColumnType` -> `sqlight.*` encoder,
+///    `decode.*` decoder, with Option wrapping for nullable columns.
+/// 8. String concatenation: join all parts into the final module source.
+///
 /// When `query_function` is set (e.g., `Some("server/db.query")`) the
 /// generated code calls through the configured wrapper function and adds the
 /// wrapper's `import` line.
@@ -144,7 +160,9 @@ pub fn generate_module_with_config(
   query_function: Option(String),
 ) -> Result(String, error.MarmotError) {
   let config = parse_query_function(query_function)
+  // Phase 2: Import selection
   let imports = generate_imports(queries, config)
+  // Phase 3: Helper emission
   let needs_date_decoder =
     list.any(queries, fn(q) {
       list.any(q.columns, fn(c) { c.column_type == DateType })
@@ -177,6 +195,7 @@ pub fn generate_module_with_config(
 
   use _ <- result.try(check_generated_declarations(queries, "generated module"))
 
+  // Phase 4: Shared row groups
   use #(shared_groups, _plain_queries) <- result.try(group_shared_queries(
     queries,
   ))
@@ -201,7 +220,7 @@ pub fn generate_module_with_config(
       |> fn(s) { "\n\n" <> s }
   }
 
-  // Functions: for each query, generate appropriately
+  // Phase 6: Function generation (row types + functions)
   let functions =
     queries
     |> list.map(fn(q) {

@@ -46,12 +46,21 @@ fn find_nullable_cursors(opcodes: List(Opcode)) -> Dict(Int, Nil) {
 }
 
 /// Build a mapping from each autoindex/sorter cursor to its source table cursor.
-/// SQLite builds transient autoindexes when no suitable index exists for a JOIN.
-/// The pattern: `OpenAutoindex p1=auto_cursor` followed by a loop that reads
-/// from the source cursor via Column/Rowid opcodes and inserts into the autoindex
-/// via IdxInsert. By scanning for `IdxInsert p1=auto_cursor` and looking back at
-/// the nearest preceding `Column` or `Rowid` opcode that reads from a real-table
-/// cursor, we can map auto_cursor -> source_cursor (and thus -> table_name).
+/// SQLite builds transient autoindexes when no suitable index exists for a JOIN
+/// (e.g., LEFT JOIN on an unindexed TEXT column). The pattern: `OpenAutoindex
+/// p1=auto_cursor` followed by a loop that reads from the source cursor via
+/// Column/Rowid opcodes and inserts into the autoindex via IdxInsert.
+///
+/// This mapping is load-bearing for nullability: when a LEFT JOIN has no match,
+/// SQLite targets the autoindex cursor with NullRow (not the original table
+/// cursor). Without propagating nullable-cursor flags through this mapping,
+/// columns from the right side of an unindexed LEFT JOIN would incorrectly
+/// appear non-nullable. See `compute_join_nullability` below and the test
+/// "left join on unindexed column marks right side nullable" in sqlite_test.
+///
+/// By scanning for `IdxInsert p1=auto_cursor` and looking back at the nearest
+/// preceding `Column` or `Rowid` opcode that reads from a real-table cursor,
+/// we can map auto_cursor -> source_cursor (and thus -> table_name).
 fn build_autoindex_source(
   opcodes: List(Opcode),
   cursor_table: Dict(Int, String),

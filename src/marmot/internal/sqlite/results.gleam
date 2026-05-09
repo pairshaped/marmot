@@ -18,6 +18,14 @@ import marmot/internal/sqlite/tokenize.{type Token}
 /// table column. Text parsing of the SELECT list gives names/types when
 /// opcode tracing can't resolve (sorter pseudo-cursors, complex expressions,
 /// aggregates).
+///
+/// Known limitations:
+/// - CTEs lose type information because SQLite's EXPLAIN output does not trace
+///   column types through CTE boundaries. Columns from CTEs are inferred as
+///   StringType/nullable. See "cte" test in sqlite_test.
+/// - Complex expressions (subqueries in SELECT, COALESCE, CASE) fall back to
+///   text-based name extraction which may miss types. Use CAST in SQL or
+///   column aliases to guide inference.
 pub fn extract_result_columns(
   opcodes: List(Opcode),
   cursor_table: Dict(Int, String),

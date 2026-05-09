@@ -3,18 +3,31 @@ import gleam/list
 import gleam/string
 import marmot/internal/query.{type Column}
 
+/// Errors that stop code generation. Each variant carries enough context for
+/// `to_string` to produce a pretty-printed message with hints.
 pub type MarmotError {
   DatabaseNotConfigured
+  /// Failed to open the SQLite database file.
   DatabaseOpenError(path: String, message: String)
+  /// Could not read a .sql file from disk.
   FileReadError(path: String, message: String)
+  /// SQLite rejected the query (syntax error, missing table, etc.).
   SqlError(path: String, message: String)
+  /// .sql file contains only whitespace and/or comments.
   EmptySqlFile(path: String)
+  /// Filename produces no valid Gleam identifier (e.g., all special characters).
   InvalidFilename(path: String)
+  /// .sql file contains more than one SQL statement.
   MultipleQueries(path: String)
+  /// Two or more result columns have the same name.
   DuplicateColumns(path: String, columns: List(String))
+  /// Configured output path is not under `src/`.
   OutputNotUnderSrc(output: String)
+  /// `-- returns:` annotation has an invalid type name.
   InvalidReturnsAnnotation(path: String, name: String, reason: String)
+  /// Queries sharing a `-- returns:` type have mismatched column shapes.
   SharedTypeMismatch(name: String, conflicts: List(#(String, List(Column))))
+  /// Sanitized column or parameter names collide after kebab/snake normalization.
   GeneratedNameCollision(path: String, names: List(#(String, String)))
 }
 

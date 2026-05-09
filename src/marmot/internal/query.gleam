@@ -1,9 +1,20 @@
+//// Domain types and helpers for Marmot's internal pipeline.
+////
+//// This module serves two roles:
+//// 1. Defines the shared types (`ColumnType`, `Column`, `Parameter`, `Query`) that
+////    flow from SQL introspection through to code generation.
+//// 2. Owns SQL text scanning helpers (`strip_comments`, `normalize_whitespace`)
+////    that are needed before any SQL analysis (validation, annotation parsing).
+////    Lower-level SQL text operations for post-normalization use live in
+////    `sqlite/parse/text.gleam`.
+
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/option.{type Option}
 import gleam/string
 
+/// Gleam type that a SQLite column or parameter maps to.
 pub type ColumnType {
   IntType
   FloatType
@@ -14,14 +25,18 @@ pub type ColumnType {
   DateType
 }
 
+/// A result column with its inferred Gleam type and nullability.
 pub type Column {
   Column(name: String, column_type: ColumnType, nullable: Bool)
 }
 
+/// A query parameter (`?` or `@name`) with its inferred Gleam type and nullability.
 pub type Parameter {
   Parameter(name: String, column_type: ColumnType, nullable: Bool)
 }
 
+/// A parsed SQL query ready for code generation.
+/// `custom_type_name` is set when the file has a `-- returns: TypeName` annotation.
 pub type Query {
   Query(
     name: String,

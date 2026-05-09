@@ -50,7 +50,9 @@ pub type Token {
 
 /// Tokenize a SQL string into a list of tokens.
 /// Whitespace and comments are consumed but not emitted.
-/// Operates on grapheme list for O(1) head/tail (fixes O(n^2) scanning).
+/// Operates on a grapheme list so head/tail are O(1). Using string concatenation
+/// or list indexing at each position would be O(n^2) over the full scan, which
+/// matters for long SQL files with many tokens. The grapheme list avoids that.
 pub fn tokenize(sql: String) -> List(Token) {
   string.to_graphemes(sql)
   |> do_tokenize([])

@@ -7,11 +7,19 @@ import gleam/string
 import simplifile
 import tom
 
+/// Marmot configuration from gleam.toml [tools.marmot], CLI flags, and env vars.
+///
+/// All fields are optional. Precedence is resolved in `parse_config`:
+/// database: env > CLI > toml; output: CLI > toml; the rest are toml-only.
 pub type Config {
   Config(
+    /// Path to the SQLite database file used for introspection.
     database: Option(String),
+    /// Output directory for generated modules (must be under `src/`).
     output: Option(String),
+    /// Fully-qualified wrapper function replacing `sqlight.query`.
     query_function: Option(String),
+    /// Custom directory for SQL file discovery instead of `src/**/sql/`.
     sql_dir: Option(String),
   )
 }

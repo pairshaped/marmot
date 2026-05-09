@@ -181,6 +181,21 @@ gleam run -m marmot -- --output src/server/generated/sql
 
 The output directory must be under `src/` (Gleam compiles modules from there).
 
+### Custom SQL directory (`sql_dir`)
+
+By default, Marmot finds `.sql` files by walking `src/` for directories named `sql`.
+If your project uses a different convention, point `sql_dir` at a specific directory
+and Marmot will find all directories under it that contain `.sql` files:
+
+```toml
+[tools.marmot]
+sql_dir = "src/queries"
+```
+
+With this config, Marmot recursively finds all directories under `src/queries/`
+that contain `.sql` files. This is useful when your SQL files live outside `sql/`
+directories or when you want to limit generation to a specific subtree.
+
 ### Custom query wrapper (`query_function`)
 
 By default the generated code calls `sqlight.query` directly. If you want to
