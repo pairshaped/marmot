@@ -363,9 +363,8 @@ fn generate_imports(
       #(needs_timestamp, "import gleam/time/timestamp.{type Timestamp}"),
       #(
         needs_date,
-        "import gleam/time/calendar.{type Date, January, month_from_int, month_to_int}",
+        "import gleam/time/calendar.{type Date, January, is_valid_date, month_from_int, month_to_int}",
       ),
-      #(needs_date, "import gleam/time/calendar"),
     ]
     |> list.append(wrapper_import)
 
