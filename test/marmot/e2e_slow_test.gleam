@@ -103,17 +103,16 @@ pub fn e2e_compile_generated_code_test() {
 
   case exit_code {
     0 -> Nil
-    other -> {
+    other ->
       io.println_error(
         "gleam check failed with exit code "
         <> int.to_string(other)
         <> ". Generated file: "
         <> out_file,
       )
-      let _ = other
-      Nil
-    }
   }
+  let assert 0 = exit_code
+  Nil
 }
 
 pub fn e2e_shared_row_types_compiles_test() {
@@ -195,17 +194,15 @@ pub fn e2e_shared_row_types_compiles_test() {
 
   case exit_code {
     0 -> Nil
-    other -> {
+    other ->
       io.println_error(
         "gleam check failed with exit code "
         <> int.to_string(other)
         <> ". Generated file: "
         <> out_file,
       )
-      let _ = other
-      Nil
-    }
   }
+  let assert 0 = exit_code
   Nil
 }
 
