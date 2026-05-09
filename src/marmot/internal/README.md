@@ -4,36 +4,27 @@ This guide covers the pipeline that turns `.sql` files into type-safe Gleam func
 
 ## Architecture overview
 
-```
-marmot.gleam   (CLI entry: parse args, scan directories, orchestrate)
-    |
-    v
-project.gleam  (Config from gleam.toml + CLI + env, sql/ discovery, output paths)
-    |
-    v
-sqlite.gleam   (Central introspection: PRAGMA table_info + EXPLAIN pipeline)
-    |
-    +-- schema.gleam      (Table metadata, PK lookup, rootpage mapping)
-    +-- opcode.gleam      (EXPLAIN opcode types, join nullability, autoindex tracing)
-    +-- tokenize.gleam    (Grapheme-level SQL tokenizer)
-    +-- parse.gleam        (Parse entry, whitespace normalization, nullability suffix stripping)
-    |     +-- text.gleam       (Low-level SQL string operations)
-    |     +-- statement.gleam  (INSERT/UPDATE/DELETE/SELECT classification)
-    |     +-- expression.gleam (Column name extraction from expressions)
-    |     +-- select.gleam     (SELECT list parsing)
-    |     +-- binder.gleam     (Named parameter binding in WHERE/join clauses)
-    |     +-- parameters.gleam (Parameter name discovery from SQL text)
-    |     +-- subquery.gleam   (Subquery boundary detection)
-    |     +-- util.gleam       (Shared parsing helpers)
-    |
-    +-- results.gleam     (Result column extraction: opcode + text-based)
-    +-- parameters.gleam  (Parameter type inference from opcodes + tokens)
-    |
-    v
-query.gleam    (Domain types: ColumnType, Column, Parameter, Query)
-    |
-    v
-codegen.gleam  (Gleam source generation: imports, helpers, row types, functions)
+```mermaid
+flowchart TD
+  Files[".sql files"] --> CLI["marmot.gleam<br/>CLI orchestration"]
+  CLI --> Project["project.gleam<br/>config, discovery, output paths"]
+  CLI --> SQLite["sqlite.gleam<br/>central introspection"]
+
+  SQLite --> Schema["schema.gleam<br/>tables, PKs, rootpages"]
+  SQLite --> Opcode["opcode.gleam<br/>EXPLAIN analysis"]
+  SQLite --> Tokenize["tokenize.gleam<br/>SQL tokens"]
+  SQLite --> Parse["parse/*.gleam<br/>text walkers"]
+  SQLite --> Results["results.gleam<br/>result columns"]
+  SQLite --> Params["parameters.gleam<br/>query parameters"]
+
+  Schema --> Query["query.gleam<br/>domain types"]
+  Opcode --> Query
+  Tokenize --> Query
+  Parse --> Query
+  Results --> Query
+  Params --> Query
+
+  Query --> Codegen["codegen.gleam<br/>generated Gleam module"]
 ```
 
 ## Data flow, step by step
@@ -89,6 +80,31 @@ For each `.sql` file:
 ### 4. SQLite introspection (`sqlite.gleam`)
 
 `introspect_query()` is the central pipeline. It takes a DB connection and normalized SQL, returns a `QueryInfo` with columns and parameters.
+
+```mermaid
+flowchart TD
+  Start["introspect_query(db, sql)"] --> Normalize["Normalize SQL<br/>strip comments, collapse whitespace"]
+  Normalize --> Schema["Load schema metadata<br/>tables, columns, PKs, rootpages"]
+  Normalize --> Explain["Run EXPLAIN<br/>decode opcodes"]
+  Explain --> Cursors["Map cursors to tables"]
+  Explain --> Nullability["Compute join nullability"]
+  Normalize --> Tokens["Tokenize SQL"]
+  Tokens --> Statement["Classify statement"]
+
+  Schema --> Columns["Extract result columns"]
+  Cursors --> Columns
+  Nullability --> Columns
+  Tokens --> Columns
+  Statement --> Columns
+
+  Schema --> Parameters["Extract parameters"]
+  Cursors --> Parameters
+  Explain --> Parameters
+  Tokens --> Parameters
+
+  Columns --> Info["QueryInfo"]
+  Parameters --> Info
+```
 
 Pipeline stages:
 

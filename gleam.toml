@@ -15,6 +15,7 @@ gleam_time = ">= 1.0.0 and < 2.0.0"
 
 [documentation]
 pages = [
+  { title = "Internals", path = "internals", source = "./src/marmot/internal/README.md" },
   { title = "llms.txt", path = "llms.txt", source = "./llms.txt" },
 ]
 
