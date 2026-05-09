@@ -392,6 +392,26 @@ pub fn check_generated_column_names_no_collision_test() {
     marmot.check_generated_column_names(cols, "test.sql")
 }
 
+pub fn check_generated_parameter_names_collide_test() {
+  let params = [
+    query.Parameter(name: "foo-bar", column_type: query.StringType, nullable: False),
+    query.Parameter(name: "foo_bar", column_type: query.StringType, nullable: False),
+  ]
+
+  let assert Error(Nil) =
+    marmot.check_generated_parameter_names(params, "test.sql")
+}
+
+pub fn check_generated_parameter_names_no_collision_test() {
+  let params = [
+    query.Parameter(name: "foo-bar", column_type: query.StringType, nullable: False),
+    query.Parameter(name: "bar_baz", column_type: query.StringType, nullable: False),
+  ]
+
+  let assert Ok(Nil) =
+    marmot.check_generated_parameter_names(params, "test.sql")
+}
+
 // ---- FFI failure paths ----
 
 pub fn run_executable_not_found_test() {
