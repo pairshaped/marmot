@@ -3,6 +3,7 @@ import gleam/dynamic/decode
 import gleam/int
 import gleam/io
 import gleam/list
+import gleam/option.{type Option}
 import marmot/internal/query.{type Column, type Parameter, Column, Parameter}
 import marmot/internal/sqlite/parse/util
 
@@ -226,7 +227,8 @@ fn resolve_rowid_column(
   }
 }
 
-fn debug_warning(message: String) -> Nil {
+@internal
+pub fn debug_warning(message: String) -> Nil {
   // Keep regular generation quiet. These warnings are useful while working on
   // inference, but noisy during normal use and tests.
   case marmot_debug_warnings_enabled() {
@@ -235,9 +237,16 @@ fn debug_warning(message: String) -> Nil {
   }
 }
 
-fn marmot_debug_warnings_enabled() -> Bool {
-  False
+@internal
+pub fn marmot_debug_warnings_enabled() -> Bool {
+  case get_env("MARMOT_DEBUG_WARNINGS") {
+    option.Some(_) -> True
+    option.None -> False
+  }
 }
+
+@external(erlang, "marmot_ffi", "get_env")
+fn get_env(name: String) -> Option(String)
 
 /// Look up a column by cursor and index.
 /// Logs a warning when falling back to `unknown_column()` so users can diagnose
