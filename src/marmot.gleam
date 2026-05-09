@@ -103,33 +103,34 @@ fn generate_all(db: sqlight.Connection, config: project.Config) -> Nil {
       // Detect output path collisions when using configured output directory
       let outputs =
         list.map(dirs, fn(dir) { project.output_path(dir, config.output) })
-      case list.length(list.unique(outputs)) == list.length(outputs) {
-        False -> {
+      case list.length(list.unique(outputs)) != list.length(outputs) {
+        True -> {
           io.println_error(
             "error: Multiple sql/ directories would write to the same output file.\n  Remove the output configuration or restructure your sql/ directories.",
           )
           halt(1)
         }
-        True -> {
-          let success_count =
-            list.fold(dirs, 0, fn(count, dir) {
-              case generate_for_directory(db, dir, config) {
-                True -> count + 1
-                False -> count
-              }
-            })
-          case success_count == list.length(dirs) {
-            True ->
-              io.println(
-                "Generated " <> int.to_string(list.length(dirs)) <> " module(s)",
-              )
-            False -> {
-              io.println_error("error: Some files could not be written")
-              halt(1)
-            }
-          }
-        }
+        False -> Nil
       }
+
+      let success_count =
+        list.fold(dirs, 0, fn(count, dir) {
+          case generate_for_directory(db, dir, config) {
+            True -> count + 1
+            False -> count
+          }
+        })
+      case success_count != list.length(dirs) {
+        True -> {
+          io.println_error("error: Some files could not be written")
+          halt(1)
+        }
+        False -> Nil
+      }
+
+      io.println(
+        "Generated " <> int.to_string(list.length(dirs)) <> " module(s)",
+      )
     }
   }
 }
@@ -161,25 +162,7 @@ fn generate_for_directory(
         }
         Ok(raw_content) -> {
           let module_content = format_gleam(raw_content)
-          case ensure_parent_dir(output) {
-            Error(_) -> {
-              io.println_error(
-                "error: Could not create parent directory for " <> output,
-              )
-              False
-            }
-            Ok(_) ->
-              case simplifile.write(output, module_content) {
-                Ok(_) -> {
-                  io.println("  wrote " <> output)
-                  True
-                }
-                Error(_) -> {
-                  io.println_error("error: Could not write to " <> output)
-                  False
-                }
-              }
-          }
+          write_module_file(output, module_content)
         }
       }
     }
@@ -210,6 +193,27 @@ fn warn_subdirectories(sql_dir: String) -> Nil {
     }
     Error(_) ->
       io.println_error("warning: Could not read directory " <> sql_dir)
+  }
+}
+
+fn write_module_file(output: String, module_content: String) -> Bool {
+  case ensure_parent_dir(output) {
+    Error(_) -> {
+      io.println_error(
+        "error: Could not create parent directory for " <> output,
+      )
+      False
+    }
+    Ok(_) -> case simplifile.write(output, module_content) {
+      Ok(_) -> {
+        io.println("  wrote " <> output)
+        True
+      }
+      Error(_) -> {
+        io.println_error("error: Could not write to " <> output)
+        False
+      }
+    }
   }
 }
 
