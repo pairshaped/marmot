@@ -226,6 +226,19 @@ fn resolve_rowid_column(
   }
 }
 
+fn debug_warning(message: String) -> Nil {
+  // Keep regular generation quiet. These warnings are useful while working on
+  // inference, but noisy during normal use and tests.
+  case marmot_debug_warnings_enabled() {
+    True -> io.println_error(message)
+    False -> Nil
+  }
+}
+
+fn marmot_debug_warnings_enabled() -> Bool {
+  False
+}
+
 /// Look up a column by cursor and index.
 /// Logs a warning when falling back to `unknown_column()` so users can diagnose
 /// type inference gaps.
@@ -242,7 +255,7 @@ pub fn resolve_column(
           case util.list_at(table_cols, col_idx) {
             Ok(col) -> col
             Error(_) -> {
-              io.println_error(
+              debug_warning(
                 "warning: column at index "
                 <> int.to_string(col_idx)
                 <> " not found in table "
@@ -252,14 +265,14 @@ pub fn resolve_column(
             }
           }
         Error(_) -> {
-          io.println_error(
+          debug_warning(
             "warning: table " <> table_name <> " not found in schema",
           )
           query.unknown_column()
         }
       }
     Error(_) -> {
-      io.println_error(
+      debug_warning(
         "warning: cursor "
         <> int.to_string(cursor)
         <> " not found in cursor-to-table map",
@@ -350,7 +363,7 @@ pub fn infer_parameter_type(
               Parameter(name: "id", column_type: query.IntType, nullable: False)
           }
         Error(_) -> {
-          io.println_error(
+          debug_warning(
             "warning: no comparison context for Variable p1="
             <> int.to_string(var_op.p1)
             <> " register p2="
@@ -392,7 +405,7 @@ fn find_nearest_column_source(
     Ok(cop) ->
       resolve_column_to_parameter(cop.p1, cop.p2, cursor_table, table_schemas)
     Error(_) -> {
-      io.println_error(
+      debug_warning(
         "warning: no Column opcode found writing to register "
         <> int.to_string(target_reg),
       )
@@ -455,7 +468,7 @@ fn resolve_column_to_parameter(
                 nullable: col.nullable,
               )
             Error(_) -> {
-              io.println_error(
+              debug_warning(
                 "warning: parameter cursor "
                 <> int.to_string(cursor)
                 <> " col_idx "
@@ -467,7 +480,7 @@ fn resolve_column_to_parameter(
             }
           }
         Error(_) -> {
-          io.println_error(
+          debug_warning(
             "warning: table "
             <> table_name
             <> " not found in schema for parameter resolution",
@@ -476,7 +489,7 @@ fn resolve_column_to_parameter(
         }
       }
     Error(_) -> {
-      io.println_error(
+      debug_warning(
         "warning: cursor "
         <> int.to_string(cursor)
         <> " not found in cursor-to-table map for parameter",

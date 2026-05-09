@@ -256,6 +256,10 @@ pub fn snapshot_shared_row_types_output_test() {
 
 // ---- marmot module unit tests ----
 
+// These validation functions print their user-facing error before returning
+// Error. The output is intentional; CLI tests assert the same messages via
+// snapshots where the exact text matters.
+
 pub fn validate_sql_empty_test() {
   let assert Error(Nil) = marmot.validate_sql("", "test.sql")
 }
