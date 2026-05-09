@@ -365,6 +365,7 @@ fn generate_imports(
         needs_date,
         "import gleam/time/calendar.{type Date, January, month_from_int, month_to_int}",
       ),
+      #(needs_date, "import gleam/time/calendar"),
     ]
     |> list.append(wrapper_import)
 
@@ -719,9 +720,6 @@ fn timestamp_to_int(ts: Timestamp) -> Int {
 fn date_decoder_helper() -> String {
   "/// Decode an ISO 8601 date string (YYYY-MM-DD) from the database into a Date.
 /// Returns a decode error if the string is not a valid date format.
-/// Note: day validation is intentionally permissive (1-31 for all months)
-/// since data comes from the database and strict calendar validation would
-/// reject valid database rows on read.
 fn date_decoder() -> decode.Decoder(Date) {
   use iso <- decode.then(decode.string)
   case string.split(iso, \"-\") {
@@ -730,7 +728,7 @@ fn date_decoder() -> decode.Decoder(Date) {
         Ok(year), Ok(month_int), Ok(day) ->
           case month_from_int(month_int) {
             Ok(month) ->
-              case day >= 1 && day <= 31 {
+              case calendar.is_valid_date(Date(year:, month:, day:)) {
                 True -> decode.success(Date(year:, month:, day:))
                 False -> decode.failure(Date(0, January, 1), \"ISO 8601 date (YYYY-MM-DD)\")
               }

@@ -418,6 +418,24 @@ pub fn codegen_nullable_date_test() {
   |> birdie.snap(title: "codegen nullable date column")
 }
 
+pub fn codegen_date_decoder_validates_calendar_date_test() {
+  let queries = [
+    Query(
+      name: "find_event",
+      sql: "SELECT event_date FROM events",
+      path: "src/app/sql/find_event.sql",
+      parameters: [],
+      columns: [
+        Column(name: "event_date", column_type: DateType, nullable: False),
+      ],
+      custom_type_name: option.None,
+    ),
+  ]
+
+  let assert Ok(output) = codegen.generate_module(queries)
+  let assert True = string.contains(output, "calendar.is_valid_date")
+}
+
 pub fn codegen_date_module_test() {
   let queries = [
     Query(
