@@ -93,13 +93,26 @@ pub fn e2e_compile_generated_code_test() {
   let assert Ok(raw) = codegen.generate_module(queries)
   let generated = marmot.format_gleam(raw)
 
-  let out_file = "examples/src/generated/compile_edge_sql.gleam"
-  let assert Ok(_) = simplifile.create_directory_all("examples/src/generated")
+  let project_dir = base <> "/check_project"
+  let assert Ok(_) = simplifile.create_directory_all(project_dir <> "/src")
+  let assert Ok(_) =
+    simplifile.write(
+      project_dir <> "/gleam.toml",
+      "name = \"check\"
+version = \"1.0.0\"
+target = \"erlang\"
+
+[dependencies]
+gleam_stdlib = \">= 0.34.0 and < 2.0.0\"
+sqlight = \">= 1.0.0 and < 2.0.0\"
+",
+    )
+
+  let out_file = project_dir <> "/src/sql.gleam"
   let assert Ok(_) = simplifile.write(out_file, generated)
 
   let exit_code =
-    marmot.run_executable_in_timeout("gleam", ["check"], "examples", 120_000)
-  let _ = simplifile.delete(out_file)
+    marmot.run_executable_in_timeout("gleam", ["check"], project_dir, 120_000)
 
   case exit_code {
     0 -> Nil
@@ -184,13 +197,26 @@ pub fn e2e_shared_row_types_compiles_test() {
   let assert Ok(raw) = codegen.generate_module(queries)
   let generated = marmot.format_gleam(raw)
 
-  let out_file = "examples/src/generated/compile_shared_rows_sql.gleam"
-  let assert Ok(_) = simplifile.create_directory_all("examples/src/generated")
+  let project_dir = base <> "/check_project"
+  let assert Ok(_) = simplifile.create_directory_all(project_dir <> "/src")
+  let assert Ok(_) =
+    simplifile.write(
+      project_dir <> "/gleam.toml",
+      "name = \"check\"
+version = \"1.0.0\"
+target = \"erlang\"
+
+[dependencies]
+gleam_stdlib = \">= 0.34.0 and < 2.0.0\"
+sqlight = \">= 1.0.0 and < 2.0.0\"
+",
+    )
+
+  let out_file = project_dir <> "/src/sql.gleam"
   let assert Ok(_) = simplifile.write(out_file, generated)
 
   let exit_code =
-    marmot.run_executable_in_timeout("gleam", ["check"], "examples", 120_000)
-  let _ = simplifile.delete(out_file)
+    marmot.run_executable_in_timeout("gleam", ["check"], project_dir, 120_000)
 
   case exit_code {
     0 -> Nil
