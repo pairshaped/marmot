@@ -776,6 +776,62 @@ pub fn generate_module_returns_error_on_shared_type_mismatch_test() {
     codegen.generate_module_with_config([q1, q2], option.None)
 }
 
+pub fn generate_module_rejects_duplicate_query_names_test() {
+  let queries = [
+    Query(
+      name: "find_user",
+      sql: "SELECT 1 AS value",
+      path: "src/app/sql/find-user.sql",
+      parameters: [],
+      columns: [
+        Column(name: "value", column_type: IntType, nullable: False),
+      ],
+      custom_type_name: option.None,
+    ),
+    Query(
+      name: "find_user",
+      sql: "SELECT 2 AS value",
+      path: "src/app/sql/find_user.sql",
+      parameters: [],
+      columns: [
+        Column(name: "value", column_type: IntType, nullable: False),
+      ],
+      custom_type_name: option.None,
+    ),
+  ]
+
+  let assert Error(_) = codegen.generate_module(queries)
+}
+
+pub fn generate_module_rejects_duplicate_row_type_names_test() {
+  let queries = [
+    Query(
+      name: "list_orgs",
+      sql: "SELECT id FROM orgs",
+      path: "src/app/sql/list_orgs.sql",
+      parameters: [],
+      columns: [
+        Column(name: "id", column_type: IntType, nullable: False),
+      ],
+      custom_type_name: option.Some("OrgRow"),
+    ),
+    Query(
+      name: "org",
+      sql: "SELECT id FROM orgs WHERE id = ?",
+      path: "src/app/sql/org.sql",
+      parameters: [
+        Parameter(name: "id", column_type: IntType, nullable: False),
+      ],
+      columns: [
+        Column(name: "id", column_type: IntType, nullable: False),
+      ],
+      custom_type_name: option.None,
+    ),
+  ]
+
+  let assert Error(_) = codegen.generate_module(queries)
+}
+
 pub fn codegen_nullable_timestamp_param_test() {
   let q =
     Query(

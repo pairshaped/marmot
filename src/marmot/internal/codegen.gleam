@@ -173,6 +173,8 @@ pub fn generate_module_with_config(
     parts -> "\n\n" <> string.join(list.reverse(parts), "\n\n")
   }
 
+  use _ <- result.try(check_generated_declarations(queries, "generated module"))
+
   use #(shared_groups, _plain_queries) <- result.try(group_shared_queries(
     queries,
   ))
@@ -226,6 +228,98 @@ pub fn generate_module_with_config(
     <> functions
     <> "\n",
   )
+}
+
+fn find_duplicates(names: List(String)) -> List(String) {
+  let counts =
+    list.fold(names, dict.new(), fn(acc, name) {
+      let count = result.unwrap(dict.get(acc, name), 0)
+      dict.insert(acc, name, count + 1)
+    })
+  names
+  |> list.unique
+  |> list.filter(fn(name) {
+    case dict.get(counts, name) {
+      Ok(n) if n > 1 -> True
+      _ -> False
+    }
+  })
+}
+
+fn check_generated_declarations(
+  queries: List(Query),
+  module_path: String,
+) -> Result(Nil, error.MarmotError) {
+  use _ <- result.try(check_generated_query_names(queries, module_path))
+  check_generated_row_type_names(queries, module_path)
+}
+
+fn check_generated_query_names(
+  queries: List(Query),
+  module_path: String,
+) -> Result(Nil, error.MarmotError) {
+  let pairs =
+    queries
+    |> list.map(fn(q) { #(q.path, q.name) })
+  let names = list.map(pairs, fn(pair) { pair.1 })
+  let dupes = find_duplicates(names)
+
+  case dupes {
+    [] -> Ok(Nil)
+    _ -> {
+      let conflicts =
+        pairs
+        |> list.filter(fn(pair) { list.contains(dupes, pair.1) })
+      Error(
+        error.GeneratedNameCollision(path: module_path, names: conflicts),
+      )
+    }
+  }
+}
+
+fn check_generated_row_type_names(
+  queries: List(Query),
+  module_path: String,
+) -> Result(Nil, error.MarmotError) {
+  let pairs =
+    queries
+    |> list.filter_map(fn(q) {
+      case query.has_return_columns(q) {
+        False -> Error(Nil)
+        True -> {
+          let type_name = case q.custom_type_name {
+            option.Some(name) -> name
+            option.None -> query.row_type_name(q.name)
+          }
+          Ok(#(q.path, type_name, q.custom_type_name))
+        }
+      }
+    })
+  let names = list.map(pairs, fn(t) { t.1 })
+  let dupes = find_duplicates(names)
+
+  case dupes {
+    [] -> Ok(Nil)
+    _ -> {
+      let conflicts =
+        pairs
+        |> list.filter(fn(t) { list.contains(dupes, t.1) })
+
+      // If all conflicting queries share the same custom_type_name (Some),
+      // they are intentionally grouped by the shared type system — skip.
+      let custom_names = list.map(conflicts, fn(t) { t.2 })
+      case list.unique(custom_names) {
+        [option.Some(_)] -> Ok(Nil)
+        _ ->
+          Error(
+            error.GeneratedNameCollision(
+              path: module_path,
+              names: list.map(conflicts, fn(t) { #(t.0, t.1) }),
+            ),
+          )
+      }
+    }
+  }
 }
 
 fn generate_imports(
