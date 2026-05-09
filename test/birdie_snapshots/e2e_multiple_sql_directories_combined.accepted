@@ -1,12 +1,11 @@
 ---
-version: 1.5.5
+version: 2.0.0
 title: e2e multiple sql directories combined
-file: ./test/marmot/e2e_test.gleam
-test_name: e2e_multiple_sql_directories_test
 ---
 import gleam/dynamic/decode
 import sqlight
 
+/// Generated from test_e2e_multi/src/app/sql/find_user.sql
 pub type FindUserRow {
   FindUserRow(
     id: Int,
@@ -14,6 +13,7 @@ pub type FindUserRow {
   )
 }
 
+/// Generated from test_e2e_multi/src/app/sql/find_user.sql
 pub fn find_user(db db: sqlight.Connection, id id: Int) -> Result(List(FindUserRow), sqlight.Error) {
   sqlight.query(
     "SELECT id, username FROM users WHERE id = ?",
@@ -34,6 +34,7 @@ pub fn find_user(db db: sqlight.Connection, id id: Int) -> Result(List(FindUserR
 import gleam/dynamic/decode
 import sqlight
 
+/// Generated from test_e2e_multi/src/other/sql/list_items.sql
 pub type ListItemsRow {
   ListItemsRow(
     id: Int,
@@ -41,6 +42,7 @@ pub type ListItemsRow {
   )
 }
 
+/// Generated from test_e2e_multi/src/other/sql/list_items.sql
 pub fn list_items(db db: sqlight.Connection) -> Result(List(ListItemsRow), sqlight.Error) {
   sqlight.query(
     "SELECT id, name FROM items",

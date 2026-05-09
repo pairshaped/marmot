@@ -1,3 +1,14 @@
+//// Project configuration and file discovery.
+////
+//// Responsibilities:
+//// - Parse Config from gleam.toml + CLI args + env vars with correct precedence
+//// - Discover SQL directories (default `src/**/sql/` or custom `sql_dir`)
+//// - Compute output paths from sql/ directory to generated .gleam file
+//// - Validate output is under src/
+////
+//// What lives elsewhere: .sql file processing -> marmot.gleam; SQL
+//// introspection -> sqlite.gleam; code generation -> codegen.gleam.
+
 import gleam/dict
 import gleam/io
 import gleam/list

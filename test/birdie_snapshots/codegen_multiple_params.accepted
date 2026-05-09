@@ -1,9 +1,8 @@
 ---
-version: 1.5.5
+version: 2.0.0
 title: codegen multiple params
-file: ./test/marmot/internal/codegen_test.gleam
-test_name: codegen_multiple_params_test
 ---
+/// Generated from src/app/sql/find_users_by_age.sql
 pub type FindUsersByAgeRow {
   FindUsersByAgeRow(
     id: Int,
@@ -11,6 +10,7 @@ pub type FindUsersByAgeRow {
   )
 }
 
+/// Generated from src/app/sql/find_users_by_age.sql
 pub fn find_users_by_age(db db: sqlight.Connection, age_min age_min: Int, age_max age_max: Int) -> Result(List(FindUsersByAgeRow), sqlight.Error) {
   sqlight.query(
     "SELECT id, name FROM users WHERE age > ? AND age < ?",

@@ -1,3 +1,17 @@
+//// Central introspection pipeline: given a DB connection and SQL text, return
+//// result columns and parameter types.
+////
+//// The pipeline normalizes SQL, loads schema metadata, runs EXPLAIN, maps
+//// cursors to tables, computes join nullability, tokenizes, classifies the
+//// statement, and extracts results + parameters. Each stage is a focused
+//// helper in this module or a delegate to the sqlite/ sub-modules.
+////
+//// What lives here: pipeline orchestration (introspect_query), PRAGMA-level
+//// helpers (introspect_columns), and the returns-annotation parser.
+//// What lives elsewhere: opcode analysis -> opcode.gleam, tokenizing ->
+//// tokenize.gleam, text parsing -> parse/*.gleam, result extraction ->
+//// results.gleam, parameter extraction -> parameters.gleam.
+
 import gleam/dict
 import gleam/dynamic/decode
 import gleam/list
@@ -159,9 +173,13 @@ pub fn introspect_query(
       }
   }
 
-  // Determine parameters. Tokenize the suffix-stripped SQL separately
-  // so `col_name?` and `col_name!` aliases produce ParamAnon/NullableOverride
-  // correctly in each context.
+  // Determine parameters. Tokenize the suffix-stripped SQL separately.
+  // The first tokenization (above) runs against normalized_sql which still
+  // has `!`/`?` alias suffixes; those produce NullOverride/NullableOverride
+  // tokens. The suffix-stripped version has those removed, so `?` characters
+  // in the text are guaranteed to be real SQL placeholders (ParamAnon), not
+  // nullability markers on column aliases. This gives parameter extraction
+  // a clean token stream without false positives from alias syntax.
   let param_tokens = tokenize.tokenize(sanitized_sql)
   let raw_parameters =
     parameters.extract_parameters(

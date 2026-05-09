@@ -1,15 +1,15 @@
 ---
-version: 1.5.5
+version: 2.0.0
 title: codegen boolean parameter
-file: ./test/marmot/internal/codegen_test.gleam
-test_name: codegen_bool_param_test
 ---
+/// Generated from src/app/sql/find_active.sql
 pub type FindActiveRow {
   FindActiveRow(
     id: Int,
   )
 }
 
+/// Generated from src/app/sql/find_active.sql
 pub fn find_active(db db: sqlight.Connection, is_active is_active: Bool) -> Result(List(FindActiveRow), sqlight.Error) {
   sqlight.query(
     "SELECT id FROM users WHERE is_active = ?",

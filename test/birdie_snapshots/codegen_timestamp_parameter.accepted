@@ -1,9 +1,8 @@
 ---
-version: 1.5.5
+version: 2.0.0
 title: codegen timestamp parameter
-file: ./test/marmot/internal/codegen_test.gleam
-test_name: codegen_timestamp_param_test
 ---
+/// Generated from src/app/sql/update_last_seen.sql
 pub fn update_last_seen(db db: sqlight.Connection, last_seen last_seen: timestamp.Timestamp, id id: Int) -> Result(List(Nil), sqlight.Error) {
   sqlight.query(
     "UPDATE users SET last_seen = ? WHERE id = ?",

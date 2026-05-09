@@ -1,13 +1,12 @@
 ---
-version: 1.5.5
+version: 2.0.0
 title: codegen module with query_function
-file: ./test/marmot/internal/codegen_test.gleam
-test_name: codegen_module_with_query_function_test
 ---
 import gleam/dynamic/decode
 import server/db
 import sqlight
 
+/// Generated from src/app/sql/find_user.sql
 pub type FindUserRow {
   FindUserRow(
     id: Int,
@@ -15,6 +14,7 @@ pub type FindUserRow {
   )
 }
 
+/// Generated from src/app/sql/find_user.sql
 pub fn find_user(db db: sqlight.Connection, id id: Int) -> Result(List(FindUserRow), sqlight.Error) {
   db.query(
     "SELECT id, username FROM users WHERE id = ?",
@@ -31,6 +31,7 @@ pub fn find_user(db db: sqlight.Connection, id id: Int) -> Result(List(FindUserR
   )
 }
 
+/// Generated from src/app/sql/delete_user.sql
 pub fn delete_user(db db: sqlight.Connection, id id: Int) -> Result(List(Nil), sqlight.Error) {
   db.query(
     "DELETE FROM users WHERE id = ?",

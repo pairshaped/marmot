@@ -1,9 +1,8 @@
 ---
-version: 1.5.5
+version: 2.0.0
 title: codegen select with blob
-file: ./test/marmot/internal/codegen_test.gleam
-test_name: codegen_select_blob_test
 ---
+/// Generated from src/app/sql/find_avatar.sql
 pub type FindAvatarRow {
   FindAvatarRow(
     id: Int,
@@ -11,6 +10,7 @@ pub type FindAvatarRow {
   )
 }
 
+/// Generated from src/app/sql/find_avatar.sql
 pub fn find_avatar(db db: sqlight.Connection, id id: Int) -> Result(List(FindAvatarRow), sqlight.Error) {
   sqlight.query(
     "SELECT id, avatar FROM users WHERE id = ?",

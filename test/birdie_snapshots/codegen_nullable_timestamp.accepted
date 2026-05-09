@@ -1,9 +1,8 @@
 ---
-version: 1.5.5
+version: 2.0.0
 title: codegen nullable timestamp
-file: ./test/marmot/internal/codegen_test.gleam
-test_name: codegen_nullable_timestamp_test
 ---
+/// Generated from src/app/sql/find_user.sql
 pub type FindUserRow {
   FindUserRow(
     id: Int,
@@ -11,6 +10,7 @@ pub type FindUserRow {
   )
 }
 
+/// Generated from src/app/sql/find_user.sql
 pub fn find_user(db db: sqlight.Connection, id id: Int) -> Result(List(FindUserRow), sqlight.Error) {
   sqlight.query(
     "SELECT id, deleted_at FROM users WHERE id = ?",

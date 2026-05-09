@@ -44,6 +44,12 @@ fn find_first_paren_group(tokens: List(Token)) -> Option(List(Token)) {
 
 // ---- VALUES placeholder parsing ----
 
+/// Walk VALUES(...) tokens to find the positional index of each `?` or `@name`
+/// placeholder. Splits on top-level commas inside the VALUES parentheses
+/// (paren depth is tracked, so commas inside function calls and subqueries
+/// are handled correctly). Returns the 0-based position of each parameter token.
+/// Only detects parameters when the entire VALUES item is exactly a param token;
+/// params nested inside expressions within a VALUES item are missed.
 pub fn parse_values_placeholder_positions(tokens: List(Token)) -> List(Int) {
   case tokenize.split_at_keyword(tokens, "VALUES") {
     Error(_) -> []

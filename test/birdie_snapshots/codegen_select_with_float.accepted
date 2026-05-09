@@ -1,9 +1,8 @@
 ---
-version: 1.5.5
+version: 2.0.0
 title: codegen select with float
-file: ./test/marmot/internal/codegen_test.gleam
-test_name: codegen_select_float_test
 ---
+/// Generated from src/app/sql/find_product.sql
 pub type FindProductRow {
   FindProductRow(
     id: Int,
@@ -11,6 +10,7 @@ pub type FindProductRow {
   )
 }
 
+/// Generated from src/app/sql/find_product.sql
 pub fn find_product(db db: sqlight.Connection, id id: Int) -> Result(List(FindProductRow), sqlight.Error) {
   sqlight.query(
     "SELECT id, price FROM products WHERE id = ?",

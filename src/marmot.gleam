@@ -1,3 +1,15 @@
+//// CLI entry point for Marmot.
+////
+//// Responsibilities:
+//// - Parse config and CLI args, open the SQLite database
+//// - Discover SQL directories and .sql files under src/
+//// - Orchestrate per-file processing: read -> validate -> introspect -> codegen
+//// - Detect output collisions, write generated modules, run gleam format
+////
+//// Detail work is delegated: config -> project.gleam, introspection ->
+//// sqlite.gleam, code generation -> codegen.gleam. This module only handles
+//// CLI I/O (args, env, file reading/writing, stderr, exit codes).
+
 import argv
 import gleam/dict
 import gleam/int

@@ -13,6 +13,13 @@ pub type Binder {
 }
 
 /// Find parameter binders in a token list.
+///
+/// Heuristic walker: scans for `?` or `@name` tokens and looks backward through
+/// the preceding tokens to find a column name (`col = ?`, `col > ?`, etc.).
+/// Handles simple comparison patterns. Falls back to StringType when the
+/// preceding context is too complex: IN-list params (`col IN (?, ?, ?)`),
+/// nested expressions, function calls, subqueries. Known blind spots: parameters
+/// in ON clauses of nested joins, parameters inside CASE expressions.
 pub fn find_param_binders(tokens: List(Token)) -> List(Binder) {
   do_find_param_binders(tokens, [], [])
 }

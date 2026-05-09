@@ -1,3 +1,20 @@
+//// Gleam source generation from a list of Query values.
+////
+//// Builds a complete .gleam module in one pass: import selection, conditional
+//// helper emission, shared row groups (for `-- returns:` annotated queries),
+//// row type generation, function generation, and encoder/decoder mapping.
+////
+//// Invariants:
+//// - All column/parameter name sanitization produces valid Gleam identifiers.
+//// - Shared-type queries in the same directory with the same annotation must
+////   have identical column shapes (checked by group_shared_queries).
+//// - Generated function signatures use labelled arguments matching parameter
+////   names for self-documenting call sites.
+//// - Output is a string that gets passed to gleam format before writing to disk.
+////
+//// What lives elsewhere: the pipeline that produces Query values -> sqlite.gleam
+//// and its sub-modules; the CLI file I/O -> marmot.gleam; domain types -> query.gleam.
+
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -205,7 +222,16 @@ pub fn generate_module_with_config(
     [] -> ""
     _ ->
       shared_groups
-      |> list.map(fn(g) { generate_row_type_named(g.name, g.columns) })
+      |> list.map(fn(g) {
+        let paths =
+          g.queries
+          |> list.map(fn(q) { "///   " <> q.path })
+          |> string.join("\n")
+        "/// Shared return type for queries in this directory:\n"
+        <> paths
+        <> "\n"
+        <> generate_row_type_named(g.name, g.columns)
+      })
       |> string.join("\n\n")
       |> fn(s) { "\n\n" <> s }
   }
@@ -391,7 +417,8 @@ fn generate_imports(
 }
 
 fn generate_row_type(q: Query) -> String {
-  generate_row_type_named(query.row_type_name(q.name), q.columns)
+  let comment = "/// Generated from " <> q.path <> "\n"
+  comment <> generate_row_type_named(query.row_type_name(q.name), q.columns)
 }
 
 fn generate_row_type_named(type_name: String, columns: List(Column)) -> String {
@@ -514,7 +541,8 @@ fn generate_shared_query_function(
   let params = generate_param_list(q.parameters)
   let with_args = generate_with_args(q.parameters)
   let decoder_name = shared_decoder_name(type_name)
-  "pub fn "
+  "/// Generated from " <> q.path <> "\n"
+  <> "pub fn "
   <> q.name
   <> "(db db: sqlight.Connection"
   <> params
@@ -553,7 +581,8 @@ fn generate_query_function(
   let with_args = generate_with_args(q.parameters)
   let decoder = generate_decoder(q)
   let row_type = query.row_type_name(q.name)
-  "pub fn "
+  "/// Generated from " <> q.path <> "\n"
+  <> "pub fn "
   <> q.name
   <> "(db db: sqlight.Connection"
   <> params
@@ -584,7 +613,8 @@ fn generate_exec_function(
   let params = generate_param_list(q.parameters)
   let with_args = generate_with_args(q.parameters)
 
-  "pub fn "
+  "/// Generated from " <> q.path <> "\n"
+  <> "pub fn "
   <> q.name
   <> "(db db: sqlight.Connection"
   <> params

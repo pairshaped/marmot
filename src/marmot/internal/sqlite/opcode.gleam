@@ -1,3 +1,14 @@
+//// EXPLAIN opcode analysis: type definitions, cursor-to-table mapping, join
+//// nullability computation, autoindex tracing, and parameter type resolution.
+////
+//// Opcodes are the decoded rows from SQLite's `EXPLAIN` output. This module turns
+//// them into structural facts: which cursors map to which tables, which columns
+//// may be NULL due to outer joins, which autoindex cursors shadow real tables,
+//// and what type each `?` parameter should have based on comparison context.
+////
+//// What lives elsewhere: the EXPLAIN query itself -> sqlite.gleam; result column
+//// extraction -> results.gleam; SQL text parsing -> parse/*.gleam.
+
 import gleam/dict.{type Dict}
 import gleam/dynamic/decode
 import gleam/int
@@ -336,9 +347,15 @@ pub fn infer_parameter_type(
   case comparison {
     Ok(cmp) -> {
       let other_reg = case list.contains(seek_ops, cmp.opcode) {
-        // For Seek opcodes, the "other side" is the index column which
-        // is implicit: the first column of the index p1. Look at the
-        // most recent Column opcode on the same cursor before this seek.
+        // For Seek opcodes (SeekGE, SeekGT, SeekLT, SeekLE), the comparison
+        // register holds the parameter value and the "other side" is the
+        // indexed column. resolve_seek_cursor_key resolves this by taking the
+        // FIRST column of the parent table's schema (not the index definition).
+        // This is only correct when the indexed column happens to be the table's
+        // first column. For indexes on any other column (including a
+        // single-column index on email when the table's first column is id),
+        // the parameter will be attributed to the wrong table column.
+        // See opcode_test "seek parameter resolution" tests.
         True -> -1
         False ->
           case cmp.p1 == var_reg {
@@ -441,9 +458,10 @@ fn find_nearest_column_source(
   }
 }
 
-/// For SeekGE/GT/LE/LT on an index, the key register holds a value being
-/// compared against the FIRST column of the index. Look up the index's
-/// parent table and get that column's metadata.
+/// Resolve a Seek parameter's target column by taking the first column of the
+/// cursor's underlying table. This is only correct when the indexed column
+/// happens to be the table's first column; otherwise the parameter is
+/// attributed to the wrong column.
 fn resolve_seek_cursor_key(
   seek_op: Opcode,
   cursor_table: Dict(Int, String),

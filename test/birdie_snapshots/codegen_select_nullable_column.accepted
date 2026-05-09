@@ -1,9 +1,8 @@
 ---
-version: 1.5.5
+version: 2.0.0
 title: codegen select nullable column
-file: ./test/marmot/internal/codegen_test.gleam
-test_name: codegen_select_nullable_test
 ---
+/// Generated from src/app/sql/find_user_bio.sql
 pub type FindUserBioRow {
   FindUserBioRow(
     id: Int,
@@ -12,6 +11,7 @@ pub type FindUserBioRow {
   )
 }
 
+/// Generated from src/app/sql/find_user_bio.sql
 pub fn find_user_bio(db db: sqlight.Connection, id id: Int) -> Result(List(FindUserBioRow), sqlight.Error) {
   sqlight.query(
     "SELECT id, username, bio FROM users WHERE id = ?",

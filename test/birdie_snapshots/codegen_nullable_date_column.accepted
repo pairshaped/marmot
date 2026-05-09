@@ -1,9 +1,8 @@
 ---
-version: 1.5.5
+version: 2.0.0
 title: codegen nullable date column
-file: ./test/marmot/internal/codegen_test.gleam
-test_name: codegen_nullable_date_test
 ---
+/// Generated from src/app/sql/find_event.sql
 pub type FindEventRow {
   FindEventRow(
     id: Int,
@@ -11,6 +10,7 @@ pub type FindEventRow {
   )
 }
 
+/// Generated from src/app/sql/find_event.sql
 pub fn find_event(db db: sqlight.Connection, id id: Int) -> Result(List(FindEventRow), sqlight.Error) {
   sqlight.query(
     "SELECT id, event_date FROM events WHERE id = ?",

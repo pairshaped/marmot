@@ -28,6 +28,14 @@ pub type SelectItem {
 // ---- SELECT list parsing ----
 
 /// Parse the SELECT list from tokens.
+///
+/// This is a heuristic token walker, not a SQL grammar. It handles common
+/// shapes: plain columns, aliased columns (`col AS name`), qualified columns
+/// (`t.col`), and simple expressions with column references.
+/// Fallback: when it can't resolve a SELECT item to a known column, it returns
+/// the item with StringType and names derived from aliases or expression text.
+/// Known blind spots: subquery columns in the SELECT list, CTE references, and
+/// deeply nested expressions with function calls.
 pub fn parse_select_items(tokens: List(Token)) -> List(SelectItem) {
   let main_tokens = skip_with_prefix(tokens)
   let after_select = skip_select_keyword(main_tokens)

@@ -1,15 +1,15 @@
 ---
-version: 1.5.5
+version: 2.0.0
 title: codegen blob parameter
-file: ./test/marmot/internal/codegen_test.gleam
-test_name: codegen_blob_param_test
 ---
+/// Generated from src/app/sql/find_by_hash.sql
 pub type FindByHashRow {
   FindByHashRow(
     id: Int,
   )
 }
 
+/// Generated from src/app/sql/find_by_hash.sql
 pub fn find_by_hash(db db: sqlight.Connection, hash hash: BitArray) -> Result(List(FindByHashRow), sqlight.Error) {
   sqlight.query(
     "SELECT id FROM files WHERE hash = ?",

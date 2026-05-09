@@ -1,9 +1,8 @@
 ---
-version: 1.5.5
+version: 2.0.0
 title: codegen select with boolean
-file: ./test/marmot/internal/codegen_test.gleam
-test_name: codegen_select_boolean_test
 ---
+/// Generated from src/app/sql/find_active_users.sql
 pub type FindActiveUsersRow {
   FindActiveUsersRow(
     id: Int,
@@ -11,6 +10,7 @@ pub type FindActiveUsersRow {
   )
 }
 
+/// Generated from src/app/sql/find_active_users.sql
 pub fn find_active_users(db db: sqlight.Connection) -> Result(List(FindActiveUsersRow), sqlight.Error) {
   sqlight.query(
     "SELECT id, is_active FROM users",

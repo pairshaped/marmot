@@ -1,9 +1,8 @@
 ---
-version: 1.5.5
+version: 2.0.0
 title: codegen date parameter
-file: ./test/marmot/internal/codegen_test.gleam
-test_name: codegen_date_param_test
 ---
+/// Generated from src/app/sql/find_by_date.sql
 pub type FindByDateRow {
   FindByDateRow(
     id: Int,
@@ -11,6 +10,7 @@ pub type FindByDateRow {
   )
 }
 
+/// Generated from src/app/sql/find_by_date.sql
 pub fn find_by_date(db db: sqlight.Connection, event_date event_date: calendar.Date) -> Result(List(FindByDateRow), sqlight.Error) {
   sqlight.query(
     "SELECT id, event_date FROM events WHERE event_date = ?",

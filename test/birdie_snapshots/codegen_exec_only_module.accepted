@@ -1,12 +1,11 @@
 ---
-version: 1.5.5
+version: 2.0.0
 title: codegen exec only module
-file: ./test/marmot/internal/codegen_test.gleam
-test_name: codegen_exec_only_module_test
 ---
 import gleam/dynamic/decode
 import sqlight
 
+/// Generated from src/app/sql/delete_user.sql
 pub fn delete_user(db db: sqlight.Connection, id id: Int) -> Result(List(Nil), sqlight.Error) {
   sqlight.query(
     "DELETE FROM users WHERE id = ?",
@@ -16,6 +15,7 @@ pub fn delete_user(db db: sqlight.Connection, id id: Int) -> Result(List(Nil), s
   )
 }
 
+/// Generated from src/app/sql/delete_all_posts.sql
 pub fn delete_all_posts(db db: sqlight.Connection) -> Result(List(Nil), sqlight.Error) {
   sqlight.query(
     "DELETE FROM posts",
