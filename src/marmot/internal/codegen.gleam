@@ -541,7 +541,9 @@ fn generate_shared_query_function(
   let params = generate_param_list(q.parameters)
   let with_args = generate_with_args(q.parameters)
   let decoder_name = shared_decoder_name(type_name)
-  "/// Generated from " <> q.path <> "\n"
+  "/// Generated from "
+  <> q.path
+  <> "\n"
   <> "pub fn "
   <> q.name
   <> "(db db: sqlight.Connection"
@@ -581,7 +583,9 @@ fn generate_query_function(
   let with_args = generate_with_args(q.parameters)
   let decoder = generate_decoder(q)
   let row_type = query.row_type_name(q.name)
-  "/// Generated from " <> q.path <> "\n"
+  "/// Generated from "
+  <> q.path
+  <> "\n"
   <> "pub fn "
   <> q.name
   <> "(db db: sqlight.Connection"
@@ -613,7 +617,9 @@ fn generate_exec_function(
   let params = generate_param_list(q.parameters)
   let with_args = generate_with_args(q.parameters)
 
-  "/// Generated from " <> q.path <> "\n"
+  "/// Generated from "
+  <> q.path
+  <> "\n"
   <> "pub fn "
   <> q.name
   <> "(db db: sqlight.Connection"
