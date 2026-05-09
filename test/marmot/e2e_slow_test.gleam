@@ -92,6 +92,7 @@ pub fn e2e_compile_generated_code_test() {
   let generated = marmot.format_gleam(raw)
 
   let out_file = "examples/src/generated/compile_edge_sql.gleam"
+  let assert Ok(_) = simplifile.create_directory_all("examples/src/generated")
   let assert Ok(_) = simplifile.write(out_file, generated)
 
   let exit_code = marmot.run_executable_in("gleam", ["check"], "examples")
@@ -171,6 +172,7 @@ pub fn e2e_shared_row_types_compiles_test() {
   let generated = marmot.format_gleam(raw)
 
   let out_file = "examples/src/generated/compile_shared_rows_sql.gleam"
+  let assert Ok(_) = simplifile.create_directory_all("examples/src/generated")
   let assert Ok(_) = simplifile.write(out_file, generated)
 
   let exit_code = marmot.run_executable_in("gleam", ["check"], "examples")

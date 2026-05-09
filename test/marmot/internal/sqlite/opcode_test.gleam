@@ -380,5 +380,6 @@ pub fn infer_parameter_seek_ge_empty_schema_test() {
 
 pub fn debug_warning_suppressed_by_default_test() {
   let assert False = marmot_debug_warnings_enabled()
-  let assert Nil = debug_warning("test warning")
+  let _ = debug_warning("test warning")
+  Nil
 }

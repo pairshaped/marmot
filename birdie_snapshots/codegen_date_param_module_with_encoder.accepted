@@ -7,7 +7,7 @@ test_name: codegen_date_param_module_test
 import gleam/dynamic/decode
 import gleam/int
 import gleam/string
-import gleam/time/calendar.{type Date, January, is_valid_date, month_from_int, month_to_int}
+import gleam/time/calendar.{Date, January, is_valid_date, month_from_int, month_to_int}
 import sqlight
 
 fn date_to_string(date: Date) -> String {
