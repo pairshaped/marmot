@@ -239,16 +239,18 @@ fn process_sql_file(
   file_path: String,
 ) -> Result(query.Query, Nil) {
   use content <- result.try(
-    simplifile.read(file_path)
-    |> result.map_error(fn(_) {
-      io.println_error(
-        error.to_string(error.FileReadError(
-          path: file_path,
-          message: "Could not read file",
-        )),
-      )
-      Nil
-    }),
+    case simplifile.read(file_path) {
+      Ok(content) -> Ok(content)
+      Error(read_err) -> {
+        io.println_error(
+          error.to_string(error.FileReadError(
+            path: file_path,
+            message: "Could not read file: " <> string.inspect(read_err),
+          )),
+        )
+        Error(Nil)
+      }
+    },
   )
 
   let filename =
@@ -257,11 +259,13 @@ fn process_sql_file(
     |> list.last
     |> result.unwrap("query.sql")
   use name <- result.try(
-    query.function_name(filename)
-    |> result.map_error(fn(_) {
-      io.println_error(error.to_string(error.InvalidFilename(path: file_path)))
-      Nil
-    }),
+    case query.function_name(filename) {
+      Ok(n) -> Ok(n)
+      Error(_) -> {
+        io.println_error(error.to_string(error.InvalidFilename(path: file_path)))
+        Error(Nil)
+      }
+    },
   )
 
   let trimmed = string.trim(content)
