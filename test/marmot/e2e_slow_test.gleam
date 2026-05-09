@@ -33,6 +33,44 @@ const cli_build_cache_lock = "build/e2e_cli_shared.lock"
 
 const cli_build_cache_ready = "build/e2e_cli_shared/.ready"
 
+pub fn compile_failure_message_includes_generated_source_test() {
+  let message =
+    compile_failure_message(
+      1,
+      "tmp/check_project/src/sql.gleam",
+      "pub fn broken",
+    )
+
+  let assert True =
+    string.contains(message, "gleam check failed with exit code 1")
+  let assert True =
+    string.contains(message, "Generated file: tmp/check_project/src/sql.gleam")
+  let assert True = string.contains(message, "Generated file contents:")
+  let assert True = string.contains(message, "pub fn broken")
+  Nil
+}
+
+fn compile_failure_message(
+  exit_code: Int,
+  out_file: String,
+  contents: String,
+) -> String {
+  "gleam check failed with exit code "
+  <> int.to_string(exit_code)
+  <> "\nGenerated file: "
+  <> out_file
+  <> "\n\nGenerated file contents:\n"
+  <> contents
+}
+
+fn report_compile_failure(exit_code: Int, out_file: String) -> Nil {
+  let contents = case simplifile.read(out_file) {
+    Ok(contents) -> contents
+    Error(_) -> "Could not read generated file."
+  }
+  io.println_error(compile_failure_message(exit_code, out_file, contents))
+}
+
 pub fn e2e_compile_generated_code_test() {
   let base = "test_e2e_compile_tmp"
   use <- with_temp_dir(base)
@@ -116,13 +154,7 @@ sqlight = \">= 1.0.0 and < 2.0.0\"
 
   case exit_code {
     0 -> Nil
-    other ->
-      io.println_error(
-        "gleam check failed with exit code "
-        <> int.to_string(other)
-        <> ". Generated file: "
-        <> out_file,
-      )
+    other -> report_compile_failure(other, out_file)
   }
   let assert 0 = exit_code
   Nil
@@ -220,13 +252,7 @@ sqlight = \">= 1.0.0 and < 2.0.0\"
 
   case exit_code {
     0 -> Nil
-    other ->
-      io.println_error(
-        "gleam check failed with exit code "
-        <> int.to_string(other)
-        <> ". Generated file: "
-        <> out_file,
-      )
+    other -> report_compile_failure(other, out_file)
   }
   let assert 0 = exit_code
   Nil
