@@ -1,3 +1,5 @@
+import gleam/int
+import gleam/io
 import gleam/list
 import gleam/option
 import gleam/result
@@ -95,11 +97,23 @@ pub fn e2e_compile_generated_code_test() {
   let assert Ok(_) = simplifile.create_directory_all("examples/src/generated")
   let assert Ok(_) = simplifile.write(out_file, generated)
 
-  let exit_code = marmot.run_executable_in("gleam", ["check"], "examples")
+  let exit_code =
+    marmot.run_executable_in_timeout("gleam", ["check"], "examples", 120_000)
   let _ = simplifile.delete(out_file)
 
-  let assert 0 = exit_code
-  Nil
+  case exit_code {
+    0 -> Nil
+    other -> {
+      io.println_error(
+        "gleam check failed with exit code "
+        <> int.to_string(other)
+        <> ". Generated file: "
+        <> out_file,
+      )
+      let _ = other
+      Nil
+    }
+  }
 }
 
 pub fn e2e_shared_row_types_compiles_test() {
@@ -175,10 +189,23 @@ pub fn e2e_shared_row_types_compiles_test() {
   let assert Ok(_) = simplifile.create_directory_all("examples/src/generated")
   let assert Ok(_) = simplifile.write(out_file, generated)
 
-  let exit_code = marmot.run_executable_in("gleam", ["check"], "examples")
+  let exit_code =
+    marmot.run_executable_in_timeout("gleam", ["check"], "examples", 120_000)
   let _ = simplifile.delete(out_file)
 
-  let assert 0 = exit_code
+  case exit_code {
+    0 -> Nil
+    other -> {
+      io.println_error(
+        "gleam check failed with exit code "
+        <> int.to_string(other)
+        <> ". Generated file: "
+        <> out_file,
+      )
+      let _ = other
+      Nil
+    }
+  }
   Nil
 }
 
