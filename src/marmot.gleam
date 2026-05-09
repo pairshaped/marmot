@@ -103,33 +103,34 @@ fn generate_all(db: sqlight.Connection, config: project.Config) -> Nil {
       // Detect output path collisions when using configured output directory
       let outputs =
         list.map(dirs, fn(dir) { project.output_path(dir, config.output) })
-      case list.length(list.unique(outputs)) == list.length(outputs) {
-        False -> {
+      case list.length(list.unique(outputs)) != list.length(outputs) {
+        True -> {
           io.println_error(
             "error: Multiple sql/ directories would write to the same output file.\n  Remove the output configuration or restructure your sql/ directories.",
           )
           halt(1)
         }
-        True -> {
-          let success_count =
-            list.fold(dirs, 0, fn(count, dir) {
-              case generate_for_directory(db, dir, config) {
-                True -> count + 1
-                False -> count
-              }
-            })
-          case success_count == list.length(dirs) {
-            True ->
-              io.println(
-                "Generated " <> int.to_string(list.length(dirs)) <> " module(s)",
-              )
-            False -> {
-              io.println_error("error: Some files could not be written")
-              halt(1)
-            }
-          }
-        }
+        False -> Nil
       }
+
+      let success_count =
+        list.fold(dirs, 0, fn(count, dir) {
+          case generate_for_directory(db, dir, config) {
+            True -> count + 1
+            False -> count
+          }
+        })
+      case success_count != list.length(dirs) {
+        True -> {
+          io.println_error("error: Some files could not be written")
+          halt(1)
+        }
+        False -> Nil
+      }
+
+      io.println(
+        "Generated " <> int.to_string(list.length(dirs)) <> " module(s)",
+      )
     }
   }
 }
@@ -161,25 +162,7 @@ fn generate_for_directory(
         }
         Ok(raw_content) -> {
           let module_content = format_gleam(raw_content)
-          case ensure_parent_dir(output) {
-            Error(_) -> {
-              io.println_error(
-                "error: Could not create parent directory for " <> output,
-              )
-              False
-            }
-            Ok(_) ->
-              case simplifile.write(output, module_content) {
-                Ok(_) -> {
-                  io.println("  wrote " <> output)
-                  True
-                }
-                Error(_) -> {
-                  io.println_error("error: Could not write to " <> output)
-                  False
-                }
-              }
-          }
+          write_module_file(output, module_content)
         }
       }
     }
@@ -213,6 +196,28 @@ fn warn_subdirectories(sql_dir: String) -> Nil {
   }
 }
 
+fn write_module_file(output: String, module_content: String) -> Bool {
+  case ensure_parent_dir(output) {
+    Error(_) -> {
+      io.println_error(
+        "error: Could not create parent directory for " <> output,
+      )
+      False
+    }
+    Ok(_) ->
+      case simplifile.write(output, module_content) {
+        Ok(_) -> {
+          io.println("  wrote " <> output)
+          True
+        }
+        Error(_) -> {
+          io.println_error("error: Could not write to " <> output)
+          False
+        }
+      }
+  }
+}
+
 @internal
 pub fn ensure_parent_dir(path: String) -> Result(Nil, Nil) {
   let parent =
@@ -238,31 +243,31 @@ fn process_sql_file(
   db: sqlight.Connection,
   file_path: String,
 ) -> Result(query.Query, Nil) {
-  use content <- result.try(
-    simplifile.read(file_path)
-    |> result.map_error(fn(_) {
+  use content <- result.try(case simplifile.read(file_path) {
+    Ok(content) -> Ok(content)
+    Error(read_err) -> {
       io.println_error(
         error.to_string(error.FileReadError(
           path: file_path,
-          message: "Could not read file",
+          message: "Could not read file: " <> string.inspect(read_err),
         )),
       )
-      Nil
-    }),
-  )
+      Error(Nil)
+    }
+  })
 
   let filename =
     file_path
     |> string.split("/")
     |> list.last
     |> result.unwrap("query.sql")
-  use name <- result.try(
-    query.function_name(filename)
-    |> result.map_error(fn(_) {
+  use name <- result.try(case query.function_name(filename) {
+    Ok(n) -> Ok(n)
+    Error(_) -> {
       io.println_error(error.to_string(error.InvalidFilename(path: file_path)))
-      Nil
-    }),
-  )
+      Error(Nil)
+    }
+  })
 
   let trimmed = string.trim(content)
   use sql <- result.try(validate_sql(trimmed, file_path))
@@ -290,6 +295,14 @@ fn process_sql_file(
     }),
   )
   use _ <- result.try(check_duplicate_columns(query_info.columns, file_path))
+  use _ <- result.try(check_generated_column_names(
+    query_info.columns,
+    file_path,
+  ))
+  use _ <- result.try(check_generated_parameter_names(
+    query_info.parameters,
+    file_path,
+  ))
   Ok(query.Query(
     name: name,
     sql: sqlite.strip_nullability_suffixes(sql),
@@ -415,6 +428,56 @@ fn find_duplicates(names: List(String)) -> List(String) {
 /// quoting and comment styles correctly.
 pub fn contains_semicolon_outside_strings(sql: String) -> Bool {
   count_semicolons(sql) > 0
+}
+
+pub fn check_generated_column_names(
+  columns: List(query.Column),
+  file_path: String,
+) -> Result(Nil, Nil) {
+  let generated =
+    columns
+    |> list.map(fn(c) { #(c.name, generated_name(c.name)) })
+  check_generated_name_pairs(generated, file_path)
+}
+
+pub fn check_generated_parameter_names(
+  parameters: List(query.Parameter),
+  file_path: String,
+) -> Result(Nil, Nil) {
+  let generated =
+    parameters
+    |> list.map(fn(p) { #(p.name, generated_name(p.name)) })
+  check_generated_name_pairs(generated, file_path)
+}
+
+fn generated_name(name: String) -> String {
+  name
+  |> query.sanitize_identifier
+  |> query.safe_name
+}
+
+fn check_generated_name_pairs(
+  pairs: List(#(String, String)),
+  file_path: String,
+) -> Result(Nil, Nil) {
+  let generated_names = list.map(pairs, fn(pair) { pair.1 })
+  let dupes = find_duplicates(generated_names)
+
+  case dupes {
+    [] -> Ok(Nil)
+    _ -> {
+      let conflicts =
+        pairs
+        |> list.filter(fn(pair) { list.contains(dupes, pair.1) })
+      io.println_error(
+        error.to_string(error.GeneratedNameCollision(
+          path: file_path,
+          names: conflicts,
+        )),
+      )
+      Error(Nil)
+    }
+  }
 }
 
 /// Run `gleam format` on generated code. Falls back to the original string
@@ -570,14 +633,14 @@ pub fn make_tmp_file(
   dir: String,
   content: String,
 ) -> Result(String, MakeTmpFileError) {
-  case make_tmp_file_raw(dir, content) {
-    Ok(v) -> Ok(v)
-    Error(e) -> Error(MakeTmpFileError(e))
-  }
+  make_tmp_file_raw(dir, content)
 }
 
 @external(erlang, "marmot_ffi", "make_tmp_file")
-fn make_tmp_file_raw(dir: String, content: String) -> Result(String, String)
+fn make_tmp_file_raw(
+  dir: String,
+  content: String,
+) -> Result(String, MakeTmpFileError)
 
 /// Look up a single environment variable by name. The FFI handles
 /// binary-to-charlist conversion for OTP 27+ compatibility.

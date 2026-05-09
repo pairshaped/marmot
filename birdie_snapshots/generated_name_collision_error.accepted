@@ -1,0 +1,12 @@
+---
+version: 1.5.5
+title: generated name collision error
+file: ./test/marmot/internal/error_test.gleam
+test_name: generated_name_collision_error_test
+---
+error: Generated Gleam names collide
+  ┌─ src/app/sql/find_user.sql
+  │
+  │ These SQL names produce the same generated Gleam name: "foo-bar" -> `foo_bar`, "foo_bar" -> `foo_bar`
+  │
+  hint: Use SQL aliases so each generated name is different.

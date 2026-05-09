@@ -56,8 +56,9 @@ pub fn parse_query_function(
 }
 
 fn split_query_function(value: String) -> Option(#(String, String)) {
-  // Split on the LAST "." so that paths with dots are handled correctly:
-  // "server/db.query" -> #("server/db", "query").
+  // Split on the LAST "." so "server/db.query" becomes
+  // #("server/db", "query"). Dots are only allowed as this separator;
+  // module paths use Gleam's slash syntax.
   let parts = string.split(value, ".")
   case list.last(parts) {
     Error(_) | Ok("") -> option.None
@@ -75,13 +76,14 @@ fn split_query_function(value: String) -> Option(#(String, String)) {
 
 fn valid_module_parts(module_path: String) -> Option(List(String)) {
   let segments = string.split(module_path, "/")
-  let parts =
-    segments
-    |> list.flat_map(fn(segment) { string.split(segment, ".") })
 
-  case list.contains(segments, "..") || !list.all(parts, is_valid_gleam_name) {
+  case
+    list.contains(segments, "..")
+    || list.any(segments, fn(segment) { string.contains(segment, ".") })
+    || !list.all(segments, is_valid_gleam_name)
+  {
     True -> option.None
-    False -> option.Some(parts)
+    False -> option.Some(segments)
   }
 }
 
@@ -173,6 +175,8 @@ pub fn generate_module_with_config(
     parts -> "\n\n" <> string.join(list.reverse(parts), "\n\n")
   }
 
+  use _ <- result.try(check_generated_declarations(queries, "generated module"))
+
   use #(shared_groups, _plain_queries) <- result.try(group_shared_queries(
     queries,
   ))
@@ -228,6 +232,94 @@ pub fn generate_module_with_config(
   )
 }
 
+fn find_duplicates(names: List(String)) -> List(String) {
+  let counts =
+    list.fold(names, dict.new(), fn(acc, name) {
+      let count = result.unwrap(dict.get(acc, name), 0)
+      dict.insert(acc, name, count + 1)
+    })
+  names
+  |> list.unique
+  |> list.filter(fn(name) {
+    case dict.get(counts, name) {
+      Ok(n) if n > 1 -> True
+      _ -> False
+    }
+  })
+}
+
+fn check_generated_declarations(
+  queries: List(Query),
+  module_path: String,
+) -> Result(Nil, error.MarmotError) {
+  use _ <- result.try(check_generated_query_names(queries, module_path))
+  check_generated_row_type_names(queries, module_path)
+}
+
+fn check_generated_query_names(
+  queries: List(Query),
+  module_path: String,
+) -> Result(Nil, error.MarmotError) {
+  let pairs =
+    queries
+    |> list.map(fn(q) { #(q.path, q.name) })
+  let names = list.map(pairs, fn(pair) { pair.1 })
+  let dupes = find_duplicates(names)
+
+  case dupes {
+    [] -> Ok(Nil)
+    _ -> {
+      let conflicts =
+        pairs
+        |> list.filter(fn(pair) { list.contains(dupes, pair.1) })
+      Error(error.GeneratedNameCollision(path: module_path, names: conflicts))
+    }
+  }
+}
+
+fn check_generated_row_type_names(
+  queries: List(Query),
+  module_path: String,
+) -> Result(Nil, error.MarmotError) {
+  let pairs =
+    queries
+    |> list.filter_map(fn(q) {
+      case query.has_return_columns(q) {
+        False -> Error(Nil)
+        True -> {
+          let type_name = case q.custom_type_name {
+            option.Some(name) -> name
+            option.None -> query.row_type_name(q.name)
+          }
+          Ok(#(q.path, type_name, q.custom_type_name))
+        }
+      }
+    })
+  let names = list.map(pairs, fn(t) { t.1 })
+  let dupes = find_duplicates(names)
+
+  case dupes {
+    [] -> Ok(Nil)
+    _ -> {
+      let conflicts =
+        pairs
+        |> list.filter(fn(t) { list.contains(dupes, t.1) })
+
+      // If all conflicting queries share the same custom_type_name (Some),
+      // they are intentionally grouped by the shared type system — skip.
+      let custom_names = list.map(conflicts, fn(t) { t.2 })
+      case list.unique(custom_names) {
+        [option.Some(_)] -> Ok(Nil)
+        _ ->
+          Error(error.GeneratedNameCollision(
+            path: module_path,
+            names: list.map(conflicts, fn(t) { #(t.0, t.1) }),
+          ))
+      }
+    }
+  }
+}
+
 fn generate_imports(
   queries: List(Query),
   query_function: Option(QueryFunctionConfig),
@@ -267,7 +359,7 @@ fn generate_imports(
       #(needs_timestamp, "import gleam/time/timestamp.{type Timestamp}"),
       #(
         needs_date,
-        "import gleam/time/calendar.{type Date, January, month_from_int, month_to_int}",
+        "import gleam/time/calendar.{type Date, Date, January, is_valid_date, month_from_int, month_to_int}",
       ),
     ]
     |> list.append(wrapper_import)
@@ -623,9 +715,6 @@ fn timestamp_to_int(ts: Timestamp) -> Int {
 fn date_decoder_helper() -> String {
   "/// Decode an ISO 8601 date string (YYYY-MM-DD) from the database into a Date.
 /// Returns a decode error if the string is not a valid date format.
-/// Note: day validation is intentionally permissive (1-31 for all months)
-/// since data comes from the database and strict calendar validation would
-/// reject valid database rows on read.
 fn date_decoder() -> decode.Decoder(Date) {
   use iso <- decode.then(decode.string)
   case string.split(iso, \"-\") {
@@ -634,7 +723,7 @@ fn date_decoder() -> decode.Decoder(Date) {
         Ok(year), Ok(month_int), Ok(day) ->
           case month_from_int(month_int) {
             Ok(month) ->
-              case day >= 1 && day <= 31 {
+              case calendar.is_valid_date(Date(year:, month:, day:)) {
                 True -> decode.success(Date(year:, month:, day:))
                 False -> decode.failure(Date(0, January, 1), \"ISO 8601 date (YYYY-MM-DD)\")
               }

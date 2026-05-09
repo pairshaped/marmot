@@ -256,6 +256,10 @@ pub fn snapshot_shared_row_types_output_test() {
 
 // ---- marmot module unit tests ----
 
+// These validation functions print their user-facing error before returning
+// Error. The output is intentional; CLI tests assert the same messages via
+// snapshots where the exact text matters.
+
 pub fn validate_sql_empty_test() {
   let assert Error(Nil) = marmot.validate_sql("", "test.sql")
 }
@@ -370,6 +374,76 @@ pub fn check_duplicate_columns_single_test() {
     query.Column(name: "id", column_type: query.IntType, nullable: False),
   ]
   let assert Ok(Nil) = marmot.check_duplicate_columns(cols, "test.sql")
+}
+
+pub fn check_generated_column_names_collide_test() {
+  let cols = [
+    query.Column(
+      name: "foo-bar",
+      column_type: query.StringType,
+      nullable: False,
+    ),
+    query.Column(
+      name: "foo_bar",
+      column_type: query.StringType,
+      nullable: False,
+    ),
+  ]
+
+  let assert Error(Nil) = marmot.check_generated_column_names(cols, "test.sql")
+}
+
+pub fn check_generated_column_names_no_collision_test() {
+  let cols = [
+    query.Column(
+      name: "foo-bar",
+      column_type: query.StringType,
+      nullable: False,
+    ),
+    query.Column(
+      name: "bar_baz",
+      column_type: query.StringType,
+      nullable: False,
+    ),
+  ]
+
+  let assert Ok(Nil) = marmot.check_generated_column_names(cols, "test.sql")
+}
+
+pub fn check_generated_parameter_names_collide_test() {
+  let params = [
+    query.Parameter(
+      name: "foo-bar",
+      column_type: query.StringType,
+      nullable: False,
+    ),
+    query.Parameter(
+      name: "foo_bar",
+      column_type: query.StringType,
+      nullable: False,
+    ),
+  ]
+
+  let assert Error(Nil) =
+    marmot.check_generated_parameter_names(params, "test.sql")
+}
+
+pub fn check_generated_parameter_names_no_collision_test() {
+  let params = [
+    query.Parameter(
+      name: "foo-bar",
+      column_type: query.StringType,
+      nullable: False,
+    ),
+    query.Parameter(
+      name: "bar_baz",
+      column_type: query.StringType,
+      nullable: False,
+    ),
+  ]
+
+  let assert Ok(Nil) =
+    marmot.check_generated_parameter_names(params, "test.sql")
 }
 
 // ---- FFI failure paths ----

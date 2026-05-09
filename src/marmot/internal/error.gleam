@@ -15,6 +15,7 @@ pub type MarmotError {
   OutputNotUnderSrc(output: String)
   InvalidReturnsAnnotation(path: String, name: String, reason: String)
   SharedTypeMismatch(name: String, conflicts: List(#(String, List(Column))))
+  GeneratedNameCollision(path: String, names: List(#(String, String)))
 }
 
 pub fn to_string(error: MarmotError) -> String {
@@ -113,6 +114,23 @@ pub fn to_string(error: MarmotError) -> String {
       header
       <> body
       <> "\n  \u{2502}\n  \u{2502} Align SELECT columns across these queries, or remove the annotation from one."
+    }
+
+    GeneratedNameCollision(path:, names:) -> {
+      let name_list =
+        names
+        |> list.map(fn(pair) {
+          let #(raw, generated) = pair
+          "\"" <> raw <> "\" -> `" <> generated <> "`"
+        })
+        |> string.join(", ")
+
+      "error: Generated Gleam names collide
+  \u{250c}\u{2500} " <> path <> "
+  \u{2502}
+  \u{2502} These SQL names produce the same generated Gleam name: " <> name_list <> "
+  \u{2502}
+  hint: Use SQL aliases so each generated name is different."
     }
   }
 }
