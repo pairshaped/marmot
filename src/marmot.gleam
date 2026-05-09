@@ -624,14 +624,11 @@ pub fn make_tmp_file(
   dir: String,
   content: String,
 ) -> Result(String, MakeTmpFileError) {
-  case make_tmp_file_raw(dir, content) {
-    Ok(v) -> Ok(v)
-    Error(e) -> Error(MakeTmpFileError(e))
-  }
+  make_tmp_file_raw(dir, content)
 }
 
 @external(erlang, "marmot_ffi", "make_tmp_file")
-fn make_tmp_file_raw(dir: String, content: String) -> Result(String, String)
+fn make_tmp_file_raw(dir: String, content: String) -> Result(String, MakeTmpFileError)
 
 /// Look up a single environment variable by name. The FFI handles
 /// binary-to-charlist conversion for OTP 27+ compatibility.

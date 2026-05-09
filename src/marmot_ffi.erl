@@ -43,7 +43,7 @@ make_tmp_file(Dir, Content) ->
     Path = <<Dir/binary, "/marmot_fmt_", Suffix/binary, ".gleam">>,
     case file:write_file(Path, Content, [exclusive]) of
         ok -> {ok, Path};
-        {error, Reason} -> {error, erlang:atom_to_binary(Reason, utf8)}
+        {error, Reason} -> {error, {make_tmp_file_error, erlang:atom_to_binary(Reason, utf8)}}
     end.
 
 %% Run an executable with args and working directory.
