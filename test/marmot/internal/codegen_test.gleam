@@ -750,11 +750,18 @@ pub fn parse_query_function_allows_normal_path_test() {
     codegen.parse_query_function(option.Some("server/db.query"))
 }
 
-pub fn parse_query_function_multi_dot_path_test() {
-  let assert option.Some(cfg) =
+pub fn parse_query_function_rejects_dotted_module_path_test() {
+  let assert option.None =
     codegen.parse_query_function(option.Some("some.module.path.func"))
-  let assert "func" = cfg.function
-  let assert "some.module.path" = cfg.module_path
+}
+
+pub fn parse_query_function_allows_slash_module_path_test() {
+  let assert option.Some(codegen.QueryFunctionConfig(
+    module_path: "some/module/path",
+    module_alias: "path",
+    function: "func",
+  )) =
+    codegen.parse_query_function(option.Some("some/module/path.func"))
 }
 
 pub fn generate_module_returns_error_on_shared_type_mismatch_test() {

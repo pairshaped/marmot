@@ -56,8 +56,9 @@ pub fn parse_query_function(
 }
 
 fn split_query_function(value: String) -> Option(#(String, String)) {
-  // Split on the LAST "." so that paths with dots are handled correctly:
-  // "server/db.query" -> #("server/db", "query").
+  // Split on the LAST "." so "server/db.query" becomes
+  // #("server/db", "query"). Dots are only allowed as this separator;
+  // module paths use Gleam's slash syntax.
   let parts = string.split(value, ".")
   case list.last(parts) {
     Error(_) | Ok("") -> option.None
@@ -75,13 +76,14 @@ fn split_query_function(value: String) -> Option(#(String, String)) {
 
 fn valid_module_parts(module_path: String) -> Option(List(String)) {
   let segments = string.split(module_path, "/")
-  let parts =
-    segments
-    |> list.flat_map(fn(segment) { string.split(segment, ".") })
 
-  case list.contains(segments, "..") || !list.all(parts, is_valid_gleam_name) {
+  case
+    list.contains(segments, "..")
+    || list.any(segments, fn(segment) { string.contains(segment, ".") })
+    || !list.all(segments, is_valid_gleam_name)
+  {
     True -> option.None
-    False -> option.Some(parts)
+    False -> option.Some(segments)
   }
 }
 
