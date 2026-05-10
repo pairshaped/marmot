@@ -261,6 +261,11 @@ fn do_take_until(
   acc: List(Token),
   depth: Int,
 ) -> #(List(Token), List(Token)) {
+  // Malformed SQL note: an extra `)` makes depth go negative. We don't recover;
+  // depth stays negative and keyword matching stays suppressed for the rest of
+  // the walk, so the caller sees garbage in the slice. Statement.parse() will
+  // typically classify the result as Unsupported. We don't try to recover from
+  // unbalanced parens here.
   case tokens {
     [] -> #(list.reverse(acc), [])
     [tokenize.OpenParen, ..rest] ->
