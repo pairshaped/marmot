@@ -10,16 +10,20 @@ flowchart TD
   CLI --> Project["project.gleam<br/>config, discovery, output paths"]
   CLI --> SQLite["sqlite.gleam<br/>central introspection"]
 
-  SQLite --> Schema["schema.gleam<br/>tables, PKs, rootpages"]
+  SQLite --> Schema["schema.gleam<br/>tables, PKs, rootpages,<br/>ColumnMetadata"]
   SQLite --> Opcode["opcode.gleam<br/>EXPLAIN analysis"]
   SQLite --> Tokenize["tokenize.gleam<br/>SQL tokens"]
-  SQLite --> Parse["parse/*.gleam<br/>text walkers"]
+  SQLite --> StatementParser["parse/statement_parser.gleam<br/>typed Statement AST"]
+  SQLite --> Resolver["parse/resolver.gleam<br/>alias-aware resolution"]
+  SQLite --> Parse["parse/select.gleam,<br/>parameters.gleam, etc.<br/>body-level walkers"]
   SQLite --> Results["results.gleam<br/>result columns"]
   SQLite --> Params["parameters.gleam<br/>query parameters"]
 
   Schema --> Query["query.gleam<br/>domain types"]
   Opcode --> Query
   Tokenize --> Query
+  StatementParser --> Query
+  Resolver --> Query
   Parse --> Query
   Results --> Query
   Params --> Query
@@ -89,18 +93,19 @@ flowchart TD
   Explain --> Cursors["Map cursors to tables"]
   Explain --> Nullability["Compute join nullability"]
   Normalize --> Tokens["Tokenize SQL"]
-  Tokens --> Statement["Classify statement"]
+  Tokens --> Statement["Parse typed Statement<br/>statement_parser.parse"]
+  Statement --> Resolver["Build alias map<br/>resolver.build_alias_map"]
 
   Schema --> Columns["Extract result columns"]
   Cursors --> Columns
   Nullability --> Columns
-  Tokens --> Columns
   Statement --> Columns
 
   Schema --> Parameters["Extract parameters"]
   Cursors --> Parameters
   Explain --> Parameters
-  Tokens --> Parameters
+  Statement --> Parameters
+  Resolver --> Parameters
 
   Columns --> Info["QueryInfo"]
   Parameters --> Info
@@ -110,7 +115,7 @@ Pipeline stages:
 
 1. **Normalize whitespace** (`parse.normalize_sql_whitespace`): strips comments via `query.strip_comments`, then normalizes whitespace in `parse/text.gleam` (newlines/tabs to spaces, collapse runs), preserving string literals.
 
-2. **Load schema** (`schema.get_table_metadata`): queries `sqlite_master` for table names and rootpages, then `PRAGMA table_info` for each table to get column names, types, and nullability.
+2. **Load schema** (`schema.get_table_metadata_v2`): queries `sqlite_master` for table names and rootpages, `PRAGMA table_xinfo` for each table to get column names, types, nullability, and the `hidden` flag (so generated columns can be filtered later), and `PRAGMA table_list` for the WITHOUT-ROWID flag. Returns `TableMetadataV2` carrying `ColumnMetadata` (which adds `is_rowid_alias`, `is_generated`, and `hidden` to the public `Column`). Downstream consumers that only need the public shape derive a `Dict(String, List(Column))` view internally.
 
 3. **EXPLAIN**: strips Marmot-specific `!`/`?` nullability suffixes from the SQL, wraps with `EXPLAIN`, and runs it against SQLite. The result is a list of `Opcode` values (addr, opcode name, p1-p5 operands).
 
@@ -120,14 +125,18 @@ Pipeline stages:
 
 6. **Tokenize** (`tokenize.tokenize`): grapheme-by-grapheme tokenizer that produces a `List(Token)`. Handles keywords, identifiers, string literals, quoted identifiers, numbers, parameters (`?`, `@name`), operators, and Marmot nullability overrides (`!` = non-null, `?` = nullable).
 
-7. **Statement classification** (`statement.classify_statement`): determines whether the query is SELECT, INSERT, UPDATE, DELETE, or REPLACE. INSERT/UPDATE/DELETE without RETURNING produce empty column lists.
+7. **Statement parsing** (`statement_parser.parse`): consumes the token stream and produces a typed `Statement` AST: `Select`, `Insert`, `Update`, `Delete`, or `Unsupported`. The AST carries parsed structure for boundaries that need it (FROM aliases as `TableBinding`, INSERT shape including conflict action and source variants, CTE headers) and clause token slices for bodies that don't (`select_list`, `where`, `set`, etc.). Boundary detection is grammar-aware: keywords like `WHERE` only fire as clause introducers at top-level paren depth 0, so subqueries no longer leak. CTE bodies stay as raw token slices.
 
-8. **Result column extraction** (`results.extract_result_columns`): two strategies combined:
+8. **Result column extraction** (`results.extract_result_columns`): combines opcode tracing with structurally-derived select list and from-tables from the parsed `Statement`.
    - **Opcode-based**: traces `ResultRow` opcodes back through `Column`/`Rowid` to find source table columns. Authoritative when the column maps to a real table column.
-   - **Text-based fallback**: parses the SELECT list to get names and types when opcode tracing can't resolve (sorter pseudo-cursors, complex expressions, aggregates). Uses column aliases where available.
-   - For INSERT/UPDATE/DELETE with RETURNING, `extract_returning_columns` handles the RETURNING clause.
+   - **Body-level walker fallback**: `parse_select_item_list` operates on `body.select_list` (a slice from the parsed Statement) when opcode tracing can't resolve (sorter pseudo-cursors, complex expressions, aggregates). Uses column aliases where available.
+   - For INSERT/UPDATE/DELETE with RETURNING, `extract_returning_columns` handles the RETURNING clause; the target table comes from `Statement.target.table.name.text`.
 
-9. **Parameter extraction** (`parameters.extract_parameters`): identifies `?` placeholders from `Variable` opcodes, infers types from comparison context (e.g., `col = ?` where `col` is INTEGER -> `Int`). Named parameters (`@name`) are discovered by the text-based parser. Deduplicates repeated parameters.
+9. **Parameter extraction** (`parameters.extract_parameters`): dispatches on the parsed `Statement` variant.
+   - **SELECT/UPDATE/DELETE**: builds an alias map from the FROM clause via `resolver.build_alias_map`, then resolves each binder via `resolver.resolve_qualified` / `resolver.resolve_bare`. Resolution returns one of six outcomes; only `UnknownTableRef` (for CTE-named or otherwise unintrospected tables) falls back to `StringType`. The other four error outcomes (`AmbiguousColumn`, `UnknownQualifiedAlias`, `UnknownColumnInKnownTable`, `UnknownBareColumn`) propagate as `ParameterResolutionError` and become typed `MarmotError` variants at the `sqlite.gleam` boundary with the SQL file path attached.
+   - **INSERT VALUES**: when the column list is omitted, derives bindable columns from `ColumnMetadata` in declared order, filtering generated columns (`hidden != 0`). Multi-row VALUES walks every row and emits a parameter per placeholder expression. `write_nullable = column.nullable || is_rowid_alias` so rowid-alias columns are nullable on write (SQLite auto-assigns) even when the read-side is NOT NULL.
+   - **Pre-flight validation** in `sqlite.gleam` catches row-count mismatches before EXPLAIN, surfacing `InsertValuesCountMismatch` (a typed error with row index, expected, and got counts) instead of SQLite's generic message. Skipped when the target table is unknown (lets EXPLAIN report "no such table").
+   - Named parameters (`@name`) are discovered by `binder.find_param_binders`. Repeated parameters are deduplicated by `deduplicate_parameter_names`.
 
 ### 5. Domain model (`query.gleam`)
 
@@ -172,8 +181,11 @@ The module also handles name collision detection: generated function names and r
 
 ## Architecture decisions
 
-- **EXPLAIN-based inference**: types come from live SQLite introspection via `EXPLAIN` and `PRAGMA table_info`. The database must exist with the current schema at generation time.
-- **Single-pass schema loading**: `get_table_metadata()` loads all table schemas, PKs, and rootpages in one pass to avoid repeated `PRAGMA` calls.
-- **Tokenize once, analyze many**: the tokenizer runs once per query; its output feeds statement classification, result extraction, and parameter extraction.
+- **EXPLAIN-based inference**: types come from live SQLite introspection via `EXPLAIN`, `PRAGMA table_xinfo`, and `PRAGMA table_list`. The database must exist with the current schema at generation time.
+- **Single-pass schema loading**: `get_table_metadata_v2()` loads all table schemas, PKs, rootpages, and rowid-alias/generated-column flags in one pass to avoid repeated `PRAGMA` calls.
+- **Grammar-aware statement parsing**: `statement_parser.parse` produces a typed `Statement` AST that drives consumer dispatch. The legacy `statement.classify_statement` only looked at the first token and routed `WITH ...` queries to a fallback; the typed parser correctly recognizes the post-CTE statement kind.
+- **Alias-aware column resolution**: `resolver` builds an alias map from the parsed FROM clause and surfaces typed errors for ambiguous or unknown references. Only the CTE/view fallback (`UnknownTableRef`) silently degrades to `StringType`; the other four resolution failures become user-facing `MarmotError` variants.
+- **Read vs write nullability for rowid aliases**: `INTEGER PRIMARY KEY` on a normal rowid table is non-null on read (SQLite always assigns a rowid) but nullable on write (binding NULL means "auto-assign"). `ColumnMetadata.is_rowid_alias` is the schema-level source of truth, computed once in the loader. Parameter inference for column-less `INSERT VALUES` uses `write_nullable = column.nullable || is_rowid_alias`. Don't reintroduce inline `pk > 0 && IntType -> nullable: False` shortcuts; they're wrong for `WITHOUT ROWID` and don't carry the read/write distinction.
+- **Tokenize once, analyze many**: the tokenizer runs once per query; its output feeds statement parsing, result extraction, and parameter extraction.
 - **Suffix-based nullability overrides**: `col_name!` in SQL aliases forces non-null, `col_name?` forces nullable. These are Marmot extensions stripped before EXPLAIN but preserved in tokenized form for type inference.
 - **Zero external tool dependencies**: everything runs through `sqlight` (Erlang NIF).
