@@ -2,8 +2,9 @@ import gleam/list
 import gleam/option.{None, Some}
 import marmot/internal/sqlite/parse/statement_parser.{
   ConflictAbort, ConflictFail, ConflictIgnore, ConflictReplace, ConflictRollback,
-  CteDef, FromItem, Identifier, Insert, InsertStmt, Select, SelectBody,
-  SelectStmt, TableBinding, TableRef, Unsupported, parse,
+  CteDef, DefaultValuesSource, FromItem, Identifier, Insert, InsertStmt, Select,
+  SelectBody, SelectSource, SelectStmt, TableBinding, TableRef, Unsupported,
+  ValuesSource, parse,
 }
 import marmot/internal/sqlite/tokenize.{Word}
 
@@ -270,4 +271,37 @@ pub fn parse_insert_returning_slice_test() {
   let assert Ok(Insert(stmt)) =
     parse_sql("INSERT INTO t (a) VALUES (?) RETURNING id, name")
   let assert Some(_) = stmt.returning
+}
+
+pub fn parse_insert_values_single_row_test() {
+  let assert Ok(Insert(stmt)) =
+    parse_sql("INSERT INTO t (a, b) VALUES (?, ?)")
+  let assert ValuesSource(raw: _, rows: [[col1, col2]]) = stmt.source
+  let assert [tokenize.ParamAnon] = col1
+  let assert [tokenize.ParamAnon] = col2
+}
+
+pub fn parse_insert_values_multi_row_test() {
+  let assert Ok(Insert(stmt)) =
+    parse_sql("INSERT INTO t (a, b) VALUES (?, ?), (?, ?)")
+  let assert ValuesSource(raw: _, rows: rows) = stmt.source
+  let assert 2 = list.length(rows)
+}
+
+pub fn parse_insert_values_no_column_list_test() {
+  let assert Ok(Insert(stmt)) = parse_sql("INSERT INTO t VALUES (?, ?)")
+  let assert None = stmt.column_list
+  let assert ValuesSource(raw: _, rows: [[_, _]]) = stmt.source
+}
+
+pub fn parse_insert_default_values_test() {
+  let assert Ok(Insert(stmt)) = parse_sql("INSERT INTO t DEFAULT VALUES")
+  let assert DefaultValuesSource = stmt.source
+}
+
+pub fn parse_insert_select_source_test() {
+  let assert Ok(Insert(stmt)) =
+    parse_sql("INSERT INTO t (a) SELECT id FROM other")
+  let assert SelectSource(SelectStmt(_, body)) = stmt.source
+  let assert [_] = body.from
 }

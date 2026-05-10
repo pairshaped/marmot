@@ -514,7 +514,10 @@ fn parse_optional_alias_no_as(
 fn is_clause_or_join_keyword(word: String) -> Bool {
   let upper = string.uppercase(word)
   list.contains(
-    ["ON", "USING", "JOIN", "WHERE", "GROUP", "HAVING", "ORDER", "LIMIT"],
+    [
+      "ON", "USING", "JOIN", "WHERE", "GROUP", "HAVING", "ORDER", "LIMIT",
+      "VALUES", "DEFAULT", "SELECT", "WITH", "SET", "RETURNING",
+    ],
     upper,
   )
   || list.contains(join_modifiers(), upper)
@@ -537,21 +540,77 @@ fn parse_insert(tokens: List(Token)) -> Result(InsertStmt, MarmotError) {
   let after_into = drop_into(after_kw)
   let #(target, after_target) = parse_table_binding(after_into)
   let #(column_list, after_cols) = parse_optional_column_list(after_target)
-  // Source parsing comes in Task 8. Default placeholder for now.
-  let source = DefaultValuesSource
-  // Scan forward to RETURNING at top level (VALUES clause sits between column
-  // list and RETURNING when source tokens are present).
-  let #(_, after_source) =
-    take_until_top_level_keyword(after_cols, ["RETURNING"])
-  let #(returning, _rest) = take_clause(after_source, "RETURNING", [])
+  let #(source_tokens, after_source) =
+    take_until_top_level_keyword(after_cols, ["ON", "RETURNING"])
+  let source = parse_insert_source(source_tokens)
+  let #(upsert, after_upsert) = take_clause(after_source, "ON", ["RETURNING"])
+  let #(returning, _rest) = take_clause(after_upsert, "RETURNING", [])
   Ok(InsertStmt(
     conflict_action: action,
     target: target,
     column_list: column_list,
     source: source,
-    upsert: None,
+    upsert: upsert,
     returning: returning,
   ))
+}
+
+fn parse_insert_source(tokens: List(Token)) -> InsertSource {
+  case tokens {
+    [Word(w), ..rest] ->
+      case string.uppercase(w) {
+        "VALUES" -> parse_values_source(rest, tokens)
+        "DEFAULT" ->
+          case rest {
+            [Word(v), ..] ->
+              case string.uppercase(v) == "VALUES" {
+                True -> DefaultValuesSource
+                False -> ValuesSource(raw: tokens, rows: [])
+              }
+            _ -> ValuesSource(raw: tokens, rows: [])
+          }
+        "SELECT" ->
+          case parse_select(tokens) {
+            Ok(stmt) -> SelectSource(stmt)
+            Error(_) -> ValuesSource(raw: tokens, rows: [])
+          }
+        "WITH" ->
+          // INSERT INTO t WITH ... SELECT ...
+          case parse_select(tokens) {
+            Ok(stmt) -> SelectSource(stmt)
+            Error(_) -> ValuesSource(raw: tokens, rows: [])
+          }
+        _ -> ValuesSource(raw: tokens, rows: [])
+      }
+    _ -> ValuesSource(raw: tokens, rows: [])
+  }
+}
+
+fn parse_values_source(
+  after_values: List(Token),
+  raw: List(Token),
+) -> InsertSource {
+  let rows = parse_values_rows(after_values, [])
+  ValuesSource(raw: raw, rows: rows)
+}
+
+fn parse_values_rows(
+  tokens: List(Token),
+  acc: List(List(List(Token))),
+) -> List(List(List(Token))) {
+  case tokens {
+    [] -> list.reverse(acc)
+    [tokenize.OpenParen, ..rest] -> {
+      let #(inner, after) = tokenize.collect_inside_parens(rest)
+      let exprs = tokenize.split_on_commas(inner)
+      let acc = [exprs, ..acc]
+      case after {
+        [tokenize.Comma, ..r2] -> parse_values_rows(r2, acc)
+        _ -> list.reverse(acc)
+      }
+    }
+    [_, ..rest] -> parse_values_rows(rest, acc)
+  }
 }
 
 fn parse_insert_conflict_action(
