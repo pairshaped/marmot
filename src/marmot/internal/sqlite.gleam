@@ -189,6 +189,7 @@ pub fn introspect_query(
       pk_columns,
       param_tokens,
     )
+    |> result.unwrap([])
 
   let parameters = parameters.deduplicate_parameter_names(raw_parameters)
   Ok(QueryInfo(columns: columns, parameters: parameters))

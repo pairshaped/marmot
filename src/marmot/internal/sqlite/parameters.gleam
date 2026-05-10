@@ -15,6 +15,16 @@ import marmot/internal/sqlite/parse/statement
 import marmot/internal/sqlite/parse/subquery
 import marmot/internal/sqlite/tokenize
 
+/// Resolver-driven parameter extraction failures. The `sqlite.gleam` boundary
+/// maps these to public `MarmotError` variants with the SQL file path attached.
+pub type ParameterResolutionError {
+  AmbiguousColumn(column: String, candidates: List(String))
+  UnknownAlias(alias: String)
+  UnknownColumnInTable(table: String, column: String)
+  UnknownColumn(column: String)
+  AliasMapCollision(name: String)
+}
+
 /// Extract parameters from opcodes and parsed SQL context.
 ///
 /// Uses EXPLAIN opcodes (Variable) for `?` placeholder positions and types,
@@ -28,7 +38,7 @@ pub fn extract_parameters(
   table_schemas: Dict(String, List(Column)),
   pk_columns: Dict(String, String),
   tokens: List(tokenize.Token),
-) -> List(Parameter) {
+) -> Result(List(Parameter), ParameterResolutionError) {
   let variable_ops =
     list.filter(opcodes, fn(op) { op.opcode == "Variable" })
     |> list.sort(fn(a, b) { int.compare(a.p1, b.p1) })
@@ -36,7 +46,7 @@ pub fn extract_parameters(
 
   let param_count = list.length(variable_ops)
   case param_count {
-    0 -> []
+    0 -> Ok([])
     _ -> {
       let stmt_type = statement.classify_statement(tokens)
       let opcode_fallback = fn() {
@@ -57,46 +67,45 @@ pub fn extract_parameters(
         })
       }
 
-      fix_limit_offset_param_types(
-        case stmt_type {
-          statement.Insert | statement.Replace -> {
-            case tokenize.has_keyword(tokens, "VALUES") {
-              True -> {
-                let parsed = extract_insert_parameters(table_schemas, tokens)
-                case list.length(parsed) == param_count {
-                  True -> parsed
-                  False -> opcode_fallback()
-                }
+      let body = case stmt_type {
+        statement.Insert | statement.Replace -> {
+          case tokenize.has_keyword(tokens, "VALUES") {
+            True -> {
+              let parsed = extract_insert_parameters(table_schemas, tokens)
+              case list.length(parsed) == param_count {
+                True -> parsed
+                False -> opcode_fallback()
               }
-              False -> {
-                let parsed =
-                  extract_insert_select_parameters(table_schemas, tokens)
-                case list.length(parsed) == param_count {
-                  True -> parsed
-                  False -> opcode_fallback()
-                }
+            }
+            False -> {
+              let parsed =
+                extract_insert_select_parameters(table_schemas, tokens)
+              case list.length(parsed) == param_count {
+                True -> parsed
+                False -> opcode_fallback()
               }
             }
           }
-          statement.Update -> {
-            let parsed = extract_update_parameters(table_schemas, tokens)
-            case list.length(parsed) == param_count {
-              True -> parsed
-              False -> opcode_fallback()
-            }
+        }
+        statement.Update -> {
+          let parsed = extract_update_parameters(table_schemas, tokens)
+          case list.length(parsed) == param_count {
+            True -> parsed
+            False -> opcode_fallback()
           }
-          statement.Select | statement.Delete -> {
-            let parsed =
-              extract_select_parameters(table_schemas, tokens, stmt_type)
-            case list.length(parsed) == param_count {
-              True -> parsed
-              False -> opcode_fallback()
-            }
+        }
+        statement.Select | statement.Delete -> {
+          let parsed =
+            extract_select_parameters(table_schemas, tokens, stmt_type)
+          case list.length(parsed) == param_count {
+            True -> parsed
+            False -> opcode_fallback()
           }
-          statement.Other -> opcode_fallback()
-        },
-        tokens,
-      )
+        }
+        statement.Other -> opcode_fallback()
+      }
+
+      Ok(fix_limit_offset_param_types(body, tokens))
     }
   }
 }
