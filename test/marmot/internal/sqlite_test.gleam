@@ -1,8 +1,10 @@
 import birdie
+import gleam/dict
 import gleam/list
 import gleam/option
 import gleam/string
 import marmot/internal/sqlite
+import marmot/internal/sqlite/schema
 import sqlight
 
 pub fn introspect_integer_column_test() {
@@ -910,4 +912,21 @@ pub fn parse_returns_invalid_identifier_lowercase_test() {
 pub fn parse_returns_invalid_identifier_special_char_test() {
   let assert Error(_) =
     sqlite.parse_returns_annotation("-- returns: Org-Row\nSELECT 1")
+}
+
+pub fn schema_loader_marks_generated_columns_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (a INTEGER PRIMARY KEY, b INTEGER, c INTEGER GENERATED ALWAYS AS (b * 2) VIRTUAL);",
+      conn,
+    )
+  let metadata = schema.get_table_metadata_v2(conn)
+  let assert Ok(cols) = dict.get(metadata.columns, "t")
+  let names = list.map(cols, fn(m) { m.column.name })
+  let assert ["a", "b", "c"] = names
+  let assert Ok(c_meta) = list.find(cols, fn(m) { m.column.name == "c" })
+  let assert True = c_meta.is_generated
+  let assert Ok(b_meta) = list.find(cols, fn(m) { m.column.name == "b" })
+  let assert False = b_meta.is_generated
 }
