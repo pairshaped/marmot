@@ -115,6 +115,7 @@ pub fn parse(tokens: List(Token)) -> Result(Statement, MarmotError) {
   case classify(tokens) {
     SelectKind -> parse_select(tokens) |> result.map(Select)
     InsertKind -> parse_insert(tokens) |> result.map(Insert)
+    UpdateKind -> parse_update(tokens) |> result.map(Update)
     _ -> Ok(Unsupported(tokens))
   }
 }
@@ -532,6 +533,64 @@ fn parse_on_or_using(tokens: List(Token)) -> Option(List(Token)) {
         _ -> None
       }
     _ -> None
+  }
+}
+
+fn parse_update(tokens: List(Token)) -> Result(UpdateStmt, MarmotError) {
+  let after_kw = drop_update_keyword(tokens)
+  let #(target, after_target) = parse_table_binding(after_kw)
+  let after_set = drop_keyword(after_target, "SET")
+  let #(set_tokens, after_set_body) =
+    take_until_top_level_keyword(after_set, ["FROM", "WHERE", "RETURNING"])
+  let #(from_slice, after_from) =
+    take_clause(after_set_body, "FROM", ["WHERE", "RETURNING"])
+  let from = case from_slice {
+    Some(slice) -> parse_from_items(slice)
+    None -> []
+  }
+  let #(where, after_where) = take_clause(after_from, "WHERE", ["RETURNING"])
+  let #(returning, _rest) = take_clause(after_where, "RETURNING", [])
+  Ok(UpdateStmt(
+    target: target,
+    set: set_tokens,
+    from: from,
+    where: where,
+    returning: returning,
+  ))
+}
+
+fn drop_update_keyword(tokens: List(Token)) -> List(Token) {
+  // Match UPDATE, optionally followed by OR <action>. The action keyword
+  // is consumed but not preserved (UPDATE OR REPLACE etc. is not in the
+  // typed AST yet; could be added later if needed).
+  case tokens {
+    [Word(u), Word(or_kw), Word(action), ..rest] ->
+      case string.uppercase(u) == "UPDATE" && string.uppercase(or_kw) == "OR" {
+        True -> rest
+        False ->
+          case string.uppercase(u) == "UPDATE" {
+            True -> [Word(or_kw), Word(action), ..rest]
+            False -> tokens
+          }
+      }
+    [Word(u), ..rest] ->
+      case string.uppercase(u) == "UPDATE" {
+        True -> rest
+        False -> tokens
+      }
+    _ -> tokens
+  }
+}
+
+fn drop_keyword(tokens: List(Token), keyword: String) -> List(Token) {
+  let upper = string.uppercase(keyword)
+  case tokens {
+    [Word(w), ..rest] ->
+      case string.uppercase(w) == upper {
+        True -> rest
+        False -> tokens
+      }
+    _ -> tokens
   }
 }
 

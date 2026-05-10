@@ -4,7 +4,7 @@ import marmot/internal/sqlite/parse/statement_parser.{
   ConflictAbort, ConflictFail, ConflictIgnore, ConflictReplace, ConflictRollback,
   CteDef, DefaultValuesSource, FromItem, Identifier, Insert, InsertStmt, Select,
   SelectBody, SelectSource, SelectStmt, TableBinding, TableRef, Unsupported,
-  ValuesSource, parse,
+  Update, ValuesSource, parse,
 }
 import marmot/internal/sqlite/tokenize.{Word}
 
@@ -304,4 +304,36 @@ pub fn parse_insert_select_source_test() {
     parse_sql("INSERT INTO t (a) SELECT id FROM other")
   let assert SelectSource(SelectStmt(_, body)) = stmt.source
   let assert [_] = body.from
+}
+
+pub fn parse_update_simple_test() {
+  let assert Ok(Update(stmt)) =
+    parse_sql("UPDATE users SET name = ? WHERE id = ?")
+  let assert TableBinding(
+    table: TableRef(_, name: Identifier("users", False)),
+    alias: None,
+  ) = stmt.target
+  let assert Some(_) = stmt.where
+  let assert True = list.length(stmt.set) > 0
+}
+
+pub fn parse_update_aliased_target_test() {
+  let assert Ok(Update(stmt)) =
+    parse_sql("UPDATE users AS u SET email = ? WHERE u.id = ?")
+  let assert TableBinding(_, alias: Some("u")) = stmt.target
+}
+
+pub fn parse_update_with_from_test() {
+  let assert Ok(Update(stmt)) =
+    parse_sql(
+      "UPDATE users AS u SET email = o.email FROM orders o WHERE u.id = o.user_id",
+    )
+  let assert [_] = stmt.from
+  let assert Some(_) = stmt.where
+}
+
+pub fn parse_update_returning_test() {
+  let assert Ok(Update(stmt)) =
+    parse_sql("UPDATE users SET name = ? WHERE id = ? RETURNING id, name")
+  let assert Some(_) = stmt.returning
 }
