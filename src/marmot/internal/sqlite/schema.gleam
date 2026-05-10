@@ -4,6 +4,7 @@ import gleam/dict.{type Dict}
 import gleam/dynamic/decode
 import gleam/io
 import gleam/list
+import gleam/set
 import marmot/internal/query.{type Column, Column, StringType}
 import marmot/internal/sqlite/parse
 import sqlight.{type Connection}
@@ -198,7 +199,7 @@ pub fn get_table_metadata_v2(db: Connection) -> TableMetadataV2 {
     use wr <- decode.field(1, decode.int)
     decode.success(#(name, wr))
   }
-  let without_rowid_tables = case
+  let without_rowid_set = case
     sqlight.query(
       "SELECT name, wr FROM pragma_table_list WHERE type='table'",
       on: db,
@@ -207,14 +208,16 @@ pub fn get_table_metadata_v2(db: Connection) -> TableMetadataV2 {
     )
   {
     Ok(rows) ->
-      list.filter_map(rows, fn(row) {
+      rows
+      |> list.filter_map(fn(row) {
         let #(name, wr) = row
         case wr == 1 {
           True -> Ok(name)
           False -> Error(Nil)
         }
       })
-    Error(_) -> []
+      |> set.from_list
+    Error(_) -> set.new()
   }
 
   list.fold(
@@ -227,7 +230,7 @@ pub fn get_table_metadata_v2(db: Connection) -> TableMetadataV2 {
     fn(acc, table) {
       let #(table_name, rootpage) = table
       let rootpages = dict.insert(acc.rootpages, rootpage, table_name)
-      let is_without_rowid = list.contains(without_rowid_tables, table_name)
+      let is_without_rowid = set.contains(without_rowid_set, table_name)
       let pragma_sql =
         "PRAGMA table_xinfo(\""
         <> parse.quote_identifier(table_name)
@@ -249,12 +252,27 @@ pub fn get_table_metadata_v2(db: Connection) -> TableMetadataV2 {
               // normal (rowid) table with a single-column PK. WITHOUT ROWID
               // tables expose the same declaration without the auto-assign
               // behavior, so they are not aliases.
+              //
+              // Note: INTEGER PRIMARY KEY DESC is technically NOT a rowid alias
+              // per SQLite, but PRAGMA table_xinfo does not expose sort
+              // direction. We treat it as a rowid alias here. Detecting DESC
+              // requires parsing the CREATE TABLE statement from sqlite_master,
+              // which is out of scope.
               let is_rowid_alias =
                 pk > 0
                 && pk_count == 1
                 && column_type == query.IntType
                 && !is_without_rowid
-              let nullable = !is_rowid_alias && notnull == 0
+              // PK columns are non-null in two additional cases beyond rowid
+              // aliases:
+              //   - Composite PKs: PRAGMA reports notnull=0 for composite PK
+              //     columns even though SQLite enforces NOT NULL via the PK
+              //     constraint.
+              //   - WITHOUT ROWID PKs: handled correctly by PRAGMA (notnull=1),
+              //     so no override needed, but included for clarity.
+              let pk_implies_non_null =
+                is_rowid_alias || { pk > 0 && pk_count > 1 }
+              let nullable = !pk_implies_non_null && notnull == 0
               ColumnMetadata(
                 column: Column(
                   name: col_name,

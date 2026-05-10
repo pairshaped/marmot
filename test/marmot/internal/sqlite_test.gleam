@@ -928,16 +928,21 @@ pub fn schema_loader_marks_rowid_alias_test() {
   let assert Ok(rowid_cols) = dict.get(metadata.columns, "rowid_t")
   let assert Ok(rowid_id) = list.find(rowid_cols, fn(m) { m.column.name == "id" })
   let assert True = rowid_id.is_rowid_alias
+  let assert False = rowid_id.column.nullable
 
   let assert Ok(no_rowid_cols) = dict.get(metadata.columns, "no_rowid_t")
   let assert Ok(no_rowid_id) =
     list.find(no_rowid_cols, fn(m) { m.column.name == "id" })
   let assert False = no_rowid_id.is_rowid_alias
+  // PK column on a WITHOUT ROWID table must be non-null: SQLite enforces it.
+  let assert False = no_rowid_id.column.nullable
 
   let assert Ok(composite_cols) = dict.get(metadata.columns, "composite_t")
   let assert Ok(composite_a) =
     list.find(composite_cols, fn(m) { m.column.name == "a" })
   let assert False = composite_a.is_rowid_alias
+  // PK column in a composite PK is also non-null per SQLite.
+  let assert False = composite_a.column.nullable
 }
 
 pub fn schema_loader_marks_generated_columns_test() {
