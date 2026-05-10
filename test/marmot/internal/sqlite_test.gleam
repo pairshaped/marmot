@@ -4,7 +4,7 @@ import gleam/list
 import gleam/option
 import gleam/string
 import marmot/internal/error
-import marmot/internal/query.{Parameter, StringType}
+import marmot/internal/query.{Column, IntType, Parameter, StringType}
 import marmot/internal/sqlite
 import marmot/internal/sqlite/schema
 import sqlight
@@ -1047,4 +1047,33 @@ pub fn introspect_cte_bare_column_falls_back_test() {
     )
   let assert [Parameter(name: "id", column_type: StringType, nullable: False)] =
     query.parameters
+}
+
+// ---- T15: results.gleam uses typed Statement ----
+
+pub fn results_extract_columns_via_typed_statement_test() {
+  // Regression: extract_result_columns must derive select-list and from-table
+  // data from the typed Statement (statement_parser.parse), not from the legacy
+  // whole-statement keyword scanners. The typed parser gives a proper AST slice
+  // for the SELECT list and a structured FromItem list.
+  //
+  // This test locks in that the column names and types are resolved correctly
+  // through the new code path. The schema-lookup path (table_schemas ->
+  // resolve_select_item) is exercised because "id" and "label" are bare columns.
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE events (id INTEGER PRIMARY KEY, label TEXT NOT NULL);",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/select_events.sql",
+      "SELECT id, label FROM events",
+    )
+  let assert [
+    Column(name: "id", column_type: IntType, nullable: False),
+    Column(name: "label", column_type: StringType, nullable: False),
+  ] = query.columns
 }

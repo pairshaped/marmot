@@ -8,6 +8,7 @@ import marmot/internal/query.{type Column, Column, StringType}
 import marmot/internal/sqlite/opcode.{type JoinNullability, type Opcode}
 import marmot/internal/sqlite/parse/expression
 import marmot/internal/sqlite/parse/select
+import marmot/internal/sqlite/parse/statement_parser
 import marmot/internal/sqlite/parse/util
 import marmot/internal/sqlite/tokenize.{type Token}
 
@@ -41,8 +42,16 @@ pub fn extract_result_columns(
       let base_reg = rr.p1
       let count = rr.p2
       let result_regs = util.make_range(base_reg, count)
-      let select_items = select.parse_select_items(tokens)
-      let from_tables = select.parse_from_tables(tokens)
+      let #(select_list_tokens, from_tables) = case statement_parser.parse(tokens) {
+        Ok(statement_parser.Select(stmt)) -> {
+          let from_names =
+            stmt.body.from
+            |> list.map(fn(item) { item.binding.table.name.text })
+          #(stmt.body.select_list, from_names)
+        }
+        _ -> #([], [])
+      }
+      let select_items = select.parse_select_item_list(select_list_tokens)
 
       list.index_map(result_regs, fn(reg, idx) {
         let opcode_column =
