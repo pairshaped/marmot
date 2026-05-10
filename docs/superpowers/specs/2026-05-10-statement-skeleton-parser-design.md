@@ -62,26 +62,38 @@ pub type SelectBody {
 }
 
 pub type FromItem {
-  FromItem(
-    table: TableRef,
-    alias: Option(String),
-    on: Option(List(Token)),
-  )
+  FromItem(binding: TableBinding, on: Option(List(Token)))
+}
+
+pub type TableBinding {
+  TableBinding(table: TableRef, alias: Option(String))
 }
 
 pub type TableRef {
-  TableRef(schema: Option(String), name: String, quoted: Bool)
+  TableRef(schema: Option(Identifier), name: Identifier)
+}
+
+pub type Identifier {
+  Identifier(text: String, quoted: Bool)
 }
 
 pub type InsertStmt {
   InsertStmt(
-    on_conflict_clause: OnConflictClause,
-    table: TableRef,
+    conflict_action: InsertConflictAction,
+    target: TableBinding,
     column_list: Option(List(String)),
     source: InsertSource,
     upsert: Option(List(Token)),
     returning: Option(List(Token)),
   )
+}
+
+pub type InsertConflictAction {
+  ConflictAbort
+  ConflictReplace
+  ConflictIgnore
+  ConflictFail
+  ConflictRollback
 }
 
 pub type InsertSource {
@@ -92,7 +104,7 @@ pub type InsertSource {
 
 pub type UpdateStmt {
   UpdateStmt(
-    table: TableRef,
+    target: TableBinding,
     set: List(Token),
     from: List(FromItem),
     where: Option(List(Token)),
@@ -102,7 +114,7 @@ pub type UpdateStmt {
 
 pub type DeleteStmt {
   DeleteStmt(
-    table: TableRef,
+    target: TableBinding,
     where: Option(List(Token)),
     returning: Option(List(Token)),
   )
@@ -120,7 +132,9 @@ Design notes:
 - `SelectSource(SelectStmt)` is structural because parameter binding for `INSERT ... SELECT` needs alias-aware resolution on the source query.
 - `CteDef.body` stays raw in v1. Recursive structural CTE parsing is deferred along with CTE result-type inference.
 - `FromItem` does not carry join-modifier interpretation. Alias resolution does not need it. Storing modifier tokens unparsed is acceptable if needed later; v1 simply omits them.
-- `TableRef` supports schema-qualified names (`main.users`) and preserves quoting. The parser must not hard-code "one word after FROM" thinking.
+- `TableBinding` is the unit of "table reference plus optional alias" used wherever an alias can appear: `FromItem`, `UpdateStmt.target`, `DeleteStmt.target`, `InsertStmt.target`. SQLite accepts `UPDATE users AS u`, `DELETE FROM users AS u`, and `INSERT INTO users AS u` shapes; treating the target as a `TableBinding` keeps alias-aware resolution correct on writes.
+- `TableRef` supports schema-qualified names (`main.users`) and preserves quoting per identifier piece. `Identifier(text, quoted)` separates schema and name quoting (`"main".users` and `main."users"` are distinct). The parser must not hard-code "one word after FROM" thinking.
+- `InsertConflictAction` covers the leading `INSERT [OR ...]` modifier. The trailing `ON CONFLICT (...) DO ...` clause is captured raw in `upsert` and is a separate feature (UPSERT) from the leading conflict action; the names are deliberately disjoint to avoid confusion.
 - `Unsupported` exists because SQLite accepts a wide grammar (CREATE, PRAGMA, ATTACH, etc.) that Marmot is not committing to handle. A typed unsupported variant is safer than crashing or misclassifying. Downstream consumers (codegen, parameter inference) treat `Unsupported` as a parse failure for code generation and surface a `MarmotError`. The parser itself does not error on it.
 
 ## INSERT VALUES schema fallback and write-vs-read nullability
@@ -187,10 +201,19 @@ pub type Resolution {
   UnknownTableRef
 }
 
-pub fn build_alias_map(from: List(FromItem)) -> Result(Dict(String, TableRef), MarmotError)
+pub type AliasMapError {
+  AliasCollision(name: String)
+}
+
+pub fn build_alias_map(
+  bindings: List(TableBinding),
+) -> Result(Dict(String, TableRef), AliasMapError)
+
 pub fn resolve_qualified(map, alias, col_name, schemas) -> Resolution
 pub fn resolve_bare(map, col_name, schemas) -> Resolution
 ```
+
+`build_alias_map` accepts the flat list of `TableBinding` values relevant to the current scope. Callers assemble it from the statement: for SELECT, that's `from |> list.map(fn(item) { item.binding })`; for UPDATE, `[target, ..from |> list.map(fn(item) { item.binding })]`; for DELETE, `[target]`. Returning a typed `AliasMapError` matches the resolver pattern; consumers map it to `MarmotError`.
 
 Subqueries continue to use the existing fallback path. Correlated references and inner-scope shadowing are not modeled in v1.
 
@@ -222,7 +245,9 @@ Three layers.
 - `INSERT INTO t (a, b) VALUES (?, ?), (?, ?)` produces `column_list == Some(["a", "b"])` and rows of length 2.
 - `INSERT INTO t (a) VALUES (?), (?, ?)` produces a `MarmotError` identifying row 2.
 - `INSERT INTO t DEFAULT VALUES` produces `DefaultValuesSource`.
-- `INSERT OR IGNORE INTO t (a) VALUES (?)` populates `on_conflict_clause`.
+- `INSERT OR IGNORE INTO t (a) VALUES (?)` produces `conflict_action == ConflictIgnore`.
+- `UPDATE users AS u SET email = ? WHERE u.id = ?` produces `target == TableBinding(_, Some("u"))`; resolver maps `u` to the users table.
+- `DELETE FROM users AS u WHERE u.id = ?` produces `target == TableBinding(_, Some("u"))`.
 - `WITH foo AS (SELECT 1) SELECT * FROM foo` captures the CTE with a raw body and parses the outer SELECT structurally.
 - `SELECT u.id FROM users u JOIN orders o ON o.user_id = u.id` produces two `FromItem` entries with aliases.
 - `CREATE TABLE x (...)` produces `Unsupported`.
