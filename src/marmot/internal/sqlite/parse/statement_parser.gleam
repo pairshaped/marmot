@@ -12,9 +12,12 @@
 //// subquery scoping is left to the existing fallback path, and USING merging
 //// is reported as an ambiguous bare reference in v1.
 
-import gleam/option.{type Option, None}
+import gleam/list
+import gleam/option.{type Option, None, Some}
+import gleam/result
+import gleam/string
 import marmot/internal/error.{type MarmotError}
-import marmot/internal/sqlite/tokenize.{type Token}
+import marmot/internal/sqlite/tokenize.{type Token, Word}
 
 pub type Identifier {
   Identifier(text: String, quoted: Bool)
@@ -109,5 +112,186 @@ pub type Statement {
 /// MarmotError is reserved for parse failures that the agent has positively
 /// identified, e.g. INSERT VALUES row-count mismatch.
 pub fn parse(tokens: List(Token)) -> Result(Statement, MarmotError) {
-  Ok(Unsupported(tokens))
+  case classify(tokens) {
+    SelectKind -> parse_select(tokens) |> result.map(Select)
+    _ -> Ok(Unsupported(tokens))
+  }
+}
+
+type StatementKind {
+  SelectKind
+  InsertKind
+  UpdateKind
+  DeleteKind
+  OtherKind
+}
+
+fn classify(tokens: List(Token)) -> StatementKind {
+  let head = skip_with_for_classification(tokens)
+  case head {
+    [Word(w), ..] ->
+      case string.uppercase(w) {
+        "SELECT" -> SelectKind
+        "INSERT" | "REPLACE" -> InsertKind
+        "UPDATE" -> UpdateKind
+        "DELETE" -> DeleteKind
+        _ -> OtherKind
+      }
+    _ -> OtherKind
+  }
+}
+
+fn skip_with_for_classification(tokens: List(Token)) -> List(Token) {
+  case tokens {
+    [Word(w), ..rest] ->
+      case string.uppercase(w) == "WITH" {
+        True -> skip_cte_definitions(rest)
+        False -> tokens
+      }
+    _ -> tokens
+  }
+}
+
+fn skip_cte_definitions(tokens: List(Token)) -> List(Token) {
+  let tokens = case tokens {
+    [Word(w), ..rest] ->
+      case string.uppercase(w) == "RECURSIVE" {
+        True -> rest
+        False -> tokens
+      }
+    _ -> tokens
+  }
+  do_skip_ctes(tokens)
+}
+
+fn do_skip_ctes(tokens: List(Token)) -> List(Token) {
+  case tokens {
+    [Word(_), ..rest] -> {
+      let after_cols = case rest {
+        [tokenize.OpenParen, ..r] -> {
+          let #(_, after) = tokenize.collect_inside_parens(r)
+          after
+        }
+        _ -> rest
+      }
+      case after_cols {
+        [Word(as_kw), tokenize.OpenParen, ..body_rest] ->
+          case string.uppercase(as_kw) == "AS" {
+            True -> {
+              let #(_, after_body) = tokenize.collect_inside_parens(body_rest)
+              case after_body {
+                [tokenize.Comma, ..rest2] -> do_skip_ctes(rest2)
+                other -> other
+              }
+            }
+            False -> tokens
+          }
+        _ -> tokens
+      }
+    }
+    _ -> tokens
+  }
+}
+
+fn parse_select(tokens: List(Token)) -> Result(SelectStmt, MarmotError) {
+  let body_tokens = skip_with_for_classification(tokens)
+  let body = parse_select_body(body_tokens)
+  Ok(SelectStmt(ctes: [], body: body))
+}
+
+fn parse_select_body(tokens: List(Token)) -> SelectBody {
+  let #(is_distinct, after_select) = case tokens {
+    [Word(s), Word(d), ..rest] ->
+      case string.uppercase(s) == "SELECT" && string.uppercase(d) == "DISTINCT" {
+        True -> #(True, rest)
+        False ->
+          case string.uppercase(s) == "SELECT" {
+            True -> #(False, [Word(d), ..rest])
+            False -> #(False, tokens)
+          }
+      }
+    [Word(s), ..rest] ->
+      case string.uppercase(s) == "SELECT" {
+        True -> #(False, rest)
+        False -> #(False, tokens)
+      }
+    _ -> #(False, tokens)
+  }
+
+  let #(select_list, rest) =
+    take_until_top_level_keyword(after_select, [
+      "FROM", "WHERE", "GROUP", "HAVING", "ORDER", "LIMIT",
+    ])
+  let #(_from_tokens, rest) =
+    take_clause(rest, "FROM", ["WHERE", "GROUP", "HAVING", "ORDER", "LIMIT"])
+  let #(where, rest) =
+    take_clause(rest, "WHERE", ["GROUP", "HAVING", "ORDER", "LIMIT"])
+  let #(group_by, rest) =
+    take_clause(rest, "GROUP", ["HAVING", "ORDER", "LIMIT"])
+  let #(having, rest) = take_clause(rest, "HAVING", ["ORDER", "LIMIT"])
+  let #(order_by, rest) = take_clause(rest, "ORDER", ["LIMIT"])
+  let #(limit, _rest) = take_clause(rest, "LIMIT", [])
+
+  // FROM items parsed structurally in Task 5.
+  let from = []
+
+  SelectBody(
+    is_distinct: is_distinct,
+    select_list: select_list,
+    from: from,
+    where: where,
+    group_by: group_by,
+    having: having,
+    order_by: order_by,
+    limit: limit,
+  )
+}
+
+fn take_until_top_level_keyword(
+  tokens: List(Token),
+  keywords: List(String),
+) -> #(List(Token), List(Token)) {
+  let uppers = list.map(keywords, string.uppercase)
+  do_take_until(tokens, uppers, [], 0)
+}
+
+fn do_take_until(
+  tokens: List(Token),
+  uppers: List(String),
+  acc: List(Token),
+  depth: Int,
+) -> #(List(Token), List(Token)) {
+  case tokens {
+    [] -> #(list.reverse(acc), [])
+    [tokenize.OpenParen, ..rest] ->
+      do_take_until(rest, uppers, [tokenize.OpenParen, ..acc], depth + 1)
+    [tokenize.CloseParen, ..rest] ->
+      do_take_until(rest, uppers, [tokenize.CloseParen, ..acc], depth - 1)
+    [Word(w), ..rest] if depth == 0 ->
+      case list.contains(uppers, string.uppercase(w)) {
+        True -> #(list.reverse(acc), tokens)
+        False -> do_take_until(rest, uppers, [Word(w), ..acc], depth)
+      }
+    [t, ..rest] -> do_take_until(rest, uppers, [t, ..acc], depth)
+  }
+}
+
+fn take_clause(
+  tokens: List(Token),
+  keyword: String,
+  next_boundaries: List(String),
+) -> #(Option(List(Token)), List(Token)) {
+  let upper = string.uppercase(keyword)
+  case tokens {
+    [Word(w), ..rest] ->
+      case string.uppercase(w) == upper {
+        True -> {
+          let #(body, after) =
+            take_until_top_level_keyword(rest, next_boundaries)
+          #(Some(body), after)
+        }
+        False -> #(None, tokens)
+      }
+    _ -> #(None, tokens)
+  }
 }
