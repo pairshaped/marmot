@@ -941,8 +941,9 @@ pub fn schema_loader_marks_rowid_alias_test() {
   let assert Ok(composite_a) =
     list.find(composite_cols, fn(m) { m.column.name == "a" })
   let assert False = composite_a.is_rowid_alias
-  // PK column in a composite PK is also non-null per SQLite.
-  let assert False = composite_a.column.nullable
+  // Composite PK columns are NULLABLE on ordinary rowid tables per SQLite
+  // (legacy quirk; only WITHOUT ROWID and explicit NOT NULL enforce non-null).
+  let assert True = composite_a.column.nullable
 }
 
 pub fn schema_loader_marks_generated_columns_test() {

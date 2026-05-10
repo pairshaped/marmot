@@ -264,15 +264,13 @@ pub fn get_table_metadata_v2(db: Connection) -> TableMetadataV2 {
                 && pk_count == 1
                 && string.uppercase(type_str) == "INTEGER"
                 && !is_without_rowid
-              // PK columns are non-null in two additional cases beyond rowid
-              // aliases:
-              //   - Composite PKs: PRAGMA reports notnull=0 for composite PK
-              //     columns even though SQLite enforces NOT NULL via the PK
-              //     constraint.
-              //   - WITHOUT ROWID PKs: handled correctly by PRAGMA (notnull=1),
-              //     so no override needed, but included for clarity.
-              let pk_implies_non_null =
-                is_rowid_alias || { pk > 0 && pk_count > 1 }
+              // Rowid alias columns are always non-null at read time even though
+              // PRAGMA reports notnull=0 (they auto-assign on INSERT). WITHOUT
+              // ROWID PK columns and explicitly NOT NULL columns are handled
+              // correctly by PRAGMA (notnull=1), so no override is needed for
+              // those. Composite PK columns on ordinary rowid tables are NOT
+              // forced non-null: SQLite allows NULLs there as a legacy quirk.
+              let pk_implies_non_null = is_rowid_alias
               let nullable = !pk_implies_non_null && notnull == 0
               ColumnMetadata(
                 column: Column(
