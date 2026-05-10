@@ -2187,25 +2187,23 @@ pub fn resolve_bare_ambiguous_test() {
   let assert AmbiguousColumn = resolve_bare(map, "id", schemas())
 }
 
-pub fn resolve_bare_unknown_test() {
-  let assert Ok(map) = build_alias_map([binding("users", Some("u"))])
-  let assert AmbiguousColumn = resolve_bare(map, "missing", schemas())
-  // missing in zero tables maps to AmbiguousColumn? No - zero matches
-  // should be UnknownColumnInKnownTable when there's at least one known table.
-  // Adjust this test once the implementation is in place.
-}
-```
-
-The last test demonstrates an interesting edge: zero matches across all known tables. Per the design, that's an error, but `UnknownColumnInKnownTable` is technically misleading because there's no specific table to blame. Use `AmbiguousColumn` for "more than one match" only, and add a sixth outcome for the bare-zero case if needed during implementation. Update the resolver to add `UnknownBareColumn` and update the test:
-
-```gleam
-pub fn resolve_bare_unknown_test() {
+pub fn resolve_bare_unknown_when_all_tables_known_test() {
+  // All in-scope tables have schemas; no match means UnknownBareColumn.
   let assert Ok(map) = build_alias_map([binding("users", Some("u"))])
   let assert UnknownBareColumn = resolve_bare(map, "missing", schemas())
 }
+
+pub fn resolve_bare_falls_back_when_unknown_table_in_scope_test() {
+  // The CTE/view fallback path: a CTE-named table has no schema entry, so
+  // bare references that don't match known columns return UnknownTableRef
+  // (silent fallback) rather than UnknownBareColumn (hard error).
+  let assert Ok(map) =
+    build_alias_map([binding("users", Some("u")), binding("foo_cte", None)])
+  let assert UnknownTableRef = resolve_bare(map, "x", schemas())
+}
 ```
 
-Also add the import for `UnknownBareColumn` to the imports.
+Both new tests use `UnknownBareColumn`; add it to the imports along with `UnknownTableRef`.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -2255,22 +2253,29 @@ pub fn resolve_bare(
   col_name: String,
   schemas: Dict(String, List(Column)),
 ) -> Resolution {
-  let matches =
-    dict.values(map)
-    |> list.filter_map(fn(table_ref) {
+  // Collect matches AND track whether any in-scope table has no schema entry.
+  // The latter is a "could plausibly own this column" signal that gates the
+  // CTE/view fallback path (UnknownTableRef) vs. a hard error (UnknownBareColumn).
+  let #(matches, has_unknown_table) =
+    list.fold(dict.values(map), #([], False), fn(acc, table_ref) {
+      let #(matches, has_unknown) = acc
       case dict.get(schemas, table_ref.name.text) {
-        Error(_) -> Error(Nil)
+        Error(_) -> #(matches, True)
         Ok(cols) ->
           case list.find(cols, fn(c) { c.name == col_name }) {
-            Ok(col) -> Ok(ResolvedColumn(table: table_ref, column: col))
-            Error(_) -> Error(Nil)
+            Ok(col) -> #(
+              [ResolvedColumn(table: table_ref, column: col), ..matches],
+              has_unknown,
+            )
+            Error(_) -> #(matches, has_unknown)
           }
       }
     })
-  case matches {
-    [] -> UnknownBareColumn
-    [single] -> Resolved(single)
-    _ -> AmbiguousColumn
+  case matches, has_unknown_table {
+    [single], _ -> Resolved(single)
+    [], True -> UnknownTableRef
+    [], False -> UnknownBareColumn
+    _, _ -> AmbiguousColumn
   }
 }
 ```
@@ -2473,118 +2478,166 @@ statement entry points keep their signatures and delegate."
 
 **Files:**
 - Modify: `src/marmot/internal/sqlite/parameters.gleam`
-- Test: existing tests in `test/marmot/internal/sqlite_test.gleam` must continue to pass; allow snapshot diffs only where the new resolver corrects a known bug.
+- Modify: `src/marmot/internal/error.gleam` (add four resolver-mapping error variants)
+- Test: `test/marmot/internal/sqlite_test.gleam` (integration via `sqlite.introspect_query`)
 
-**Context:** The current `extract_parameters` accepts a token list and dispatches based on `statement.classify_statement`. Migrate it to accept a typed `Statement` (or take tokens and parse internally) and use the body-level helpers + alias-aware resolver. Internal shape changes; the public function signature stays compatible by parsing internally so callers (`sqlite.gleam`) don't need to migrate yet.
+**Context:** The current `extract_parameters` dispatches on `statement.classify_statement` and uses search-all-tables resolution (`parameters.gleam:384`). Migrate the SELECT and DELETE branches to use the typed `Statement` plus the alias-aware resolver. Per the spec, only `UnknownTableRef` falls back to `StringType`; the other four "unknown / ambiguous" outcomes become `MarmotError`. Mapping every outcome to `StringType` would preserve the silent-miscoercion bug class.
+
+The signature change required: `extract_parameters` must propagate `Result(List(Parameter), MarmotError)` upward, and the SQL file path must be threaded in for the new error variants. The caller in `sqlite.gleam` already has the path; pass it through.
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `test/marmot/internal/sqlite_test.gleam` (or a new test file `test/marmot/internal/sqlite/parameters_alias_test.gleam`):
+Add to `test/marmot/internal/sqlite_test.gleam`. The test uses overlapping column names with **different types** so the search-all-tables bug surfaces concretely, and routes through `sqlite.introspect_query` because `extract_parameters` returns nothing when opcodes are empty (it's gated on `Variable` opcodes).
 
 ```gleam
-import gleam/dict
-import marmot/internal/query.{Column, IntType, StringType}
-import marmot/internal/sqlite/parameters.{extract_parameters}
-import marmot/internal/sqlite/tokenize
+pub fn introspect_disambiguates_via_alias_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL);
+       CREATE TABLE orders (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL);",
+      conn,
+    )
+  // Both tables have an `id` column. users.id is INTEGER; orders.id is TEXT.
+  // Search-all-tables resolution returns whichever it finds first, often
+  // wrong. Alias-aware resolution must pick orders.id for `o.id`.
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "by_order",
+      "SELECT u.email FROM users u JOIN orders o ON o.user_id = u.id WHERE o.id = @order_id",
+      "/tmp/by_order.sql",
+    )
+  let assert [Parameter(name: "order_id", column_type: StringType, ..)] =
+    query.parameters
+}
 
-pub fn extract_parameters_disambiguates_via_alias_test() {
-  // Two tables share column `id`; without alias-aware resolution the parameter
-  // type would be miscoerced. With it, qualified `o.total` resolves correctly.
-  let table_schemas =
-    dict.new()
-    |> dict.insert("users", [
-      Column("id", IntType, False),
-      Column("email", StringType, False),
-    ])
-    |> dict.insert("orders", [
-      Column("id", IntType, False),
-      Column("total", IntType, False),
-    ])
-  let tokens =
-    tokenize.tokenize(
-      "SELECT u.email FROM users u JOIN orders o ON o.user_id = u.id WHERE o.total > @min_total",
+pub fn introspect_ambiguous_bare_column_errors_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT);
+       CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER);",
+      conn,
     )
-  let params =
-    extract_parameters(
-      [],
-      dict.new(),
-      table_schemas,
-      dict.new(),
-      tokens,
+  // Bare `id` is ambiguous across users and orders. Must surface as
+  // AmbiguousColumnReference, not silently pick one.
+  let assert Error(error.AmbiguousColumnReference(_, "id", _)) =
+    sqlite.introspect_query(
+      conn,
+      "ambiguous",
+      "SELECT email FROM users JOIN orders ON users.id = orders.user_id WHERE id = ?",
+      "/tmp/ambiguous.sql",
     )
-  let assert [Parameter(name: "min_total", column_type: IntType, ..)] = params
+}
+
+pub fn introspect_cte_bare_column_falls_back_test() {
+  // Bare reference where one in-scope table is a CTE (no schema). Must
+  // return UnknownTableRef -> StringType, not AmbiguousColumnReference or
+  // UnknownColumnReference.
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec("CREATE TABLE users (id INTEGER PRIMARY KEY);", conn)
+  let assert Ok(_query) =
+    sqlite.introspect_query(
+      conn,
+      "cte_fallback",
+      "WITH foo AS (SELECT id FROM users) SELECT * FROM foo WHERE x = ?",
+      "/tmp/cte_fallback.sql",
+    )
+  // Asserts no error; specific parameter type may be StringType (fallback).
 }
 ```
-
-(Substitute `Parameter` import as needed.)
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `gleam test`
-Expected: FAIL - the existing search-all-tables resolver may return `min_total` typed as `StringType` because two tables have an `id` column and the resolver picks the wrong one.
-
-If it incidentally passes today, snapshot the current behavior and proceed; the migration's value is robustness, not necessarily a single failing test.
+Expected: compile error - the new `MarmotError` variants don't exist yet. The test references them; that's intentional. After step 3 they exist and the runtime expectations take over.
 
 - [ ] **Step 3: Write minimal implementation**
 
-Modify `src/marmot/internal/sqlite/parameters.gleam` so that the `extract_select_parameters` and `extract_update_parameters` paths build a `Statement` via `statement_parser.parse`, then build an alias map via `resolver.build_alias_map`, and resolve each binder using `resolver.resolve_qualified` / `resolver.resolve_bare`.
-
-Sketch (full version goes in the implementation):
+First, add the four error variants to `src/marmot/internal/error.gleam`:
 
 ```gleam
+pub type MarmotError {
+  // ... existing variants ...
+  /// Bare column reference matches multiple in-scope tables.
+  AmbiguousColumnReference(path: String, column: String, candidates: List(String))
+  /// Qualified column reference (`alias.col`) where the alias is not in scope.
+  UnknownColumnAlias(path: String, alias: String)
+  /// Qualified reference where the table is in scope but lacks the column.
+  UnknownColumnInTable(path: String, table: String, column: String)
+  /// Bare column reference matches no known column in any in-scope table.
+  UnknownColumnReference(path: String, column: String)
+}
+```
+
+Extend `to_string` with branches for each (concise hint pointing the user at qualification or schema correction).
+
+Then modify `src/marmot/internal/sqlite/parameters.gleam`. The `extract_parameters` function gains a `path: String` parameter and returns `Result(List(Parameter), MarmotError)`:
+
+```gleam
+import marmot/internal/error
 import marmot/internal/sqlite/parse/statement_parser
 import marmot/internal/sqlite/parse/resolver
 
-fn extract_select_parameters_v2(
+pub fn extract_parameters(
+  opcodes: List(Opcode),
+  cursor_table: Dict(Int, String),
   table_schemas: Dict(String, List(Column)),
+  pk_columns: Dict(String, String),
   tokens: List(tokenize.Token),
+  path: String,
 ) -> Result(List(Parameter), MarmotError) {
-  use stmt <- result.try(statement_parser.parse(tokens))
+  // Existing opcode preprocessing unchanged...
+  let stmt = case statement_parser.parse(tokens) {
+    Ok(s) -> s
+    Error(_) -> statement_parser.Unsupported(tokens)
+  }
   case stmt {
-    statement_parser.Select(select_stmt) -> {
-      let bindings =
-        select_stmt.body.from |> list.map(fn(item) { item.binding })
-      use alias_map <- result.try(case resolver.build_alias_map(bindings) {
-        Ok(m) -> Ok(m)
-        Error(resolver.AliasCollision(name)) ->
-          Error(error.SqlError(
-            path: "",
-            message: "alias collision: " <> name,
-          ))
-      })
-      let where_tokens = case select_stmt.body.where {
-        Some(t) -> t
-        None -> []
-      }
-      let binders = binder.find_param_binders(where_tokens)
-      let params =
-        list.map(binders, fn(b) {
-          resolve_binder_to_parameter(b, alias_map, table_schemas)
-        })
-      Ok(params)
-    }
-    statement_parser.Delete(delete_stmt) -> {
-      let bindings = [delete_stmt.target]
-      use alias_map <- result.try(case resolver.build_alias_map(bindings) {
-        Ok(m) -> Ok(m)
-        Error(resolver.AliasCollision(name)) ->
-          Error(error.SqlError(
-            path: "",
-            message: "alias collision: " <> name,
-          ))
-      })
-      let where_tokens = case delete_stmt.where {
-        Some(t) -> t
-        None -> []
-      }
-      let binders = binder.find_param_binders(where_tokens)
-      let params =
-        list.map(binders, fn(b) {
-          resolve_binder_to_parameter(b, alias_map, table_schemas)
-        })
-      Ok(params)
-    }
-    _ -> Ok([])
+    statement_parser.Select(s) ->
+      extract_select_params_v2(s, table_schemas, path, /* opcode_fallback */)
+    statement_parser.Delete(s) ->
+      extract_delete_params_v2(s, table_schemas, path)
+    statement_parser.Update(s) ->
+      extract_update_params_v2(s, table_schemas, path)
+    statement_parser.Insert(_) ->
+      // INSERT migrated in Task 17.
+      Ok(extract_insert_parameters_legacy(table_schemas, tokens))
+    statement_parser.Unsupported(_) ->
+      Ok(opcode_fallback_legacy(opcodes, cursor_table, table_schemas, pk_columns))
+  }
+}
+
+fn extract_select_params_v2(
+  stmt: statement_parser.SelectStmt,
+  schemas: Dict(String, List(Column)),
+  path: String,
+) -> Result(List(Parameter), MarmotError) {
+  let bindings = list.map(stmt.body.from, fn(item) { item.binding })
+  use alias_map <- result.try(map_alias_error(
+    resolver.build_alias_map(bindings),
+    path,
+  ))
+  let where_tokens = option.unwrap(stmt.body.where, [])
+  let binders = binder.find_param_binders(where_tokens)
+  binders
+  |> list.try_map(fn(b) {
+    resolve_binder_to_parameter(b, alias_map, schemas, path)
+  })
+}
+
+fn map_alias_error(
+  result: Result(Dict(String, statement_parser.TableRef), resolver.AliasMapError),
+  path: String,
+) -> Result(Dict(String, statement_parser.TableRef), MarmotError) {
+  case result {
+    Ok(m) -> Ok(m)
+    Error(resolver.AliasCollision(name)) ->
+      Error(error.SqlError(
+        path: path,
+        message: "alias collision: " <> name <> " refers to two tables in the same scope",
+      ))
   }
 }
 
@@ -2592,7 +2645,8 @@ fn resolve_binder_to_parameter(
   b: binder.ParamBinder,
   alias_map: Dict(String, statement_parser.TableRef),
   schemas: Dict(String, List(Column)),
-) -> Parameter {
+  path: String,
+) -> Result(Parameter, MarmotError) {
   let resolution = case b.binder_column {
     Some(col_ref) ->
       case string.split_once(col_ref, ".") {
@@ -2604,34 +2658,65 @@ fn resolve_binder_to_parameter(
   }
   case resolution {
     resolver.Resolved(rc) ->
-      Parameter(
+      Ok(Parameter(
         name: b.name,
         column_type: rc.column.column_type,
         nullable: rc.column.nullable,
-      )
-    _ -> Parameter(name: b.name, column_type: StringType, nullable: False)
+      ))
+    // Only the CTE/view fallback case maps to StringType. The four error
+    // outcomes become typed MarmotError so silent miscoercion stays gone.
+    resolver.UnknownTableRef ->
+      Ok(Parameter(name: b.name, column_type: StringType, nullable: False))
+    resolver.AmbiguousColumn ->
+      Error(error.AmbiguousColumnReference(
+        path: path,
+        column: lookup_column_name(b),
+        candidates: dict.keys(alias_map),
+      ))
+    resolver.UnknownQualifiedAlias ->
+      Error(error.UnknownColumnAlias(
+        path: path,
+        alias: extract_alias_from_binder(b),
+      ))
+    resolver.UnknownColumnInKnownTable ->
+      Error(error.UnknownColumnInTable(
+        path: path,
+        table: extract_alias_from_binder(b),
+        column: extract_col_from_binder(b),
+      ))
+    resolver.UnknownBareColumn ->
+      Error(error.UnknownColumnReference(
+        path: path,
+        column: lookup_column_name(b),
+      ))
   }
 }
+
+// Helpers extract the column / alias text from the binder for error messages.
+// Implement based on the existing `binder.ParamBinder` shape.
 ```
 
-Wire `extract_parameters` to call `extract_select_parameters_v2` for SELECT/DELETE branches, falling back to the existing opcode-only path on `Error`. Insert/Update keep their existing extraction paths; Task 17 migrates INSERT, and Task 14b (below) migrates UPDATE if needed.
+`extract_delete_params_v2` and `extract_update_params_v2` mirror the SELECT version. UPDATE assembles `[stmt.target, ..from items]` for the alias map; DELETE uses `[stmt.target]` only.
 
-Keep the public signature of `extract_parameters` the same for backwards compatibility - the consumer in `sqlite.gleam` still passes tokens.
+The caller in `sqlite.gleam` (line where `extract_parameters` is currently called) gains the `path` argument and propagates `Result` upward. That signature ripples one level up to wherever the SQL file is being introspected.
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `gleam test`
-Expected: PASS for the new disambiguation test; existing tests pass. Snapshot diffs that show better types are categorized in Task 18.
+Expected: PASS for all three new tests. Existing tests pass; snapshot diffs categorized in Task 21.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/marmot/internal/sqlite/parameters.gleam test/
+git add src/marmot/internal/sqlite/parameters.gleam src/marmot/internal/sqlite.gleam src/marmot/internal/error.gleam test/marmot/internal/sqlite_test.gleam
 git commit -m "Migrate parameters.gleam to typed Statement and alias resolver
 
-SELECT and DELETE parameter extraction routes through statement_parser
-and resolver. Two tables sharing a column name no longer cross-
-contaminate parameter types when the user qualifies the reference."
+SELECT/DELETE/UPDATE parameter extraction route through statement_
+parser and resolver. Only UnknownTableRef falls back to StringType
+(preserving CTE/view behavior). Ambiguous, unknown-alias, unknown-
+column-in-table, and unknown-bare-column become typed MarmotError
+variants. extract_parameters now returns Result and threads the SQL
+file path for error attribution."
 ```
 
 ---
