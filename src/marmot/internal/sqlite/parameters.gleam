@@ -646,41 +646,6 @@ fn validate_row_counts(
   }
 }
 
-/// For INSERT statements, parameters correspond to columns in the INSERT column list
-fn extract_insert_parameters(
-  table_schemas: Dict(String, List(Column)),
-  tokens: List(tokenize.Token),
-) -> List(Parameter) {
-  let columns = parse_params.parse_insert_columns(tokens)
-  let table = statement.parse_insert_table_name(tokens)
-  let values_positions = parse_params.parse_values_placeholder_positions(tokens)
-  let bound_columns = case values_positions {
-    [] -> columns
-    _ ->
-      list.index_map(columns, fn(col_name, idx) { #(col_name, idx) })
-      |> list.filter_map(fn(pair) {
-        let #(col_name, idx) = pair
-        case list.contains(values_positions, idx) {
-          True -> Ok(col_name)
-          False -> Error(Nil)
-        }
-      })
-  }
-
-  list.map(bound_columns, fn(col_name) {
-    case query.find_column(table_schemas, table, col_name) {
-      Ok(col) ->
-        Parameter(
-          name: col_name,
-          column_type: col.column_type,
-          nullable: col.nullable,
-        )
-      Error(_) ->
-        Parameter(name: col_name, column_type: StringType, nullable: False)
-    }
-  })
-}
-
 /// For INSERT ... SELECT, match parameters positionally
 fn extract_insert_select_parameters(
   table_schemas: Dict(String, List(Column)),
