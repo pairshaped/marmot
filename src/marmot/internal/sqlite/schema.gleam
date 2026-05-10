@@ -5,6 +5,7 @@ import gleam/dynamic/decode
 import gleam/io
 import gleam/list
 import gleam/set
+import gleam/string
 import marmot/internal/query.{type Column, Column, StringType}
 import marmot/internal/sqlite/parse
 import sqlight.{type Connection}
@@ -261,7 +262,7 @@ pub fn get_table_metadata_v2(db: Connection) -> TableMetadataV2 {
               let is_rowid_alias =
                 pk > 0
                 && pk_count == 1
-                && column_type == query.IntType
+                && string.uppercase(type_str) == "INTEGER"
                 && !is_without_rowid
               // PK columns are non-null in two additional cases beyond rowid
               // aliases:

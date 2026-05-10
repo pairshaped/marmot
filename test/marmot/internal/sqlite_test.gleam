@@ -961,3 +961,23 @@ pub fn schema_loader_marks_generated_columns_test() {
   let assert Ok(b_meta) = list.find(cols, fn(m) { m.column.name == "b" })
   let assert False = b_meta.is_generated
 }
+
+pub fn schema_loader_int_pk_is_not_rowid_alias_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE int_t (id INT PRIMARY KEY, name TEXT);
+       CREATE TABLE bigint_t (id BIGINT PRIMARY KEY, name TEXT);",
+      conn,
+    )
+  let metadata = schema.get_table_metadata_v2(conn)
+
+  let assert Ok(int_cols) = dict.get(metadata.columns, "int_t")
+  let assert Ok(int_id) = list.find(int_cols, fn(m) { m.column.name == "id" })
+  let assert False = int_id.is_rowid_alias
+
+  let assert Ok(bigint_cols) = dict.get(metadata.columns, "bigint_t")
+  let assert Ok(bigint_id) =
+    list.find(bigint_cols, fn(m) { m.column.name == "id" })
+  let assert False = bigint_id.is_rowid_alias
+}
