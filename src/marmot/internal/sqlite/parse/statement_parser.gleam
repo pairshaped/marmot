@@ -194,9 +194,82 @@ fn do_skip_ctes(tokens: List(Token)) -> List(Token) {
 }
 
 fn parse_select(tokens: List(Token)) -> Result(SelectStmt, MarmotError) {
-  let body_tokens = skip_with_for_classification(tokens)
-  let body = parse_select_body(body_tokens)
-  Ok(SelectStmt(ctes: [], body: body))
+  let #(ctes, body_tokens) = parse_ctes(tokens)
+  Ok(SelectStmt(ctes: ctes, body: parse_select_body(body_tokens)))
+}
+
+fn parse_ctes(tokens: List(Token)) -> #(List(CteDef), List(Token)) {
+  case tokens {
+    [Word(w), ..rest] ->
+      case string.uppercase(w) == "WITH" {
+        True -> {
+          let after_with = case rest {
+            [Word(r), ..r2] ->
+              case string.uppercase(r) == "RECURSIVE" {
+                True -> r2
+                False -> rest
+              }
+            _ -> rest
+          }
+          collect_ctes(after_with, [])
+        }
+        False -> #([], tokens)
+      }
+    _ -> #([], tokens)
+  }
+}
+
+fn collect_ctes(
+  tokens: List(Token),
+  acc: List(CteDef),
+) -> #(List(CteDef), List(Token)) {
+  case parse_one_cte(tokens) {
+    Ok(#(cte, rest)) ->
+      case rest {
+        [tokenize.Comma, ..r2] -> collect_ctes(r2, [cte, ..acc])
+        other -> #(list.reverse([cte, ..acc]), other)
+      }
+    Error(_) -> #(list.reverse(acc), tokens)
+  }
+}
+
+fn parse_one_cte(tokens: List(Token)) -> Result(#(CteDef, List(Token)), Nil) {
+  case tokens {
+    [Word(name), ..rest] -> {
+      let #(columns, after_cols) = case rest {
+        [tokenize.OpenParen, ..r] -> {
+          let #(inner, after) = tokenize.collect_inside_parens(r)
+          let cols =
+            tokenize.split_on_commas(inner)
+            |> list.filter_map(fn(group) {
+              case group {
+                [Word(c)] -> Ok(c)
+                [tokenize.QuotedId(c)] -> Ok(c)
+                _ -> Error(Nil)
+              }
+            })
+          #(cols, after)
+        }
+        _ -> #([], rest)
+      }
+      case after_cols {
+        [Word(as_kw), tokenize.OpenParen, ..body_rest] ->
+          case string.uppercase(as_kw) == "AS" {
+            True -> {
+              let #(body, after_body) =
+                tokenize.collect_inside_parens(body_rest)
+              Ok(#(
+                CteDef(name: name, columns: columns, body: body),
+                after_body,
+              ))
+            }
+            False -> Error(Nil)
+          }
+        _ -> Error(Nil)
+      }
+    }
+    _ -> Error(Nil)
+  }
 }
 
 fn parse_select_body(tokens: List(Token)) -> SelectBody {

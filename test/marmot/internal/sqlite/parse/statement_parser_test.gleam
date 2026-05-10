@@ -1,7 +1,8 @@
+import gleam/list
 import gleam/option.{None, Some}
 import marmot/internal/sqlite/parse/statement_parser.{
-  FromItem, Identifier, Select, SelectBody, SelectStmt, TableBinding, TableRef,
-  Unsupported, parse,
+  CteDef, FromItem, Identifier, Select, SelectBody, SelectStmt, TableBinding,
+  TableRef, Unsupported, parse,
 }
 import marmot/internal/sqlite/tokenize.{Word}
 
@@ -178,4 +179,44 @@ pub fn parse_from_self_join_test() {
     FromItem(binding: TableBinding(_, alias: Some("u")), ..),
     FromItem(binding: TableBinding(_, alias: Some("manager")), ..),
   ] = body.from
+}
+
+pub fn parse_with_simple_cte_test() {
+  let assert Ok(Select(SelectStmt(ctes, body))) =
+    parse_sql("WITH foo AS (SELECT 1) SELECT * FROM foo")
+  let assert [CteDef(name: "foo", columns: [], body: body_tokens)] = ctes
+  let assert True = list.length(body_tokens) > 0
+  let assert [
+    FromItem(
+      binding: TableBinding(
+        table: TableRef(_, name: Identifier("foo", False)),
+        ..,
+      ),
+      ..,
+    ),
+  ] = body.from
+}
+
+pub fn parse_with_cte_columns_test() {
+  let assert Ok(Select(SelectStmt(ctes, _))) =
+    parse_sql("WITH foo (a, b) AS (SELECT 1, 2) SELECT * FROM foo")
+  let assert [CteDef(name: "foo", columns: ["a", "b"], body: _)] = ctes
+}
+
+pub fn parse_with_recursive_cte_test() {
+  let assert Ok(Select(SelectStmt(ctes, _))) =
+    parse_sql(
+      "WITH RECURSIVE counter(n) AS (
+         SELECT 1 UNION ALL SELECT n+1 FROM counter WHERE n < 10
+       ) SELECT * FROM counter",
+    )
+  let assert [CteDef(name: "counter", columns: ["n"], body: _)] = ctes
+}
+
+pub fn parse_with_multiple_ctes_test() {
+  let assert Ok(Select(SelectStmt(ctes, _))) =
+    parse_sql(
+      "WITH a AS (SELECT 1), b AS (SELECT 2) SELECT * FROM a, b",
+    )
+  let assert [CteDef(name: "a", ..), CteDef(name: "b", ..)] = ctes
 }
