@@ -1,7 +1,7 @@
 ---
-version: 1.5.5
+version: 2.0.0
 title: keyword in subquery not matched
-file: ./test/marmot/internal/sqlite_test.gleam
+file: ./test/marmot/internal/sqlite/expressions_test.gleam
 test_name: introspect_keyword_in_subquery_not_matched_test
 ---
 QueryInfo([Column("id", IntType, False), Column("name", StringType, False)], [Parameter("total", FloatType, False)])

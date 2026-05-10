@@ -1,4 +1,5 @@
 import gleam/bool
+import gleam/int
 import gleam/list
 import gleam/string
 import marmot/internal/query.{type Column}
@@ -43,6 +44,14 @@ pub type MarmotError {
   /// Bare column reference does not match any column in any in-scope known
   /// table (and no in-scope table is unknown / a CTE / a view).
   UnknownColumnReference(path: String, column: String)
+  /// INSERT VALUES row has a different number of expressions than the number
+  /// of bindable columns (from the explicit column list or the table schema).
+  InsertValuesCountMismatch(
+    path: String,
+    expected: Int,
+    got: Int,
+    row: Int,
+  )
 }
 
 pub fn to_string(error: MarmotError) -> String {
@@ -193,6 +202,22 @@ pub fn to_string(error: MarmotError) -> String {
   \u{2502} `" <> column <> "` does not match any column in this query's tables
   \u{2502}
   hint: Check the column spelling, or qualify it with a table alias."
+
+    InsertValuesCountMismatch(path:, expected:, got:, row:) ->
+      "error: INSERT VALUES column count mismatch
+  \u{250c}\u{2500} "
+      <> path
+      <> "
+  \u{2502}
+  \u{2502} Row "
+      <> int.to_string(row)
+      <> " has "
+      <> int.to_string(got)
+      <> " expression(s) but "
+      <> int.to_string(expected)
+      <> " column(s) expected
+  \u{2502}
+  hint: Each VALUES row must have exactly one expression per bindable column."
   }
 }
 

@@ -1,6 +1,8 @@
 ---
 version: 2.0.0
 title: codegen select no params
+file: ./test/marmot/internal/codegen_test.gleam
+test_name: codegen_select_no_params_test
 ---
 /// Generated from src/app/sql/list_users.sql
 pub type ListUsersRow {

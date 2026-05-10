@@ -1,6 +1,8 @@
 ---
 version: 2.0.0
 title: codegen module without query_function
+file: ./test/marmot/internal/codegen_test.gleam
+test_name: codegen_module_without_query_function_test
 ---
 import gleam/dynamic/decode
 import sqlight

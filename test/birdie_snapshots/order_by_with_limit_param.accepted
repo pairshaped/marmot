@@ -1,7 +1,7 @@
 ---
-version: 1.5.5
+version: 2.0.0
 title: order by with limit param
-file: ./test/marmot/internal/sqlite_test.gleam
+file: ./test/marmot/internal/sqlite/variants_test.gleam
 test_name: introspect_order_by_param_test
 ---
 QueryInfo([Column("id", IntType, False), Column("name", StringType, False)], [Parameter("name", StringType, False), Parameter("param", IntType, False)])

@@ -1,6 +1,8 @@
 ---
 version: 2.0.0
 title: codegen escaped single quotes in sql
+file: ./test/marmot/internal/codegen_test.gleam
+test_name: codegen_escaped_single_quotes_in_sql_test
 ---
 /// Generated from src/app/sql/update_title.sql
 pub fn update_title(db db: sqlight.Connection, id id: Int) -> Result(List(Nil), sqlight.Error) {

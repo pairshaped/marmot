@@ -1,6 +1,8 @@
 ---
 version: 2.0.0
 title: codegen reserved word column
+file: ./test/marmot/internal/codegen_test.gleam
+test_name: codegen_reserved_word_column_test
 ---
 /// Generated from src/app/sql/find_by_type.sql
 pub type FindByTypeRow {

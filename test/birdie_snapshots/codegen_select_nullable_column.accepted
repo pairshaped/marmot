@@ -1,6 +1,8 @@
 ---
 version: 2.0.0
 title: codegen select nullable column
+file: ./test/marmot/internal/codegen_test.gleam
+test_name: codegen_select_nullable_test
 ---
 /// Generated from src/app/sql/find_user_bio.sql
 pub type FindUserBioRow {

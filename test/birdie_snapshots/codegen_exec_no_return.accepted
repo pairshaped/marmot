@@ -1,6 +1,8 @@
 ---
 version: 2.0.0
 title: codegen exec no return
+file: ./test/marmot/internal/codegen_test.gleam
+test_name: codegen_exec_no_return_test
 ---
 /// Generated from src/app/sql/delete_user.sql
 pub fn delete_user(db db: sqlight.Connection, id id: Int) -> Result(List(Nil), sqlight.Error) {

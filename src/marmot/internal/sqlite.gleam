@@ -102,6 +102,15 @@ pub fn introspect_query(
   let pk_columns = v2.pks
   let rootpage_table = v2.rootpages
 
+  // Pre-flight: validate INSERT VALUES row counts against the schema before
+  // handing to EXPLAIN. SQLite rejects count-mismatched INSERT VALUES with a
+  // SqlError before EXPLAIN can run, so we must catch this case ourselves and
+  // return our typed error instead.
+  let preflight_tokens = tokenize.tokenize(normalized_sql)
+  use _ <- result.try(
+    validate_insert_values_counts(preflight_tokens, v2, path),
+  )
+
   // Get EXPLAIN output (strip Marmot-specific `!`/`?` suffixes from aliases
   // before handing to SQLite)
   let sanitized_sql = parse.strip_nullability_suffixes(normalized_sql)
@@ -202,7 +211,7 @@ pub fn introspect_query(
     parameters.extract_parameters(
       opcodes,
       cursor_table,
-      table_schemas,
+      v2,
       pk_columns,
       param_tokens,
     )
@@ -241,6 +250,72 @@ fn resolution_error_to_marmot_error(
         column: name,
         candidates: [name],
       )
+    parameters.InsertValuesCountMismatch(expected:, got:, row:) ->
+      error.InsertValuesCountMismatch(
+        path: path,
+        expected: expected,
+        got: got,
+        row: row,
+      )
+  }
+}
+
+/// Pre-flight check for INSERT VALUES row counts.
+///
+/// Parses the statement and, if it is an INSERT with VALUES, validates that
+/// every row has the same number of expressions as the number of bindable
+/// columns (from the explicit column list, or the schema minus generated/hidden
+/// columns). Returns our typed error before EXPLAIN can surface SQLite's own
+/// count-mismatch message.
+fn validate_insert_values_counts(
+  tokens: List(tokenize.Token),
+  v2: schema.TableMetadataV2,
+  path: String,
+) -> Result(Nil, MarmotError) {
+  case statement_parser.parse(tokens) {
+    Ok(statement_parser.Insert(stmt)) -> {
+      case stmt.source {
+        statement_parser.ValuesSource(_, rows) -> {
+          let target_name = stmt.target.table.name.text
+          case dict.get(v2.columns, target_name) {
+            // Unknown table: skip pre-flight, let EXPLAIN report the real error.
+            Error(_) -> Ok(Nil)
+            Ok(metadatas) -> {
+              let bindable = list.filter(metadatas, fn(m) { m.hidden == 0 })
+              let bound_count = case stmt.column_list {
+                option.Some(names) -> list.length(names)
+                option.None -> list.length(bindable)
+              }
+              validate_rows_preflight(rows, bound_count, 1, path)
+            }
+          }
+        }
+        _ -> Ok(Nil)
+      }
+    }
+    _ -> Ok(Nil)
+  }
+}
+
+fn validate_rows_preflight(
+  rows: List(List(List(tokenize.Token))),
+  expected: Int,
+  index: Int,
+  path: String,
+) -> Result(Nil, MarmotError) {
+  case rows {
+    [] -> Ok(Nil)
+    [row, ..rest] ->
+      case list.length(row) == expected {
+        True -> validate_rows_preflight(rest, expected, index + 1, path)
+        False ->
+          Error(error.InsertValuesCountMismatch(
+            path: path,
+            expected: expected,
+            got: list.length(row),
+            row: index,
+          ))
+      }
   }
 }
 

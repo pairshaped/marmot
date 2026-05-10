@@ -15,6 +15,7 @@ import marmot/internal/sqlite/parse/select
 import marmot/internal/sqlite/parse/statement
 import marmot/internal/sqlite/parse/statement_parser
 import marmot/internal/sqlite/parse/subquery
+import marmot/internal/sqlite/schema
 import marmot/internal/sqlite/tokenize
 
 /// Resolver-driven parameter extraction failures. The `sqlite.gleam` boundary
@@ -25,6 +26,7 @@ pub type ParameterResolutionError {
   UnknownColumnInTable(table: String, column: String)
   UnknownColumn(column: String)
   AliasMapCollision(name: String)
+  InsertValuesCountMismatch(expected: Int, got: Int, row: Int)
 }
 
 /// Extract parameters from opcodes and parsed SQL context.
@@ -37,10 +39,15 @@ pub type ParameterResolutionError {
 pub fn extract_parameters(
   opcodes: List(Opcode),
   cursor_table: Dict(Int, String),
-  table_schemas: Dict(String, List(Column)),
+  table_metadata: schema.TableMetadataV2,
   pk_columns: Dict(String, String),
   tokens: List(tokenize.Token),
 ) -> Result(List(Parameter), ParameterResolutionError) {
+  let table_schemas =
+    dict.map_values(table_metadata.columns, fn(_, metas) {
+      list.map(metas, fn(m) { m.column })
+    })
+
   let variable_ops =
     list.filter(opcodes, fn(op) { op.opcode == "Variable" })
     |> list.sort(fn(a, b) { int.compare(a.p1, b.p1) })
@@ -92,18 +99,23 @@ pub fn extract_parameters(
             param_count,
             opcode_fallback,
           )
-        Ok(statement_parser.Insert(_)) -> {
-          // INSERT keeps the existing legacy path until T17, but the routing
-          // decision is now keyed off the typed Statement, not the old classifier.
-          case tokenize.has_keyword(tokens, "VALUES") {
-            True -> {
-              let parsed = extract_insert_parameters(table_schemas, tokens)
+        Ok(statement_parser.Insert(stmt)) -> {
+          case stmt.source {
+            statement_parser.ValuesSource(_, _)
+            | statement_parser.DefaultValuesSource -> {
+              use parsed <- result.try(
+                extract_insert_parameters_v2(stmt, table_metadata),
+              )
+              // If the extracted param count doesn't match (e.g. upsert with
+              // ON CONFLICT DO UPDATE SET adds more `?` parameters beyond the
+              // VALUES row), fall back to opcode inference so those extra
+              // parameters aren't silently dropped.
               case list.length(parsed) == param_count {
                 True -> Ok(parsed)
                 False -> Ok(opcode_fallback())
               }
             }
-            False -> {
+            statement_parser.SelectSource(_) -> {
               let parsed =
                 extract_insert_select_parameters(table_schemas, tokens)
               case list.length(parsed) == param_count {
@@ -535,6 +547,102 @@ fn find_limit_offset_param_positions(
         acc,
         prev_is_limit_offset,
       )
+  }
+}
+
+/// T17 metadata-driven INSERT extraction.
+///
+/// When `column_list = None`, derives the bindable column list from the table
+/// schema in declared order, skipping generated and hidden columns (hidden != 0).
+/// When `column_list = Some(names)`, uses the named columns.
+///
+/// Row-count validation: every VALUES row must have the same number of
+/// expressions as the number of bound columns. Mismatch returns
+/// `InsertValuesCountMismatch` instead of falling back to opcode inference.
+///
+/// Write-nullability = column.nullable || is_rowid_alias. Rowid alias columns
+/// (INTEGER PRIMARY KEY on an ordinary rowid table with a single-column PK)
+/// accept NULL on INSERT for auto-assign semantics.
+///
+/// Only columns whose corresponding VALUES expression is a `?` placeholder
+/// produce a Parameter. Literal expressions (strings, numbers, etc.) are
+/// skipped -- the bound-column count must still match, but non-placeholder
+/// expressions don't yield parameters.
+fn extract_insert_parameters_v2(
+  insert_stmt: statement_parser.InsertStmt,
+  table_metadata: schema.TableMetadataV2,
+) -> Result(List(Parameter), ParameterResolutionError) {
+  let target_name = insert_stmt.target.table.name.text
+  let metadatas = case dict.get(table_metadata.columns, target_name) {
+    Ok(m) -> m
+    Error(_) -> []
+  }
+  // Bindable = columns that are neither generated nor hidden.
+  let bindable = list.filter(metadatas, fn(m) { m.hidden == 0 })
+
+  let bound_metas = case insert_stmt.column_list {
+    option.Some(names) ->
+      list.filter_map(names, fn(name) {
+        case list.find(bindable, fn(m) { m.column.name == name }) {
+          Ok(m) -> Ok(m)
+          Error(_) -> Error(Nil)
+        }
+      })
+    option.None -> bindable
+  }
+
+  let bound_count = list.length(bound_metas)
+
+  case insert_stmt.source {
+    statement_parser.ValuesSource(_, rows) -> {
+      use _ <- result.try(validate_row_counts(rows, bound_count, 1))
+      // Walk every row. SQLite enforces equal expression count per row but not
+      // equal placeholder positions, so placeholders may appear at different
+      // column positions across rows.
+      let params =
+        list.flat_map(rows, fn(row) {
+          list.zip(row, bound_metas)
+          |> list.filter_map(fn(pair) {
+            let #(expr_tokens, meta) = pair
+            case expr_tokens {
+              [tokenize.ParamAnon] | [tokenize.ParamNamed(_)] ->
+                Ok(Parameter(
+                  name: case expr_tokens {
+                    [tokenize.ParamNamed(n)] -> n
+                    _ -> meta.column.name
+                  },
+                  column_type: meta.column.column_type,
+                  nullable: meta.column.nullable || meta.is_rowid_alias,
+                ))
+              _ -> Error(Nil)
+            }
+          })
+        })
+      Ok(params)
+    }
+    statement_parser.DefaultValuesSource -> Ok([])
+    // SelectSource is handled before this function is called.
+    statement_parser.SelectSource(_) -> Ok([])
+  }
+}
+
+fn validate_row_counts(
+  rows: List(List(List(tokenize.Token))),
+  expected: Int,
+  index: Int,
+) -> Result(Nil, ParameterResolutionError) {
+  case rows {
+    [] -> Ok(Nil)
+    [row, ..rest] ->
+      case list.length(row) == expected {
+        True -> validate_row_counts(rest, expected, index + 1)
+        False ->
+          Error(InsertValuesCountMismatch(
+            expected: expected,
+            got: list.length(row),
+            row: index,
+          ))
+      }
   }
 }
 

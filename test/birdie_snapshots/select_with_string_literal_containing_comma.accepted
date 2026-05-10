@@ -1,7 +1,7 @@
 ---
-version: 1.5.5
+version: 2.0.0
 title: select with string literal containing comma
-file: ./test/marmot/internal/sqlite_test.gleam
+file: ./test/marmot/internal/sqlite/expressions_test.gleam
 test_name: select_with_string_literal_containing_comma_test
 ---
 QueryInfo([Column("display_name", StringType, False)], [Parameter("id", IntType, False)])

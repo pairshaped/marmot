@@ -202,7 +202,7 @@ pub fn introspect_subquery_in_where_test() {
       "CREATE TABLE bans (user_id INTEGER NOT NULL, reason TEXT NOT NULL)",
       on: db,
     )
-  // SELECT with subquery — uses EXPLAIN opcode path, should work
+  // SELECT with subquery: uses EXPLAIN opcode path, should work
   let assert Ok(result) =
     sqlite.introspect_query(
       db, "test",
@@ -228,7 +228,7 @@ pub fn introspect_insert_with_subquery_test() {
     )
   // INSERT ... SELECT with a parameter in the subquery WHERE
   // parse_insert_columns("INSERT INTO logs (user_id, action) SELECT id, 'login' FROM users WHERE name = ?")
-  // will extract columns ["user_id", "action"] — correct!
+  // will extract columns ["user_id", "action"] (correct!)
   // But it then maps the ? parameter to "user_id" (first column), which is wrong.
   // The actual parameter is "name" from the WHERE clause.
   let assert Ok(result) =
@@ -1117,4 +1117,181 @@ pub fn results_extract_columns_via_typed_statement_test() {
     Column(name: "id", column_type: IntType, nullable: False),
     Column(name: "label", column_type: StringType, nullable: False),
   ] = query.columns
+}
+
+pub fn insert_values_no_column_list_uses_schema_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER);",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/insert_t.sql",
+      "INSERT INTO t VALUES (?, ?, ?)",
+    )
+  // 3 parameters: id (rowid alias INTEGER PK on rowid table: nullable on
+  // write because SQLite auto-assigns), name (NOT NULL: non-null), age
+  // (no NOT NULL: nullable).
+  let assert [
+    Parameter(name: "id", column_type: IntType, nullable: True),
+    Parameter(name: "name", column_type: StringType, nullable: False),
+    Parameter(name: "age", column_type: IntType, nullable: True),
+  ] = query.parameters
+}
+
+pub fn insert_values_skips_generated_columns_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (a INTEGER PRIMARY KEY, b INTEGER NOT NULL, c INTEGER GENERATED ALWAYS AS (b * 2) VIRTUAL);",
+      conn,
+    )
+  // VALUES (?, ?) provides 2 expressions; bindable columns are {a, b}.
+  // Generated column c is skipped.
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/insert_t.sql",
+      "INSERT INTO t VALUES (?, ?)",
+    )
+  let assert [
+    Parameter(name: "a", nullable: True, ..),
+    Parameter(name: "b", nullable: False, ..),
+  ] = query.parameters
+}
+
+pub fn insert_values_count_mismatch_errors_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (a INTEGER, b INTEGER, c INTEGER);",
+      conn,
+    )
+  let assert Error(error.InsertValuesCountMismatch(_, _, _, _)) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/insert_t.sql",
+      "INSERT INTO t VALUES (?)",
+    )
+}
+
+pub fn insert_values_without_rowid_pk_is_not_nullable_on_write_test() {
+  // Regression: WITHOUT ROWID INTEGER PRIMARY KEY is NOT a rowid alias,
+  // so write-nullability follows the read-side calculation. SQLite
+  // already enforces NOT NULL on PK columns of WITHOUT ROWID tables.
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT) WITHOUT ROWID;",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/insert_t.sql",
+      "INSERT INTO t VALUES (?, ?)",
+    )
+  let assert [
+    Parameter(name: "id", column_type: IntType, nullable: False),
+    Parameter(name: "name", column_type: StringType, nullable: True),
+  ] = query.parameters
+}
+
+pub fn insert_values_composite_pk_is_not_rowid_alias_on_write_test() {
+  // Regression: composite PK columns are NOT rowid aliases. Write
+  // nullability follows the read-side calculation (which T2 fixed:
+  // composite PK columns are nullable on ordinary rowid tables per
+  // SQLite's legacy quirk, unless explicitly NOT NULL).
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (a INTEGER, b INTEGER, PRIMARY KEY (a, b));",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/insert_t.sql",
+      "INSERT INTO t VALUES (?, ?)",
+    )
+  let assert [
+    Parameter(name: "a", column_type: IntType, nullable: True),
+    Parameter(name: "b", column_type: IntType, nullable: True),
+  ] = query.parameters
+}
+
+pub fn insert_values_explicit_column_list_count_mismatch_test() {
+  // Explicit column list must also be validated against VALUES row count.
+  // Don't only validate the no-column-list case.
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (a INTEGER, b INTEGER, c INTEGER);",
+      conn,
+    )
+  let assert Error(error.InsertValuesCountMismatch(_, _, _, _)) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/insert_t.sql",
+      "INSERT INTO t (a, b) VALUES (?, ?, ?)",
+    )
+}
+
+pub fn insert_values_multi_row_count_mismatch_identifies_row_test() {
+  // Multi-row VALUES: first divergent row should be reported with 1-based index.
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec("CREATE TABLE t (a INTEGER, b INTEGER);", conn)
+  let assert Error(error.InsertValuesCountMismatch(
+    _,
+    expected: 2,
+    got: 1,
+    row: 2,
+  )) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/insert_t.sql",
+      "INSERT INTO t VALUES (?, ?), (?)",
+    )
+}
+
+pub fn insert_into_missing_table_falls_back_to_sql_error_test() {
+  // Pre-flight validation must NOT mis-report missing tables as count
+  // mismatches. Let SQLite produce its real "no such table" error.
+  let assert Ok(conn) = sqlight.open(":memory:")
+  // No CREATE TABLE: `missing` does not exist.
+  let assert Error(error.SqlError(_, _)) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/missing.sql",
+      "INSERT INTO missing VALUES (?)",
+    )
+}
+
+pub fn insert_values_placeholders_across_multiple_rows_test() {
+  // Multi-row VALUES with placeholders in different positions per row.
+  // SQLite enforces equal expression count, not equal placeholder positions.
+  // Both placeholders must surface as parameters with their respective column
+  // types. Row 1 has placeholder at column b; row 2 at column a.
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE t (a INTEGER NOT NULL, b TEXT NOT NULL);",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/multirow_placeholders.sql",
+      "INSERT INTO t VALUES (1, ?), (?, 'two')",
+    )
+  // Two parameters: one StringType (for column b in row 1), one IntType
+  // (for column a in row 2). Names default to column names.
+  let assert [
+    Parameter(name: "b", column_type: StringType, nullable: False),
+    Parameter(name: "a", column_type: IntType, nullable: False),
+  ] = query.parameters
 }

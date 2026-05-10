@@ -1,6 +1,8 @@
 ---
 version: 2.0.0
 title: codegen date parameter
+file: ./test/marmot/internal/codegen_test.gleam
+test_name: codegen_date_param_test
 ---
 /// Generated from src/app/sql/find_by_date.sql
 pub type FindByDateRow {

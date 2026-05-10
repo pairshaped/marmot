@@ -1,6 +1,8 @@
 ---
 version: 2.0.0
 title: e2e multiple sql directories combined
+file: ./test/marmot/e2e_test.gleam
+test_name: e2e_multiple_sql_directories_test
 ---
 import gleam/dynamic/decode
 import sqlight

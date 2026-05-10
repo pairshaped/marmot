@@ -1,6 +1,8 @@
 ---
 version: 2.0.0
 title: shared_row_types_two_queries
+file: ./test/marmot_test.gleam
+test_name: snapshot_shared_row_types_output_test
 ---
 import gleam/dynamic/decode
 import gleam/option.{type Option}

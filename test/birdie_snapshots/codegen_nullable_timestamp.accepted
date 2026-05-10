@@ -1,6 +1,8 @@
 ---
 version: 2.0.0
 title: codegen nullable timestamp
+file: ./test/marmot/internal/codegen_test.gleam
+test_name: codegen_nullable_timestamp_test
 ---
 /// Generated from src/app/sql/find_user.sql
 pub type FindUserRow {

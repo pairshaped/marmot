@@ -1,6 +1,8 @@
 ---
 version: 2.0.0
 title: codegen blob parameter
+file: ./test/marmot/internal/codegen_test.gleam
+test_name: codegen_blob_param_test
 ---
 /// Generated from src/app/sql/find_by_hash.sql
 pub type FindByHashRow {
