@@ -2,11 +2,11 @@ import gleam/list
 import gleam/option.{None, Some}
 import marmot/internal/sqlite/parse/statement_parser.{
   ConflictAbort, ConflictFail, ConflictIgnore, ConflictReplace, ConflictRollback,
-  CteDef, DefaultValuesSource, FromItem, Identifier, Insert, InsertStmt, Select,
+  CteDef, DefaultValuesSource, FromItem, Identifier, Insert, Select,
   SelectBody, SelectSource, SelectStmt, TableBinding, TableRef, Unsupported,
   Update, ValuesSource, parse,
 }
-import marmot/internal/sqlite/tokenize.{Word}
+import marmot/internal/sqlite/tokenize
 
 fn parse_sql(sql: String) {
   parse(tokenize.tokenize(sql))
@@ -187,7 +187,7 @@ pub fn parse_with_simple_cte_test() {
   let assert Ok(Select(SelectStmt(ctes, body))) =
     parse_sql("WITH foo AS (SELECT 1) SELECT * FROM foo")
   let assert [CteDef(name: "foo", columns: [], body: body_tokens)] = ctes
-  let assert True = list.length(body_tokens) > 0
+  let assert True = !list.is_empty(body_tokens)
   let assert [
     FromItem(
       binding: TableBinding(
@@ -314,7 +314,7 @@ pub fn parse_update_simple_test() {
     alias: None,
   ) = stmt.target
   let assert Some(_) = stmt.where
-  let assert True = list.length(stmt.set) > 0
+  let assert True = !list.is_empty(stmt.set)
 }
 
 pub fn parse_update_aliased_target_test() {
