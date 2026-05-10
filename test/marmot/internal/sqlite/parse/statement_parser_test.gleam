@@ -1,6 +1,6 @@
 import gleam/option.{None, Some}
 import marmot/internal/sqlite/parse/statement_parser.{
-  Identifier, Select, SelectBody, SelectStmt, TableBinding, TableRef,
+  FromItem, Identifier, Select, SelectBody, SelectStmt, TableBinding, TableRef,
   Unsupported, parse,
 }
 import marmot/internal/sqlite/tokenize.{Word}
@@ -71,9 +71,111 @@ pub fn parse_select_does_not_split_on_subquery_keyword_test() {
 
 pub fn parse_select_keyword_named_table_test() {
   // A table named `returning` is not a clause introducer in FROM position.
-  // Parsed FromItems are filled in by Task 5; here we only verify slicing
-  // doesn't produce a parse error and that no spurious clause boundaries fire.
   let assert Ok(Select(SelectStmt(_, body))) =
     parse_sql("SELECT * FROM returning")
-  let assert [] = body.from
+  let assert [
+    FromItem(
+      binding: TableBinding(
+        table: TableRef(schema: None, name: Identifier("returning", False)),
+        alias: None,
+      ),
+      on: None,
+    ),
+  ] = body.from
+}
+
+pub fn parse_from_single_table_test() {
+  let assert Ok(Select(SelectStmt(_, body))) = parse_sql("SELECT * FROM users")
+  let assert [
+    FromItem(
+      binding: TableBinding(
+        table: TableRef(schema: None, name: Identifier("users", False)),
+        alias: None,
+      ),
+      on: None,
+    ),
+  ] = body.from
+}
+
+pub fn parse_from_aliased_table_test() {
+  let assert Ok(Select(SelectStmt(_, body))) =
+    parse_sql("SELECT * FROM users AS u")
+  let assert [
+    FromItem(binding: TableBinding(_, alias: Some("u")), on: None),
+  ] = body.from
+}
+
+pub fn parse_from_alias_without_as_test() {
+  let assert Ok(Select(SelectStmt(_, body))) =
+    parse_sql("SELECT * FROM users u")
+  let assert [
+    FromItem(binding: TableBinding(_, alias: Some("u")), on: None),
+  ] = body.from
+}
+
+pub fn parse_from_schema_qualified_test() {
+  let assert Ok(Select(SelectStmt(_, body))) =
+    parse_sql("SELECT * FROM main.users")
+  let assert [
+    FromItem(
+      binding: TableBinding(
+        table: TableRef(
+          schema: Some(Identifier("main", False)),
+          name: Identifier("users", False),
+        ),
+        alias: None,
+      ),
+      on: None,
+    ),
+  ] = body.from
+}
+
+pub fn parse_from_quoted_identifier_test() {
+  let assert Ok(Select(SelectStmt(_, body))) =
+    parse_sql("SELECT * FROM \"users\"")
+  let assert [
+    FromItem(
+      binding: TableBinding(
+        table: TableRef(_, name: Identifier("users", True)),
+        ..,
+      ),
+      ..,
+    ),
+  ] = body.from
+}
+
+pub fn parse_from_join_with_on_test() {
+  let assert Ok(Select(SelectStmt(_, body))) =
+    parse_sql(
+      "SELECT * FROM users u JOIN orders o ON o.user_id = u.id",
+    )
+  let assert [
+    FromItem(binding: TableBinding(_, alias: Some("u")), on: None),
+    FromItem(binding: TableBinding(_, alias: Some("o")), on: Some(_)),
+  ] = body.from
+}
+
+pub fn parse_from_keyword_named_table_test() {
+  let assert Ok(Select(SelectStmt(_, body))) =
+    parse_sql("SELECT * FROM returning")
+  let assert [
+    FromItem(
+      binding: TableBinding(
+        table: TableRef(_, name: Identifier("returning", False)),
+        ..,
+      ),
+      ..,
+    ),
+  ] = body.from
+}
+
+pub fn parse_from_self_join_test() {
+  let assert Ok(Select(SelectStmt(_, body))) =
+    parse_sql(
+      "SELECT * FROM users u JOIN users manager ON manager.id = u.manager_id",
+    )
+  let assert [
+    FromItem(binding: TableBinding(_, alias: Some("u")), ..),
+    FromItem(binding: TableBinding(_, alias: Some("manager")), ..),
+  ] = body.from
 }

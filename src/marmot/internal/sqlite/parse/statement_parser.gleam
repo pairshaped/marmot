@@ -222,7 +222,7 @@ fn parse_select_body(tokens: List(Token)) -> SelectBody {
     take_until_top_level_keyword(after_select, [
       "FROM", "WHERE", "GROUP", "HAVING", "ORDER", "LIMIT",
     ])
-  let #(_from_tokens, rest) =
+  let #(from_tokens, rest) =
     take_clause(rest, "FROM", ["WHERE", "GROUP", "HAVING", "ORDER", "LIMIT"])
   let #(where, rest) =
     take_clause(rest, "WHERE", ["GROUP", "HAVING", "ORDER", "LIMIT"])
@@ -232,8 +232,10 @@ fn parse_select_body(tokens: List(Token)) -> SelectBody {
   let #(order_by, rest) = take_clause(rest, "ORDER", ["LIMIT"])
   let #(limit, _rest) = take_clause(rest, "LIMIT", [])
 
-  // FROM items parsed structurally in Task 5.
-  let from = []
+  let from = case from_tokens {
+    Some(slice) -> parse_from_items(slice)
+    None -> []
+  }
 
   SelectBody(
     is_distinct: is_distinct,
@@ -298,5 +300,157 @@ fn take_clause(
         False -> #(None, tokens)
       }
     _ -> #(None, tokens)
+  }
+}
+
+fn parse_from_items(tokens: List(Token)) -> List(FromItem) {
+  do_parse_from(tokens, [], [])
+}
+
+fn do_parse_from(
+  tokens: List(Token),
+  current: List(Token),
+  acc: List(FromItem),
+) -> List(FromItem) {
+  case tokens {
+    [] -> {
+      let acc = case current {
+        [] -> acc
+        _ -> [parse_from_segment(list.reverse(current)), ..acc]
+      }
+      list.reverse(acc)
+    }
+    [tokenize.OpenParen, ..rest] -> {
+      let #(inner, after) = tokenize.collect_inside_parens(rest)
+      let nested =
+        [tokenize.OpenParen, ..inner]
+        |> list.append([tokenize.CloseParen])
+      let current = list.append(list.reverse(nested), current)
+      do_parse_from(after, current, acc)
+    }
+    [Word(w), ..rest] ->
+      case string.uppercase(w) {
+        "JOIN" -> {
+          let acc = case current {
+            [] -> acc
+            _ -> [parse_from_segment(list.reverse(current)), ..acc]
+          }
+          do_parse_from(rest, [], acc)
+        }
+        "INNER" | "LEFT" | "RIGHT" | "CROSS" | "NATURAL" | "OUTER" | "FULL" ->
+          do_parse_from(rest, current, acc)
+        _ -> do_parse_from(rest, [Word(w), ..current], acc)
+      }
+    [tokenize.Comma, ..rest] -> {
+      let acc = case current {
+        [] -> acc
+        _ -> [parse_from_segment(list.reverse(current)), ..acc]
+      }
+      do_parse_from(rest, [], acc)
+    }
+    [t, ..rest] -> do_parse_from(rest, [t, ..current], acc)
+  }
+}
+
+fn join_modifiers() -> List(String) {
+  ["INNER", "LEFT", "RIGHT", "CROSS", "NATURAL", "OUTER", "FULL"]
+}
+
+fn parse_from_segment(tokens: List(Token)) -> FromItem {
+  let #(binding, after_binding) = parse_table_binding(tokens)
+  let on = parse_on_or_using(after_binding)
+  FromItem(binding: binding, on: on)
+}
+
+fn parse_table_binding(tokens: List(Token)) -> #(TableBinding, List(Token)) {
+  let #(table, after_table) = parse_table_ref(tokens)
+  let #(alias, after_alias) = parse_optional_alias(after_table)
+  #(TableBinding(table: table, alias: alias), after_alias)
+}
+
+fn parse_table_ref(tokens: List(Token)) -> #(TableRef, List(Token)) {
+  case tokens {
+    [Word(schema), tokenize.Dot, Word(name), ..rest] -> #(
+      TableRef(
+        schema: Some(Identifier(schema, False)),
+        name: Identifier(name, False),
+      ),
+      rest,
+    )
+    [Word(schema), tokenize.Dot, tokenize.QuotedId(name), ..rest] -> #(
+      TableRef(
+        schema: Some(Identifier(schema, False)),
+        name: Identifier(name, True),
+      ),
+      rest,
+    )
+    [tokenize.QuotedId(schema), tokenize.Dot, Word(name), ..rest] -> #(
+      TableRef(
+        schema: Some(Identifier(schema, True)),
+        name: Identifier(name, False),
+      ),
+      rest,
+    )
+    [tokenize.QuotedId(schema), tokenize.Dot, tokenize.QuotedId(name), ..rest] -> #(
+      TableRef(
+        schema: Some(Identifier(schema, True)),
+        name: Identifier(name, True),
+      ),
+      rest,
+    )
+    [Word(name), ..rest] -> #(
+      TableRef(schema: None, name: Identifier(name, False)),
+      rest,
+    )
+    [tokenize.QuotedId(name), ..rest] -> #(
+      TableRef(schema: None, name: Identifier(name, True)),
+      rest,
+    )
+    _ -> #(TableRef(schema: None, name: Identifier("", False)), tokens)
+  }
+}
+
+fn parse_optional_alias(tokens: List(Token)) -> #(Option(String), List(Token)) {
+  case tokens {
+    [Word(as_kw), Word(alias), ..rest] ->
+      case string.uppercase(as_kw) == "AS" {
+        True -> #(Some(alias), rest)
+        False -> parse_optional_alias_no_as(tokens)
+      }
+    _ -> parse_optional_alias_no_as(tokens)
+  }
+}
+
+fn parse_optional_alias_no_as(
+  tokens: List(Token),
+) -> #(Option(String), List(Token)) {
+  case tokens {
+    [Word(alias), ..rest] ->
+      case is_clause_or_join_keyword(alias) {
+        True -> #(None, tokens)
+        False -> #(Some(alias), rest)
+      }
+    _ -> #(None, tokens)
+  }
+}
+
+fn is_clause_or_join_keyword(word: String) -> Bool {
+  let upper = string.uppercase(word)
+  list.contains(
+    ["ON", "USING", "JOIN", "WHERE", "GROUP", "HAVING", "ORDER", "LIMIT"],
+    upper,
+  )
+  || list.contains(join_modifiers(), upper)
+}
+
+fn parse_on_or_using(tokens: List(Token)) -> Option(List(Token)) {
+  case tokens {
+    [Word(on_kw), ..rest] ->
+      case string.uppercase(on_kw) {
+        "ON" -> Some(rest)
+        "USING" -> Some([Word("USING"), ..rest])
+        _ -> None
+      }
+    _ -> None
   }
 }
