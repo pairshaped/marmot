@@ -3,8 +3,9 @@ import gleam/list
 import gleam/option
 import gleam/string
 import marmot/internal/codegen
-import marmot/internal/query
+import marmot/internal/query.{IntType, Parameter, StringType}
 import marmot/internal/sqlite
+import simplifile
 import sqlight
 
 // --- Type Round-Trip Tests ---
@@ -477,4 +478,31 @@ pub fn introspect_and_codegen_select_test() {
   let assert True = string.contains(code, "find_user_by_email")
   let assert True = string.contains(code, "FindUserByEmailRow")
   let assert True = string.contains(code, "sqlight.Connection")
+}
+
+// --- T20: INSERT VALUES with no column list, end-to-end ---
+
+pub fn integration_bare_insert_with_rowid_pk_test() {
+  // Locks in T17's schema-fallback behavior: column-less INSERT VALUES
+  // derives parameter names and types from the table schema, with the
+  // rowid alias getting nullable: True (SQLite auto-assigns).
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE widgets (id INTEGER PRIMARY KEY, name TEXT NOT NULL, qty INTEGER);",
+      conn,
+    )
+  let assert Ok(sql) =
+    simplifile.read("examples/edge_cases/bare_insert.sql")
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "examples/edge_cases/bare_insert.sql",
+      sql,
+    )
+  let assert [
+    Parameter(name: "id", column_type: IntType, nullable: True),
+    Parameter(name: "name", column_type: StringType, nullable: False),
+    Parameter(name: "qty", column_type: IntType, nullable: True),
+  ] = query.parameters
 }
