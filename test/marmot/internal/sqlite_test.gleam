@@ -1027,9 +1027,15 @@ pub fn introspect_ambiguous_bare_column_errors_test() {
 }
 
 pub fn introspect_cte_bare_column_falls_back_test() {
-  // CTE queries start with WITH, so classify_statement returns Other and the
-  // opcode fallback path runs (not the resolver path). The query must succeed
-  // and return a typed parameter; the opcode path resolves id via users.id.
+  // Regression for the dispatcher fix: WITH queries must route through
+  // statement_parser.parse and the resolver, NOT the legacy classifier
+  // which silently dispatched WITH to opcode_fallback.
+  //
+  // The CTE `foo` has no entry in marmot's table_schemas (CTEs aren't
+  // introspected). The resolver returns UnknownTableRef -> StringType.
+  // The opcode fallback path would resolve `id` to users.id (IntType)
+  // by tracing through the materialized CTE. So a StringType assertion
+  // proves the resolver path fired.
   let assert Ok(conn) = sqlight.open(":memory:")
   let assert Ok(_) =
     sqlight.exec("CREATE TABLE users (id INTEGER PRIMARY KEY);", conn)
@@ -1039,5 +1045,6 @@ pub fn introspect_cte_bare_column_falls_back_test() {
       "/tmp/cte_fallback.sql",
       "WITH foo AS (SELECT id FROM users) SELECT * FROM foo WHERE id = ?",
     )
-  let assert [Parameter(name: "id", ..)] = query.parameters
+  let assert [Parameter(name: "id", column_type: StringType, nullable: False)] =
+    query.parameters
 }

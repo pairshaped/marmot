@@ -50,7 +50,6 @@ pub fn extract_parameters(
   case param_count {
     0 -> Ok([])
     _ -> {
-      let stmt_type = statement.classify_statement(tokens)
       let opcode_fallback = fn() {
         list.map(variable_ops, fn(var_op) {
           case
@@ -69,8 +68,33 @@ pub fn extract_parameters(
         })
       }
 
-      let body_result = case stmt_type {
-        statement.Insert | statement.Replace -> {
+      let body_result = case statement_parser.parse(tokens) {
+        Ok(statement_parser.Select(_)) ->
+          extract_select_parameters_resolved(
+            table_schemas,
+            tokens,
+            statement.Select,
+            param_count,
+            opcode_fallback,
+          )
+        Ok(statement_parser.Delete(_)) ->
+          extract_select_parameters_resolved(
+            table_schemas,
+            tokens,
+            statement.Delete,
+            param_count,
+            opcode_fallback,
+          )
+        Ok(statement_parser.Update(_)) ->
+          extract_update_parameters_resolved(
+            table_schemas,
+            tokens,
+            param_count,
+            opcode_fallback,
+          )
+        Ok(statement_parser.Insert(_)) -> {
+          // INSERT keeps the existing legacy path until T17, but the routing
+          // decision is now keyed off the typed Statement, not the old classifier.
           case tokenize.has_keyword(tokens, "VALUES") {
             True -> {
               let parsed = extract_insert_parameters(table_schemas, tokens)
@@ -89,22 +113,7 @@ pub fn extract_parameters(
             }
           }
         }
-        statement.Update ->
-          extract_update_parameters_resolved(
-            table_schemas,
-            tokens,
-            param_count,
-            opcode_fallback,
-          )
-        statement.Select | statement.Delete ->
-          extract_select_parameters_resolved(
-            table_schemas,
-            tokens,
-            stmt_type,
-            param_count,
-            opcode_fallback,
-          )
-        statement.Other -> Ok(opcode_fallback())
+        Ok(statement_parser.Unsupported(_)) | Error(_) -> Ok(opcode_fallback())
       }
 
       use body <- result.try(body_result)
