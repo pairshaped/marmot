@@ -14,10 +14,10 @@ flowchart TD
   SQLite --> Opcode["opcode.gleam<br/>EXPLAIN analysis"]
   SQLite --> Tokenize["tokenize.gleam<br/>SQL tokens"]
   SQLite --> StatementParser["parse/statement_parser.gleam<br/>typed Statement AST"]
-  SQLite --> Resolver["parse/resolver.gleam<br/>alias-aware resolution"]
   SQLite --> Parse["parse/select.gleam,<br/>parameters.gleam, etc.<br/>body-level walkers"]
   SQLite --> Results["results.gleam<br/>result columns"]
   SQLite --> Params["parameters.gleam<br/>query parameters"]
+  Params --> Resolver["parse/resolver.gleam<br/>alias-aware resolution"]
 
   Schema --> Query["query.gleam<br/>domain types"]
   Opcode --> Query

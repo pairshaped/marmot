@@ -106,6 +106,12 @@ pub fn introspect_query(
   // handing to EXPLAIN. SQLite rejects count-mismatched INSERT VALUES with a
   // SqlError before EXPLAIN can run, so we must catch this case ourselves and
   // return our typed error instead.
+  //
+  // `parameters.extract_insert_parameters_v2` also runs a row-count check
+  // (`validate_row_counts`) during extraction. The two are intentional: this
+  // pre-flight runs *before* EXPLAIN to intercept SQLite's generic message,
+  // while the extraction-stage check is a safety net for the param pipeline
+  // (different error type, different layer). Keep both.
   let preflight_tokens = tokenize.tokenize(normalized_sql)
   use _ <- result.try(
     validate_insert_values_counts(preflight_tokens, v2, path),
@@ -182,7 +188,12 @@ pub fn introspect_query(
         Ok(statement_parser.Delete(stmt)) -> stmt.target.table.name.text
         _ -> ""
       }
-      results.extract_returning_columns(tokens, table_name, table_schemas)
+      let returning_body = option.unwrap(returning_tokens, [])
+      results.extract_returning_columns(
+        returning_body,
+        table_name,
+        table_schemas,
+      )
     }
     False ->
       case is_insert {

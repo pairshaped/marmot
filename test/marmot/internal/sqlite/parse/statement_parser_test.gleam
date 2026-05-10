@@ -87,6 +87,21 @@ pub fn parse_select_keyword_named_table_test() {
   ] = body.from
 }
 
+pub fn parse_select_keyword_named_table_into_test() {
+  // Same regression class as `returning`: `into` is a clause introducer on
+  // INSERT but a perfectly legal table name in SELECT.
+  let assert Ok(Select(SelectStmt(_, body))) = parse_sql("SELECT * FROM into")
+  let assert [
+    FromItem(
+      binding: TableBinding(
+        table: TableRef(schema: None, name: Identifier("into", False)),
+        alias: None,
+      ),
+      on: None,
+    ),
+  ] = body.from
+}
+
 pub fn parse_from_single_table_test() {
   let assert Ok(Select(SelectStmt(_, body))) = parse_sql("SELECT * FROM users")
   let assert [

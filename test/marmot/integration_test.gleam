@@ -506,3 +506,30 @@ pub fn integration_bare_insert_with_rowid_pk_test() {
     Parameter(name: "qty", column_type: IntType, nullable: True),
   ] = query.parameters
 }
+
+// --- Integration regression: keyword-named table ---
+
+pub fn integration_keyword_table_returning_test() {
+  // A table named `RETURNING` (a SQL keyword in INSERT/UPDATE/DELETE) must
+  // introspect end-to-end. The legacy heuristic walkers used to mis-detect
+  // the table name as a clause boundary; the typed Statement parser carries
+  // the RETURNING slice as part of the AST, so the keyword-name case no
+  // longer collides with clause detection. This test locks the full pipeline
+  // (tokenize, parse, EXPLAIN, parameter inference) on a quoted-identifier
+  // keyword table.
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE \"returning\" (id INTEGER PRIMARY KEY, name TEXT NOT NULL);",
+      conn,
+    )
+  let assert Ok(sql) = simplifile.read("examples/edge_cases/keyword_table.sql")
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "examples/edge_cases/keyword_table.sql",
+      sql,
+    )
+  let assert [Parameter(name: "id", column_type: IntType, nullable: False)] =
+    query.parameters
+}

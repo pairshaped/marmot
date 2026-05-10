@@ -164,14 +164,21 @@ fn resolve_select_item(
   }
 }
 
-/// Extract RETURNING columns by parsing the RETURNING clause from SQL
-/// and looking up column metadata from the table schema.
+/// Extract RETURNING columns from the parsed body slice.
+///
+/// `returning_tokens` is the slice the statement parser already isolated
+/// (everything between `RETURNING` and the next clause boundary), so this
+/// function does not need to re-scan the full statement for the keyword.
+/// That distinction matters when a table is named `RETURNING`: a global
+/// `split_at_keyword` walk would find the table name and produce a bogus
+/// boundary; the parser-provided slice only contains the actual RETURNING
+/// expressions.
 pub fn extract_returning_columns(
-  tokens: List(Token),
+  returning_tokens: List(Token),
   table_name: String,
   table_schemas: Dict(String, List(Column)),
 ) -> List(Column) {
-  let returning_cols = select.parse_returning_columns(tokens)
+  let returning_cols = select.parse_returning_body(returning_tokens)
   case returning_cols {
     [] -> []
     ["*"] ->

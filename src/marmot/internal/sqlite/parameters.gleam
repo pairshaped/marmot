@@ -117,7 +117,7 @@ pub fn extract_parameters(
             }
             statement_parser.SelectSource(_) -> {
               let parsed =
-                extract_insert_select_parameters(table_schemas, tokens)
+                extract_insert_select_parameters(stmt, table_schemas, tokens)
               case list.length(parsed) == param_count {
                 True -> Ok(parsed)
                 False -> Ok(opcode_fallback())
@@ -626,6 +626,12 @@ fn extract_insert_parameters_v2(
   }
 }
 
+/// Extraction-stage row count safety net. `sqlite.gleam` runs an equivalent
+/// pre-flight check before EXPLAIN to surface a typed error in place of
+/// SQLite's generic message; this version exists so the param pipeline
+/// itself can never silently emit a malformed parameter list if the
+/// pre-flight is bypassed (e.g. a future caller that goes straight to
+/// `extract_parameters`). Both layers are intentional.
 fn validate_row_counts(
   rows: List(List(List(tokenize.Token))),
   expected: Int,
@@ -646,13 +652,19 @@ fn validate_row_counts(
   }
 }
 
-/// For INSERT ... SELECT, match parameters positionally
+/// For INSERT ... SELECT, match parameters positionally.
+///
+/// Uses the typed `InsertStmt` for the target table and explicit column list,
+/// avoiding the legacy `parse_insert_table_name` and `parse_insert_columns`
+/// heuristics. The remaining token walk is for the SELECT body (params in the
+/// projection and WHERE) where the parser hasn't surfaced those slices yet.
 fn extract_insert_select_parameters(
+  insert_stmt: statement_parser.InsertStmt,
   table_schemas: Dict(String, List(Column)),
   tokens: List(tokenize.Token),
 ) -> List(Parameter) {
-  let target_cols = parse_params.parse_insert_columns(tokens)
-  let target_table = statement.parse_insert_table_name(tokens)
+  let target_cols = option.unwrap(insert_stmt.column_list, [])
+  let target_table = insert_stmt.target.table.name.text
   let target_col_types = case dict.get(table_schemas, target_table) {
     Ok(cols) -> cols
     Error(_) -> []
