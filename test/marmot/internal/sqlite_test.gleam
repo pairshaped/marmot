@@ -914,6 +914,32 @@ pub fn parse_returns_invalid_identifier_special_char_test() {
     sqlite.parse_returns_annotation("-- returns: Org-Row\nSELECT 1")
 }
 
+pub fn schema_loader_marks_rowid_alias_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE rowid_t (id INTEGER PRIMARY KEY, name TEXT);
+       CREATE TABLE no_rowid_t (id INTEGER PRIMARY KEY, name TEXT) WITHOUT ROWID;
+       CREATE TABLE composite_t (a INTEGER, b INTEGER, PRIMARY KEY (a, b));",
+      conn,
+    )
+  let metadata = schema.get_table_metadata_v2(conn)
+
+  let assert Ok(rowid_cols) = dict.get(metadata.columns, "rowid_t")
+  let assert Ok(rowid_id) = list.find(rowid_cols, fn(m) { m.column.name == "id" })
+  let assert True = rowid_id.is_rowid_alias
+
+  let assert Ok(no_rowid_cols) = dict.get(metadata.columns, "no_rowid_t")
+  let assert Ok(no_rowid_id) =
+    list.find(no_rowid_cols, fn(m) { m.column.name == "id" })
+  let assert False = no_rowid_id.is_rowid_alias
+
+  let assert Ok(composite_cols) = dict.get(metadata.columns, "composite_t")
+  let assert Ok(composite_a) =
+    list.find(composite_cols, fn(m) { m.column.name == "a" })
+  let assert False = composite_a.is_rowid_alias
+}
+
 pub fn schema_loader_marks_generated_columns_test() {
   let assert Ok(conn) = sqlight.open(":memory:")
   let assert Ok(_) =

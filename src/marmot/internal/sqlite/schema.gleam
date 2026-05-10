@@ -191,6 +191,32 @@ pub fn get_table_metadata_v2(db: Connection) -> TableMetadataV2 {
     Error(_) -> []
   }
 
+  // Build a set of WITHOUT ROWID table names via pragma_table_list.
+  // Field 0 = name, field 1 = wr (1 if WITHOUT ROWID, 0 otherwise).
+  let table_list_decoder = {
+    use name <- decode.field(0, decode.string)
+    use wr <- decode.field(1, decode.int)
+    decode.success(#(name, wr))
+  }
+  let without_rowid_tables = case
+    sqlight.query(
+      "SELECT name, wr FROM pragma_table_list WHERE type='table'",
+      on: db,
+      with: [],
+      expecting: table_list_decoder,
+    )
+  {
+    Ok(rows) ->
+      list.filter_map(rows, fn(row) {
+        let #(name, wr) = row
+        case wr == 1 {
+          True -> Ok(name)
+          False -> Error(Nil)
+        }
+      })
+    Error(_) -> []
+  }
+
   list.fold(
     tables,
     TableMetadataV2(
@@ -201,6 +227,7 @@ pub fn get_table_metadata_v2(db: Connection) -> TableMetadataV2 {
     fn(acc, table) {
       let #(table_name, rootpage) = table
       let rootpages = dict.insert(acc.rootpages, rootpage, table_name)
+      let is_without_rowid = list.contains(without_rowid_tables, table_name)
       let pragma_sql =
         "PRAGMA table_xinfo(\""
         <> parse.quote_identifier(table_name)
@@ -209,6 +236,8 @@ pub fn get_table_metadata_v2(db: Connection) -> TableMetadataV2 {
         sqlight.query(pragma_sql, on: db, with: [], expecting: xinfo_decoder)
       {
         Ok(rows) -> {
+          // Count how many columns are part of the primary key.
+          let pk_count = list.count(rows, fn(row) { row.3 > 0 })
           let metadatas =
             list.map(rows, fn(row) {
               let #(col_name, type_str, notnull, pk, hidden) = row
@@ -216,21 +245,23 @@ pub fn get_table_metadata_v2(db: Connection) -> TableMetadataV2 {
                 Ok(t) -> t
                 Error(_) -> StringType
               }
-              // NOTE: read-side nullability for INTEGER PK rowid aliases is
-              // deferred to Task 2 (which sets is_rowid_alias and applies the
-              // adjustment via the metadata flag). For now, preserve the
-              // existing inline workaround.
-              let nullable = case pk > 0, column_type {
-                True, query.IntType -> False
-                _, _ -> notnull == 0
-              }
+              // A column is a rowid alias when it is INTEGER PRIMARY KEY on a
+              // normal (rowid) table with a single-column PK. WITHOUT ROWID
+              // tables expose the same declaration without the auto-assign
+              // behavior, so they are not aliases.
+              let is_rowid_alias =
+                pk > 0
+                && pk_count == 1
+                && column_type == query.IntType
+                && !is_without_rowid
+              let nullable = !is_rowid_alias && notnull == 0
               ColumnMetadata(
                 column: Column(
                   name: col_name,
                   column_type: column_type,
                   nullable: nullable,
                 ),
-                is_rowid_alias: False,
+                is_rowid_alias: is_rowid_alias,
                 is_generated: hidden == 2 || hidden == 3,
                 hidden: hidden,
               )
