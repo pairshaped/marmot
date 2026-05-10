@@ -227,7 +227,7 @@ The existing whole-statement walkers stay, but each gains a sibling that operate
 | `parse_where_columns(tokens)` | `parse_where_body(where_tokens)` |
 | `parse_update_set_columns(tokens)` | `parse_update_set_body(set_tokens)` |
 | `parse_returning_columns(tokens)` | `parse_returning_body(returning_tokens)` (input is the slice from `Stmt.returning`) |
-| `parse_from_tables(tokens)` | replaced by `SelectBody.from` / `UpdateStmt.from` / `DeleteStmt.table` |
+| `parse_from_tables(tokens)` | replaced by `SelectBody.from` / `UpdateStmt.from` / `DeleteStmt.target` |
 | `parse_insert_columns(tokens)` | replaced by `InsertStmt.column_list` |
 | `parse_values_placeholder_positions(tokens)` | replaced by walking `InsertSource.ValuesSource.rows` |
 
@@ -239,7 +239,7 @@ Three layers.
 
 **Statement parser unit tests** at `test/marmot/internal/sqlite/parse/statement_parser_test.gleam`. The parser entry point is `List(Token) -> Result(Statement, MarmotError)`; tests use a small `tokenize |> parse` helper for readability. No database, no opcode fallback, no codegen. Fixtures target the documented bugs:
 
-- `SELECT * FROM returning` produces `Select` with a single `FromItem` whose `table.name == "returning"`.
+- `SELECT * FROM returning` produces `Select` with a single `FromItem` whose `binding.table.name.text == "returning"`.
 - `SELECT * FROM into` produces the equivalent.
 - `INSERT INTO t VALUES (?, ?)` produces `Insert` with `column_list == None` and rows of length 1, each containing two parameter expressions.
 - `INSERT INTO t (a, b) VALUES (?, ?), (?, ?)` produces `column_list == Some(["a", "b"])` and rows of length 2.
