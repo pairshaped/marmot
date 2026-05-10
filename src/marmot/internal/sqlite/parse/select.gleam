@@ -36,6 +36,14 @@ pub type SelectItem {
 /// the item with StringType and names derived from aliases or expression text.
 /// Known blind spots: subquery columns in the SELECT list, CTE references, and
 /// deeply nested expressions with function calls.
+/// Parse a select-list slice (no SELECT keyword, no FROM and beyond).
+/// Body-level entry point. The whole-statement helper `parse_select_items/1`
+/// is now a shim that slices and delegates.
+pub fn parse_select_item_list(select_list_tokens: List(Token)) -> List(SelectItem) {
+  tokenize.split_on_commas(select_list_tokens)
+  |> list.map(parse_select_item)
+}
+
 pub fn parse_select_items(tokens: List(Token)) -> List(SelectItem) {
   let main_tokens = skip_with_prefix(tokens)
   let after_select = skip_select_keyword(main_tokens)
@@ -47,8 +55,7 @@ pub fn parse_select_items(tokens: List(Token)) -> List(SelectItem) {
           "FROM", "WHERE", "GROUP", "HAVING", "ORDER", "LIMIT", "UNION",
           "INTERSECT", "EXCEPT",
         ])
-      tokenize.split_on_commas(select_tokens)
-      |> list.map(parse_select_item)
+      parse_select_item_list(select_tokens)
     }
   }
 }
@@ -282,17 +289,21 @@ fn strip_trailing_join_modifiers(reversed_tokens: List(Token)) -> List(Token) {
 
 // ---- RETURNING column parsing ----
 
+/// Parse a RETURNING body slice into column names. The whole-statement helper
+/// `parse_returning_columns/1` is now a shim that slices and delegates.
+pub fn parse_returning_body(returning_tokens: List(Token)) -> List(String) {
+  tokenize.split_on_commas(returning_tokens)
+  |> list.map(fn(group) {
+    case tokenize.split_at_last_keyword(group, "AS") {
+      Ok(#(_, alias_tokens)) -> util.token_list_to_name(alias_tokens)
+      Error(_) -> util.token_list_to_name(group)
+    }
+  })
+}
+
 pub fn parse_returning_columns(tokens: List(Token)) -> List(String) {
   case tokenize.split_at_keyword(tokens, "RETURNING") {
     Error(_) -> []
-    Ok(#(_, after)) ->
-      tokenize.split_on_commas(after)
-      |> list.map(fn(group) {
-        // Handle "expr AS alias"
-        case tokenize.split_at_last_keyword(group, "AS") {
-          Ok(#(_, alias_tokens)) -> util.token_list_to_name(alias_tokens)
-          Error(_) -> util.token_list_to_name(group)
-        }
-      })
+    Ok(#(_, after)) -> parse_returning_body(after)
   }
 }

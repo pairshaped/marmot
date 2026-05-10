@@ -7,10 +7,11 @@ import marmot/internal/query.{
 import marmot/internal/sqlite/parse.{normalize_sql_whitespace}
 import marmot/internal/sqlite/parse/expression.{infer_expression_type}
 import marmot/internal/sqlite/parse/parameters.{
-  parse_values_placeholder_positions,
+  parse_update_set_body, parse_values_placeholder_positions, parse_where_body,
 }
 import marmot/internal/sqlite/parse/select.{
-  type SelectItem, OverrideNone, SelectItem,
+  type SelectItem, OverrideNone, SelectItem, parse_returning_body,
+  parse_select_item_list,
 }
 import marmot/internal/sqlite/tokenize.{
   type Token, CloseParen, Comma, Gt, Minus, Number, OpenParen, Star, StringLit,
@@ -587,4 +588,30 @@ pub fn normalize_whitespace_mixed_string_and_newlines_test() {
     result
     |> string.replace("keep\nthis", "")
     |> string.contains("\n")
+}
+
+// ---- Body-level parser helper tests ----
+
+pub fn parse_select_item_list_test() {
+  let tokens = tokenize.tokenize("a, b, c")
+  let items = parse_select_item_list(tokens)
+  let assert 3 = list.length(items)
+}
+
+pub fn parse_where_body_test() {
+  let tokens = tokenize.tokenize("id = @id AND status = @status")
+  let conditions = parse_where_body(tokens)
+  let assert 2 = list.length(conditions)
+}
+
+pub fn parse_update_set_body_test() {
+  let tokens = tokenize.tokenize("name = @name, email = @email")
+  let assignments = parse_update_set_body(tokens)
+  let assert 2 = list.length(assignments)
+}
+
+pub fn parse_returning_body_test() {
+  let tokens = tokenize.tokenize("id, name, email")
+  let cols = parse_returning_body(tokens)
+  let assert ["id", "name", "email"] = cols
 }

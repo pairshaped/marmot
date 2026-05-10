@@ -75,6 +75,28 @@ pub fn parse_values_placeholder_positions(tokens: List(Token)) -> List(Int) {
 
 // ---- UPDATE SET parsing ----
 
+/// Parse a SET body slice (no SET keyword, no following WHERE/RETURNING).
+/// The whole-statement helper `parse_update_set_columns/1` is now a shim.
+pub fn parse_update_set_body(set_tokens: List(Token)) -> List(#(String, String)) {
+  tokenize.split_on_commas(set_tokens)
+  |> list.filter_map(fn(assignment) {
+    case split_tokens_on_eq(assignment) {
+      Error(_) -> Error(Nil)
+      Ok(#(lhs_tokens, rhs_tokens)) -> {
+        let col = util.token_list_to_name(lhs_tokens)
+        case has_param_token(rhs_tokens) {
+          True ->
+            case find_named_param_in_tokens(rhs_tokens) {
+              option.Some(param_name) -> Ok(#(param_name, col))
+              option.None -> Ok(#(col, col))
+            }
+          False -> Error(Nil)
+        }
+      }
+    }
+  })
+}
+
 pub fn parse_update_set_columns(
   tokens: List(Token),
 ) -> List(#(String, String)) {
@@ -83,24 +105,7 @@ pub fn parse_update_set_columns(
     Ok(#(_, after_set)) -> {
       let set_part =
         tokenize.take_until_keywords(after_set, ["WHERE", "RETURNING"])
-      tokenize.split_on_commas(set_part)
-      |> list.filter_map(fn(assignment) {
-        // Split on = to get col = rhs
-        case split_tokens_on_eq(assignment) {
-          Error(_) -> Error(Nil)
-          Ok(#(lhs_tokens, rhs_tokens)) -> {
-            let col = util.token_list_to_name(lhs_tokens)
-            case has_param_token(rhs_tokens) {
-              True ->
-                case find_named_param_in_tokens(rhs_tokens) {
-                  option.Some(param_name) -> Ok(#(param_name, col))
-                  option.None -> Ok(#(col, col))
-                }
-              False -> Error(Nil)
-            }
-          }
-        }
-      })
+      parse_update_set_body(set_part)
     }
   }
 }
@@ -143,13 +148,19 @@ fn find_named_param_in_tokens(tokens: List(Token)) -> Option(String) {
 
 // ---- WHERE parsing ----
 
+/// Parse a WHERE body slice (no WHERE keyword, no RETURNING/etc beyond).
+/// The whole-statement helper `parse_where_columns/1` is now a shim.
+pub fn parse_where_body(where_tokens: List(Token)) -> List(#(String, String)) {
+  tokenize.split_on_and_or(where_tokens)
+  |> list.flat_map(parse_where_condition)
+}
+
 pub fn parse_where_columns(tokens: List(Token)) -> List(#(String, String)) {
   case tokenize.split_at_keyword(tokens, "WHERE") {
     Error(_) -> []
     Ok(#(_, where_tokens)) -> {
       let where_part = tokenize.take_until_keywords(where_tokens, ["RETURNING"])
-      tokenize.split_on_and_or(where_part)
-      |> list.flat_map(parse_where_condition)
+      parse_where_body(where_part)
     }
   }
 }
