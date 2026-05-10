@@ -2,6 +2,7 @@ import birdie
 import gleam/list
 import gleam/option
 import gleam/string
+import marmot/internal/query.{IntType, Parameter, StringType}
 import marmot/internal/sqlite
 import sqlight
 
@@ -700,4 +701,88 @@ pub fn introspect_having_named_param_infers_column_type_test() {
   result
   |> string.inspect
   |> birdie.snap(title: "having named param infers column type")
+}
+
+// ---- Real-world coverage regression guards ----
+//
+// Targeted tests distilled from a coverage audit against a production SQL
+// corpus. Each one exercises a syntactic shape that was used in real code
+// but had no dedicated marmot test. Direct type/nullability assertions so
+// silent fallbacks to StringType become visible.
+
+pub fn introspect_like_param_with_concat_test() {
+  // LIKE with a parameter on one side of `||` concatenation. The binder
+  // walker has to recognize @prefix as the LHS of LIKE-implied string
+  // context even though the immediate token to its right is `||`, not the
+  // LIKE keyword.
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE accounts (id INTEGER NOT NULL PRIMARY KEY, email TEXT NOT NULL)",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "test",
+      "SELECT id, email FROM accounts WHERE LOWER(email) LIKE @prefix || '%'",
+    )
+  let assert [Parameter(name: "prefix", column_type: StringType, nullable: False)] =
+    result.parameters
+}
+
+pub fn introspect_order_by_collate_nocase_test() {
+  // COLLATE NOCASE appears mid-expression in ORDER BY. The tokenizer and
+  // clause-boundary detection must not be disturbed by the COLLATE keyword.
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        last_name TEXT NOT NULL,
+        first_name TEXT NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "test",
+      "SELECT id, last_name, first_name FROM users
+       WHERE id > @min_id
+       ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE",
+    )
+  let assert 3 = list.length(result.columns)
+  let assert [Parameter(name: "min_id", column_type: IntType, nullable: False)] =
+    result.parameters
+}
+
+pub fn introspect_insert_with_literal_null_in_values_test() {
+  // INSERT VALUES with literal `NULL` and a string literal interleaved with
+  // placeholders. Only the placeholders should produce parameters, and they
+  // must map positionally to the correct columns.
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE entries (
+        order_id INTEGER NOT NULL,
+        kind TEXT NOT NULL,
+        item_id INTEGER,
+        description TEXT NOT NULL,
+        amount INTEGER NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "test",
+      "INSERT INTO entries (order_id, kind, item_id, description, amount)
+       VALUES (@order_id, 'adjustment', NULL, @description, @amount)",
+    )
+  let assert [
+    Parameter(name: "order_id", column_type: IntType, nullable: False),
+    Parameter(name: "description", column_type: StringType, nullable: False),
+    Parameter(name: "amount", column_type: IntType, nullable: False),
+  ] = result.parameters
 }

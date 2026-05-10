@@ -1295,3 +1295,146 @@ pub fn insert_values_placeholders_across_multiple_rows_test() {
     Parameter(name: "a", column_type: IntType, nullable: False),
   ] = query.parameters
 }
+
+// ---- Real-world coverage regression guards ----
+//
+// Targeted tests distilled from a coverage audit against a production SQL
+// corpus. Each one exercises a syntactic shape that was used in real code
+// but had no dedicated marmot test. Direct type/nullability assertions so
+// silent fallbacks to StringType become visible.
+
+pub fn introspect_cast_conditional_bypass_param_test() {
+  // Same named param appears twice each: once as a zero-guard
+  // (`CAST(@p AS INTEGER) = 0`) and once as a column comparison
+  // (`created_at >= CAST(@p AS INTEGER)`). Verify dedup keeps one entry per
+  // name. Pinning current behavior: @org_id resolves to IntType from a bare
+  // column equality, but @start and @end fall back to StringType. The
+  // first-occurrence-wins dedup keeps the `CAST(@p AS INTEGER) = 0` site,
+  // and the binder cannot see through `CAST(...)` to the column-comparison
+  // site that would supply IntType. If inference is improved to walk all
+  // binder occurrences before dedup, this test should be updated.
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE orders (
+        id INTEGER NOT NULL PRIMARY KEY,
+        org_id INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "test",
+      "SELECT id FROM orders
+       WHERE org_id = @org_id
+         AND (CAST(@start AS INTEGER) = 0 OR created_at >= CAST(@start AS INTEGER))
+         AND (CAST(@end AS INTEGER) = 0 OR created_at <= CAST(@end AS INTEGER))",
+    )
+  let assert [
+    Parameter(name: "org_id", column_type: IntType, nullable: False),
+    Parameter(name: "start", column_type: StringType, nullable: False),
+    Parameter(name: "end", column_type: StringType, nullable: False),
+  ] = result.parameters
+}
+
+pub fn introspect_not_exists_subquery_with_param_test() {
+  // NOT EXISTS uses a different SQLite opcode path than EXISTS. The named
+  // param inside the subquery's WHERE must still be discovered and typed
+  // from its column comparison.
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE participants (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE line_items (
+        participant_id INTEGER NOT NULL,
+        status TEXT NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "test",
+      "SELECT p.id, p.name FROM participants p
+       WHERE NOT EXISTS (
+         SELECT 1 FROM line_items li
+         WHERE li.participant_id = p.id AND li.status = @status
+       )",
+    )
+  let assert [Parameter(name: "status", column_type: StringType, nullable: False)] =
+    result.parameters
+}
+
+pub fn introspect_order_by_case_with_named_param_test() {
+  // @by_date is reused across WHERE (twice) and ORDER BY CASE (once).
+  // @from_ts is reused across WHERE (twice). Verify dedup keeps one entry
+  // per name. Type for @by_date comes from string-literal comparison context;
+  // @from_ts from `created_at` (INTEGER).
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE payments (
+        id INTEGER NOT NULL PRIMARY KEY,
+        created_at INTEGER NOT NULL,
+        deposited_on INTEGER
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "test",
+      "SELECT id, created_at, deposited_on FROM payments
+       WHERE (@by_date = 'created_at' AND created_at >= @from_ts)
+          OR (@by_date = 'deposited_on' AND deposited_on IS NOT NULL AND deposited_on >= @from_ts)
+       ORDER BY CASE WHEN @by_date = 'deposited_on' THEN deposited_on END DESC, created_at DESC",
+    )
+  let assert [
+    Parameter(name: "by_date", column_type: StringType, nullable: False),
+    Parameter(name: "from_ts", column_type: IntType, nullable: False),
+  ] = result.parameters
+}
+
+pub fn introspect_update_with_column_arithmetic_param_test() {
+  // Named params live inside arithmetic expressions in both SET and WHERE:
+  //   SET balance = balance + @delta
+  //   WHERE balance + @min_delta >= 0
+  // Pinning current behavior: only `id = @id` (bare column equality)
+  // resolves to IntType. @delta and @min_delta fall back to StringType
+  // because the binder walker matches `col OP @p` patterns and does not
+  // recognize the arithmetic expression as a column-typed context. If the
+  // binder is taught to look through `+`/`-`/etc. arithmetic for the
+  // dominant column type, this test should be updated.
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE credits (
+        id INTEGER NOT NULL PRIMARY KEY,
+        balance INTEGER NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "test",
+      "UPDATE credits
+       SET balance = balance + @delta
+       WHERE id = @id AND balance + @min_delta >= 0
+       RETURNING id, balance",
+    )
+  let assert [
+    Parameter(name: "delta", column_type: StringType, nullable: False),
+    Parameter(name: "id", column_type: IntType, nullable: False),
+    Parameter(name: "min_delta", column_type: StringType, nullable: False),
+  ] = result.parameters
+}
