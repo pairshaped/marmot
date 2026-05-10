@@ -303,21 +303,27 @@ supported are:
 
 ## Known Limitations
 
-### Fixable, worth doing eventually
+### Expression inference gaps
 
-These are limitations of Marmot's current implementation, not fundamental
-constraints. Contributions welcome.
+Marmot's type inference for expressions is incremental. Some shapes resolve
+to `StringType` when Marmot can't trace the underlying column.
 
-- **Table names containing SQL keywords** (`RETURNING`, `INTO`) may confuse
-  the string-based parser. Use simple table names for now. A proper SQL
-  tokenizer would fix this and unlocks the next two limitations too.
-- **`INSERT INTO t VALUES (?, ?)` without an explicit column list** will not
-  infer parameter names or types correctly. Always specify columns:
-  `INSERT INTO t (col1, col2) VALUES (?, ?)`. Marmot could look up the table
-  schema and match positionally.
-- **Complex expressions** (subqueries, CTEs, `COALESCE`) may not have their
-  types inferred. Use `CAST(... AS TYPE)` to help Marmot. Incremental
-  improvements are possible per expression kind.
+- **Complex SELECT expressions and CTE result columns.** Subqueries in the
+  SELECT list, deeply nested `COALESCE`/`CASE`, and columns coming out of
+  CTEs may resolve to `StringType` rather than the underlying column's type.
+  Use `CAST(... AS TYPE)` in the SQL or alias with `!`/`?` for nullability.
+
+### Limited scope of alias resolution
+
+Alias-aware column resolution applies to the current parsed statement scope.
+
+- **Subquery scoping.** Parameters inside subqueries use a fallback
+  inference path that doesn't model nested scopes. Bare references inside
+  a subquery may need explicit qualification or `CAST` to get the right
+  type. Correlated columns referencing an outer scope are not handled.
+- **`USING` joins.** `JOIN x USING (col)` is supported, but bare `col`
+  references in `WHERE` may be reported as ambiguous. Workaround: use
+  `ON` syntax or qualify the column.
 
 ### Design decisions, not bugs
 
