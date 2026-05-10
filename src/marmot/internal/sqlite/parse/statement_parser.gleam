@@ -406,6 +406,9 @@ fn parse_table_ref(tokens: List(Token)) -> #(TableRef, List(Token)) {
       TableRef(schema: None, name: Identifier(name, True)),
       rest,
     )
+    // Subquery or other unrecognized FROM shape (e.g. `(SELECT ...) sub`).
+    // Returns an empty-name TableRef as a safe sentinel; the alias resolver
+    // ignores empty names and falls through to its existing fallback path.
     _ -> #(TableRef(schema: None, name: Identifier("", False)), tokens)
   }
 }
