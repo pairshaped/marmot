@@ -338,6 +338,51 @@ pub fn parse_update_returning_test() {
   let assert Some(_) = stmt.returning
 }
 
+pub fn parse_select_compound_union_test() {
+  // First branch parses cleanly; the second branch is not yet modeled
+  // in the AST and is intentionally discarded (matches legacy behavior).
+  // The critical assertion: t1's from-item is NOT aliased "UNION".
+  let assert Ok(Select(SelectStmt(_, body))) =
+    parse_sql("SELECT a FROM t1 UNION SELECT b FROM t2")
+  let assert [
+    FromItem(
+      binding: TableBinding(
+        table: TableRef(_, name: Identifier("t1", False)),
+        alias: None,
+      ),
+      ..,
+    ),
+  ] = body.from
+}
+
+pub fn parse_select_compound_intersect_test() {
+  let assert Ok(Select(SelectStmt(_, body))) =
+    parse_sql("SELECT a FROM t1 INTERSECT SELECT a FROM t2")
+  let assert [
+    FromItem(
+      binding: TableBinding(
+        table: TableRef(_, name: Identifier("t1", False)),
+        ..,
+      ),
+      ..,
+    ),
+  ] = body.from
+}
+
+pub fn parse_select_compound_except_test() {
+  let assert Ok(Select(SelectStmt(_, body))) =
+    parse_sql("SELECT a FROM t1 EXCEPT SELECT a FROM t2")
+  let assert [
+    FromItem(
+      binding: TableBinding(
+        table: TableRef(_, name: Identifier("t1", False)),
+        ..,
+      ),
+      ..,
+    ),
+  ] = body.from
+}
+
 pub fn parse_insert_select_with_join_on_test() {
   // Regression: the JOIN's ON must NOT be mistaken for ON CONFLICT.
   let assert Ok(Insert(stmt)) =

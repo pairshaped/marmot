@@ -293,19 +293,27 @@ fn parse_select_body(tokens: List(Token)) -> SelectBody {
     _ -> #(False, tokens)
   }
 
+  let compound_boundaries = ["UNION", "INTERSECT", "EXCEPT"]
   let #(select_list, rest) =
     take_until_top_level_keyword(after_select, [
       "FROM", "WHERE", "GROUP", "HAVING", "ORDER", "LIMIT",
+      ..compound_boundaries
     ])
   let #(from_tokens, rest) =
-    take_clause(rest, "FROM", ["WHERE", "GROUP", "HAVING", "ORDER", "LIMIT"])
+    take_clause(rest, "FROM", [
+      "WHERE", "GROUP", "HAVING", "ORDER", "LIMIT", ..compound_boundaries
+    ])
   let #(where, rest) =
-    take_clause(rest, "WHERE", ["GROUP", "HAVING", "ORDER", "LIMIT"])
+    take_clause(rest, "WHERE", [
+      "GROUP", "HAVING", "ORDER", "LIMIT", ..compound_boundaries
+    ])
   let #(group_by, rest) =
-    take_clause(rest, "GROUP", ["HAVING", "ORDER", "LIMIT"])
-  let #(having, rest) = take_clause(rest, "HAVING", ["ORDER", "LIMIT"])
-  let #(order_by, rest) = take_clause(rest, "ORDER", ["LIMIT"])
-  let #(limit, _rest) = take_clause(rest, "LIMIT", [])
+    take_clause(rest, "GROUP", ["HAVING", "ORDER", "LIMIT", ..compound_boundaries])
+  let #(having, rest) =
+    take_clause(rest, "HAVING", ["ORDER", "LIMIT", ..compound_boundaries])
+  let #(order_by, rest) =
+    take_clause(rest, "ORDER", ["LIMIT", ..compound_boundaries])
+  let #(limit, _rest) = take_clause(rest, "LIMIT", compound_boundaries)
 
   let from = case from_tokens {
     Some(slice) -> parse_from_items(slice)
@@ -518,6 +526,7 @@ fn is_clause_or_join_keyword(word: String) -> Bool {
     [
       "ON", "USING", "JOIN", "WHERE", "GROUP", "HAVING", "ORDER", "LIMIT",
       "VALUES", "DEFAULT", "SELECT", "WITH", "SET", "RETURNING",
+      "UNION", "INTERSECT", "EXCEPT",
     ],
     upper,
   )
