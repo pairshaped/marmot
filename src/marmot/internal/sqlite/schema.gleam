@@ -128,6 +128,7 @@ pub type ColumnMetadata {
     column: Column,
     is_rowid_alias: Bool,
     is_generated: Bool,
+    // Raw flag from PRAGMA table_xinfo: 0=normal, 1=hidden, 2=virtual generated, 3=stored generated
     hidden: Int,
   )
 }
@@ -145,6 +146,7 @@ pub fn get_table_metadata_v2(db: Connection) -> TableMetadataV2 {
     use col_name <- decode.field(1, decode.string)
     use type_str <- decode.field(2, decode.string)
     use notnull <- decode.field(3, decode.int)
+    // field 4 (dflt_value) intentionally skipped - not used here
     use pk <- decode.field(5, decode.int)
     use hidden <- decode.field(6, decode.int)
     decode.success(#(col_name, type_str, notnull, pk, hidden))
@@ -191,7 +193,11 @@ pub fn get_table_metadata_v2(db: Connection) -> TableMetadataV2 {
 
   list.fold(
     tables,
-    TableMetadataV2(dict.new(), dict.new(), dict.new()),
+    TableMetadataV2(
+      columns: dict.new(),
+      pks: dict.new(),
+      rootpages: dict.new(),
+    ),
     fn(acc, table) {
       let #(table_name, rootpage) = table
       let rootpages = dict.insert(acc.rootpages, rootpage, table_name)
