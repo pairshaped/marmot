@@ -1049,6 +1049,47 @@ pub fn introspect_cte_bare_column_falls_back_test() {
     query.parameters
 }
 
+// ---- T16: sqlite.gleam derives Statement structure from parser ----
+
+pub fn introspect_insert_returning_via_typed_statement_test() {
+  // Locks in the behavior after T16: RETURNING presence and target table
+  // come from the typed Statement, not from global keyword probes.
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE events (id INTEGER PRIMARY KEY, name TEXT NOT NULL);",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/insert_returning.sql",
+      "INSERT INTO events (name) VALUES (?) RETURNING id, name",
+    )
+  let assert [
+    Column(name: "id", column_type: IntType, ..),
+    Column(name: "name", column_type: StringType, ..),
+  ] = query.columns
+}
+
+pub fn introspect_insert_no_returning_test() {
+  // INSERT without RETURNING returns no columns. This exists to prove the
+  // RETURNING detection didn't break the negative case.
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE events (id INTEGER PRIMARY KEY, name TEXT NOT NULL);",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/insert_no_returning.sql",
+      "INSERT INTO events (name) VALUES (?)",
+    )
+  let assert [] = query.columns
+}
+
 // ---- T15: results.gleam uses typed Statement ----
 
 pub fn results_extract_columns_via_typed_statement_test() {

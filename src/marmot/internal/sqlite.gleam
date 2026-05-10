@@ -23,7 +23,7 @@ import marmot/internal/query.{type Column, type Parameter, Column, StringType}
 import marmot/internal/sqlite/opcode.{Opcode}
 import marmot/internal/sqlite/parameters
 import marmot/internal/sqlite/parse
-import marmot/internal/sqlite/parse/statement
+import marmot/internal/sqlite/parse/statement_parser
 import marmot/internal/sqlite/results
 import marmot/internal/sqlite/schema
 import marmot/internal/sqlite/tokenize
@@ -94,8 +94,13 @@ pub fn introspect_query(
   let normalized_sql = parse.normalize_sql_whitespace(sql)
 
   // Get all table metadata in a single pass
-  let #(table_schemas, pk_columns, rootpage_table) =
-    schema.get_table_metadata(db)
+  let v2 = schema.get_table_metadata_v2(db)
+  let table_schemas =
+    dict.map_values(v2.columns, fn(_, metas) {
+      list.map(metas, fn(m) { m.column })
+    })
+  let pk_columns = v2.pks
+  let rootpage_table = v2.rootpages
 
   // Get EXPLAIN output (strip Marmot-specific `!`/`?` suffixes from aliases
   // before handing to SQLite)
@@ -145,20 +150,27 @@ pub fn introspect_query(
   // Tokenize once for all analysis
   let tokens = tokenize.tokenize(normalized_sql)
 
-  // Check statement type
-  let stmt_type = statement.classify_statement(tokens)
-  let is_insert =
-    stmt_type == statement.Insert || stmt_type == statement.Replace
-  let has_returning = tokenize.has_keyword(tokens, "RETURNING")
+  // Parse the statement skeleton to derive RETURNING presence and kind
+  let parsed_stmt = statement_parser.parse(tokens)
+  let returning_tokens = case parsed_stmt {
+    Ok(statement_parser.Insert(stmt)) -> stmt.returning
+    Ok(statement_parser.Update(stmt)) -> stmt.returning
+    Ok(statement_parser.Delete(stmt)) -> stmt.returning
+    _ -> option.None
+  }
+  let has_returning = option.is_some(returning_tokens)
+  let is_insert = case parsed_stmt {
+    Ok(statement_parser.Insert(_)) -> True
+    _ -> False
+  }
 
   // Determine result columns
   let columns = case has_returning {
     True -> {
-      let table_name = case stmt_type {
-        statement.Insert | statement.Replace ->
-          statement.parse_insert_table_name(tokens)
-        statement.Update -> statement.parse_update_table_name(tokens)
-        statement.Delete -> statement.parse_delete_table_name(tokens)
+      let table_name = case parsed_stmt {
+        Ok(statement_parser.Insert(stmt)) -> stmt.target.table.name.text
+        Ok(statement_parser.Update(stmt)) -> stmt.target.table.name.text
+        Ok(statement_parser.Delete(stmt)) -> stmt.target.table.name.text
         _ -> ""
       }
       results.extract_returning_columns(tokens, table_name, table_schemas)
