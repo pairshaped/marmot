@@ -2,9 +2,9 @@ import gleam/list
 import gleam/option.{None, Some}
 import marmot/internal/sqlite/parse/statement_parser.{
   ConflictAbort, ConflictFail, ConflictIgnore, ConflictReplace, ConflictRollback,
-  CteDef, DefaultValuesSource, FromItem, Identifier, Insert, Select,
-  SelectBody, SelectSource, SelectStmt, TableBinding, TableRef, Unsupported,
-  Update, ValuesSource, parse,
+  CteDef, DefaultValuesSource, Delete, DeleteStmt, FromItem, Identifier, Insert,
+  Select, SelectBody, SelectSource, SelectStmt, TableBinding, TableRef,
+  Unsupported, Update, ValuesSource, parse,
 }
 import marmot/internal/sqlite/tokenize
 
@@ -403,4 +403,26 @@ pub fn parse_insert_on_conflict_upsert_test() {
       "INSERT INTO t (a) VALUES (?) ON CONFLICT (a) DO UPDATE SET a = excluded.a",
     )
   let assert Some(_) = stmt.upsert
+}
+
+pub fn parse_delete_simple_test() {
+  let assert Ok(Delete(stmt)) =
+    parse_sql("DELETE FROM users WHERE id = ?")
+  let assert TableBinding(
+    table: TableRef(_, name: Identifier("users", False)),
+    alias: None,
+  ) = stmt.target
+  let assert Some(_) = stmt.where
+}
+
+pub fn parse_delete_aliased_target_test() {
+  let assert Ok(Delete(stmt)) =
+    parse_sql("DELETE FROM users AS u WHERE u.id = ?")
+  let assert TableBinding(_, alias: Some("u")) = stmt.target
+}
+
+pub fn parse_delete_returning_test() {
+  let assert Ok(Delete(stmt)) =
+    parse_sql("DELETE FROM users WHERE id = ? RETURNING id")
+  let assert Some(_) = stmt.returning
 }

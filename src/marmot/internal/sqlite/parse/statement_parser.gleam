@@ -116,6 +116,7 @@ pub fn parse(tokens: List(Token)) -> Result(Statement, MarmotError) {
     SelectKind -> parse_select(tokens) |> result.map(Select)
     InsertKind -> parse_insert(tokens) |> result.map(Insert)
     UpdateKind -> parse_update(tokens) |> result.map(Update)
+    DeleteKind -> parse_delete(tokens) |> result.map(Delete)
     _ -> Ok(Unsupported(tokens))
   }
 }
@@ -566,6 +567,16 @@ fn parse_update(tokens: List(Token)) -> Result(UpdateStmt, MarmotError) {
     where: where,
     returning: returning,
   ))
+}
+
+fn parse_delete(tokens: List(Token)) -> Result(DeleteStmt, MarmotError) {
+  let after_delete = drop_keyword(tokens, "DELETE")
+  let after_from = drop_keyword(after_delete, "FROM")
+  let #(target, after_target) = parse_table_binding(after_from)
+  let #(where, after_where) =
+    take_clause(after_target, "WHERE", ["RETURNING"])
+  let #(returning, _rest) = take_clause(after_where, "RETURNING", [])
+  Ok(DeleteStmt(target: target, where: where, returning: returning))
 }
 
 fn drop_update_keyword(tokens: List(Token)) -> List(Token) {
