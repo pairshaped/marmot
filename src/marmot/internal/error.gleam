@@ -29,6 +29,20 @@ pub type MarmotError {
   SharedTypeMismatch(name: String, conflicts: List(#(String, List(Column))))
   /// Sanitized column or parameter names collide after kebab/snake normalization.
   GeneratedNameCollision(path: String, names: List(#(String, String)))
+  /// Bare column reference matches more than one in-scope table.
+  AmbiguousColumnReference(
+    path: String,
+    column: String,
+    candidates: List(String),
+  )
+  /// Qualified column reference uses a table alias that is not in scope.
+  UnknownColumnAlias(path: String, alias: String)
+  /// Qualified column reference names a column that does not exist on the
+  /// referenced (and known) table.
+  UnknownColumnInTable(path: String, table: String, column: String)
+  /// Bare column reference does not match any column in any in-scope known
+  /// table (and no in-scope table is unknown / a CTE / a view).
+  UnknownColumnReference(path: String, column: String)
 }
 
 pub fn to_string(error: MarmotError) -> String {
@@ -145,6 +159,40 @@ pub fn to_string(error: MarmotError) -> String {
   \u{2502}
   hint: Use SQL aliases so each generated name is different."
     }
+
+    AmbiguousColumnReference(path:, column:, candidates:) -> {
+      let candidate_list =
+        candidates
+        |> list.map(fn(c) { "`" <> c <> "`" })
+        |> string.join(", ")
+      "error: Ambiguous column reference
+  \u{250c}\u{2500} " <> path <> "
+  \u{2502}
+  \u{2502} `" <> column <> "` matches more than one in-scope table: " <> candidate_list <> "
+  \u{2502}
+  hint: Qualify the column with a table alias (e.g. `users." <> column <> "`)."
+    }
+
+    UnknownColumnAlias(path:, alias:) -> "error: Unknown table alias
+  \u{250c}\u{2500} " <> path <> "
+  \u{2502}
+  \u{2502} `" <> alias <> "` does not match any table in this query's FROM clause
+  \u{2502}
+  hint: Check the alias spelling, or add the table to FROM."
+
+    UnknownColumnInTable(path:, table:, column:) -> "error: Unknown column on table
+  \u{250c}\u{2500} " <> path <> "
+  \u{2502}
+  \u{2502} Column `" <> column <> "` does not exist on table `" <> table <> "`
+  \u{2502}
+  hint: Check the column name against the table's schema."
+
+    UnknownColumnReference(path:, column:) -> "error: Unknown column
+  \u{250c}\u{2500} " <> path <> "
+  \u{2502}
+  \u{2502} `" <> column <> "` does not match any column in this query's tables
+  \u{2502}
+  hint: Check the column spelling, or qualify it with a table alias."
   }
 }
 

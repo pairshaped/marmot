@@ -2,9 +2,9 @@ import gleam/list
 import gleam/option.{None, Some}
 import marmot/internal/sqlite/parse/statement_parser.{
   ConflictAbort, ConflictFail, ConflictIgnore, ConflictReplace, ConflictRollback,
-  CteDef, DefaultValuesSource, Delete, DeleteStmt, FromItem, Identifier, Insert,
-  Select, SelectBody, SelectSource, SelectStmt, TableBinding, TableRef,
-  Unsupported, Update, ValuesSource, parse,
+  CteDef, DefaultValuesSource, Delete, FromItem, Identifier, Insert, Select,
+  SelectBody, SelectSource, SelectStmt, TableBinding, TableRef, Unsupported,
+  Update, ValuesSource, parse,
 }
 import marmot/internal/sqlite/tokenize
 
