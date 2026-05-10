@@ -298,11 +298,9 @@ fn process_sql_file(
     }),
   )
   use query_info <- result.try(
-    sqlite.introspect_query(db, sql)
+    sqlite.introspect_query(db, file_path, sql)
     |> result.map_error(fn(err) {
-      io.println_error(
-        error.to_string(error.SqlError(path: file_path, message: err.message)),
-      )
+      io.println_error(error.to_string(err))
       Nil
     }),
   )

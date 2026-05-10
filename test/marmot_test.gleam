@@ -153,9 +153,9 @@ pub fn end_to_end_shared_row_types_test() {
   let sql_2 = "-- returns: OrgRow\nSELECT id, name FROM orgs"
   let sql_3 = "SELECT id FROM orgs"
 
-  let assert Ok(info_1) = sqlite.introspect_query(db, sql_1)
-  let assert Ok(info_2) = sqlite.introspect_query(db, sql_2)
-  let assert Ok(info_3) = sqlite.introspect_query(db, sql_3)
+  let assert Ok(info_1) = sqlite.introspect_query(db, "test", sql_1)
+  let assert Ok(info_2) = sqlite.introspect_query(db, "test", sql_2)
+  let assert Ok(info_3) = sqlite.introspect_query(db, "test", sql_3)
 
   let assert Ok(option.Some("OrgRow")) = sqlite.parse_returns_annotation(sql_1)
   let assert Ok(option.Some("OrgRow")) = sqlite.parse_returns_annotation(sql_2)
@@ -226,8 +226,8 @@ pub fn snapshot_shared_row_types_output_test() {
     "-- returns: OrgRow\nSELECT id, name, bio FROM orgs WHERE id = @id"
   let sql_2 = "-- returns: OrgRow\nSELECT id, name, bio FROM orgs"
 
-  let assert Ok(info_1) = sqlite.introspect_query(db, sql_1)
-  let assert Ok(info_2) = sqlite.introspect_query(db, sql_2)
+  let assert Ok(info_1) = sqlite.introspect_query(db, "test", sql_1)
+  let assert Ok(info_2) = sqlite.introspect_query(db, "test", sql_2)
 
   let queries = [
     query.Query(

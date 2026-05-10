@@ -18,6 +18,7 @@ import gleam/list
 import gleam/option
 import gleam/result
 import gleam/string
+import marmot/internal/error.{type MarmotError}
 import marmot/internal/query.{type Column, type Parameter, Column, StringType}
 import marmot/internal/sqlite/opcode.{Opcode}
 import marmot/internal/sqlite/parameters
@@ -80,10 +81,14 @@ pub fn introspect_columns(
 /// one function because splitting would scatter the data flow (normalized_sql,
 /// opcodes, cursor_table, join_nullability, tokens) across functions called
 /// from exactly one call site.
+///
+/// The `path` argument is attached to any error returned for the user; it is
+/// the SQL file path (or any placeholder for in-memory tests).
 pub fn introspect_query(
   db: Connection,
+  path: String,
   sql: String,
-) -> Result(QueryInfo, sqlight.Error) {
+) -> Result(QueryInfo, MarmotError) {
   // Normalize whitespace (newlines/tabs -> spaces, collapse runs). All keyword
   // detection and SQL parsing below relies on single-space separators.
   let normalized_sql = parse.normalize_sql_whitespace(sql)
@@ -115,12 +120,12 @@ pub fn introspect_query(
     ))
   }
 
-  use opcodes <- result.try(sqlight.query(
-    explain_sql,
-    on: db,
-    with: [],
-    expecting: decoder,
-  ))
+  use opcodes <- result.try(
+    sqlight.query(explain_sql, on: db, with: [], expecting: decoder)
+    |> result.map_error(fn(err) {
+      error.SqlError(path: path, message: err.message)
+    }),
+  )
 
   // Build cursor -> table mapping from OpenRead/OpenWrite opcodes
   let cursor_table =
@@ -181,7 +186,7 @@ pub fn introspect_query(
   // nullability markers on column aliases. This gives parameter extraction
   // a clean token stream without false positives from alias syntax.
   let param_tokens = tokenize.tokenize(sanitized_sql)
-  let raw_parameters =
+  use raw_parameters <- result.try(
     parameters.extract_parameters(
       opcodes,
       cursor_table,
@@ -189,10 +194,42 @@ pub fn introspect_query(
       pk_columns,
       param_tokens,
     )
-    |> result.unwrap([])
+    |> result.map_error(fn(e) { resolution_error_to_marmot_error(path, e) }),
+  )
 
   let parameters = parameters.deduplicate_parameter_names(raw_parameters)
   Ok(QueryInfo(columns: columns, parameters: parameters))
+}
+
+fn resolution_error_to_marmot_error(
+  path: String,
+  err: parameters.ParameterResolutionError,
+) -> MarmotError {
+  case err {
+    parameters.AmbiguousColumn(column:, candidates:) ->
+      error.AmbiguousColumnReference(
+        path: path,
+        column: column,
+        candidates: candidates,
+      )
+    parameters.UnknownAlias(alias:) ->
+      error.UnknownColumnAlias(path: path, alias: alias)
+    parameters.UnknownColumnInTable(table:, column:) ->
+      error.UnknownColumnInTable(path: path, table: table, column: column)
+    parameters.UnknownColumn(column:) ->
+      error.UnknownColumnReference(path: path, column: column)
+    // AliasMapCollision is structurally similar to "two FROM bindings share an
+    // alias", which user-facing-wise reads as "your query has two `users`
+    // tables in scope". Surface as ambiguous (with the colliding alias as the
+    // sole candidate) rather than inventing a new public variant for an
+    // internal collision.
+    parameters.AliasMapCollision(name:) ->
+      error.AmbiguousColumnReference(
+        path: path,
+        column: name,
+        candidates: [name],
+      )
+  }
 }
 
 /// Delegate to parse module for public API compatibility

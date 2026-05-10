@@ -62,7 +62,7 @@ pub fn e2e_generate_module_test() {
     list.filter_map(sql_files, fn(file_path) {
       case simplifile.read(file_path) {
         Ok(sql) -> {
-          case sqlite.introspect_query(db, string.trim(sql)) {
+          case sqlite.introspect_query(db, "test", string.trim(sql)) {
             Ok(info) -> {
               let filename =
                 file_path
@@ -147,7 +147,7 @@ pub fn e2e_multiple_sql_directories_test() {
         list.filter_map(sql_files, fn(file_path) {
           case simplifile.read(file_path) {
             Ok(sql) ->
-              case sqlite.introspect_query(db, string.trim(sql)) {
+              case sqlite.introspect_query(db, "test", string.trim(sql)) {
                 Ok(info) -> {
                   let filename =
                     file_path
@@ -215,7 +215,7 @@ pub fn e2e_check_stale_detection_test() {
     list.filter_map(sql_files, fn(file_path) {
       case simplifile.read(file_path) {
         Ok(sql) ->
-          case sqlite.introspect_query(db, string.trim(sql)) {
+          case sqlite.introspect_query(db, "test", string.trim(sql)) {
             Ok(info) -> {
               let filename =
                 file_path
@@ -276,7 +276,7 @@ pub fn e2e_check_stale_detection_test() {
     list.filter_map(project.list_sql_files(sql_dir), fn(file_path) {
       case simplifile.read(file_path) {
         Ok(sql) ->
-          case sqlite.introspect_query(db, string.trim(sql)) {
+          case sqlite.introspect_query(db, "test", string.trim(sql)) {
             Ok(info) -> {
               let filename =
                 file_path

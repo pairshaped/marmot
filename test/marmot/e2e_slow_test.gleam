@@ -102,7 +102,7 @@ pub fn e2e_compile_generated_code_test() {
     list.filter_map(sql_files, fn(file_path) {
       case simplifile.read(file_path) {
         Ok(sql) ->
-          case sqlite.introspect_query(db, string.trim(sql)) {
+          case sqlite.introspect_query(db, "test", string.trim(sql)) {
             Ok(info) -> {
               let filename =
                 file_path
@@ -202,7 +202,7 @@ pub fn e2e_shared_row_types_compiles_test() {
     list.filter_map(sql_files, fn(file_path) {
       case simplifile.read(file_path) {
         Ok(sql) ->
-          case sqlite.introspect_query(db, string.trim(sql)) {
+          case sqlite.introspect_query(db, "test", string.trim(sql)) {
             Ok(info) -> {
               let filename =
                 file_path

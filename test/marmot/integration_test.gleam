@@ -456,7 +456,7 @@ pub fn introspect_and_codegen_select_test() {
     )
   let sql =
     "SELECT id, username, bio, is_active, created_at FROM users WHERE email = ?"
-  let assert Ok(result) = sqlite.introspect_query(db, sql)
+  let assert Ok(result) = sqlite.introspect_query(db, "test", sql)
 
   // Verify introspection found correct columns
   let assert 5 = list.length(result.columns)

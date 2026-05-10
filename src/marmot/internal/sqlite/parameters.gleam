@@ -10,8 +10,10 @@ import marmot/internal/query.{type Column, type Parameter, Parameter, StringType
 import marmot/internal/sqlite/opcode.{type Opcode}
 import marmot/internal/sqlite/parse/binder
 import marmot/internal/sqlite/parse/parameters as parse_params
+import marmot/internal/sqlite/parse/resolver
 import marmot/internal/sqlite/parse/select
 import marmot/internal/sqlite/parse/statement
+import marmot/internal/sqlite/parse/statement_parser
 import marmot/internal/sqlite/parse/subquery
 import marmot/internal/sqlite/tokenize
 
@@ -67,45 +69,387 @@ pub fn extract_parameters(
         })
       }
 
-      let body = case stmt_type {
+      let body_result = case stmt_type {
         statement.Insert | statement.Replace -> {
           case tokenize.has_keyword(tokens, "VALUES") {
             True -> {
               let parsed = extract_insert_parameters(table_schemas, tokens)
               case list.length(parsed) == param_count {
-                True -> parsed
-                False -> opcode_fallback()
+                True -> Ok(parsed)
+                False -> Ok(opcode_fallback())
               }
             }
             False -> {
               let parsed =
                 extract_insert_select_parameters(table_schemas, tokens)
               case list.length(parsed) == param_count {
-                True -> parsed
-                False -> opcode_fallback()
+                True -> Ok(parsed)
+                False -> Ok(opcode_fallback())
               }
             }
           }
         }
-        statement.Update -> {
-          let parsed = extract_update_parameters(table_schemas, tokens)
-          case list.length(parsed) == param_count {
-            True -> parsed
-            False -> opcode_fallback()
-          }
-        }
-        statement.Select | statement.Delete -> {
-          let parsed =
-            extract_select_parameters(table_schemas, tokens, stmt_type)
-          case list.length(parsed) == param_count {
-            True -> parsed
-            False -> opcode_fallback()
-          }
-        }
-        statement.Other -> opcode_fallback()
+        statement.Update ->
+          extract_update_parameters_resolved(
+            table_schemas,
+            tokens,
+            param_count,
+            opcode_fallback,
+          )
+        statement.Select | statement.Delete ->
+          extract_select_parameters_resolved(
+            table_schemas,
+            tokens,
+            stmt_type,
+            param_count,
+            opcode_fallback,
+          )
+        statement.Other -> Ok(opcode_fallback())
       }
 
+      use body <- result.try(body_result)
       Ok(fix_limit_offset_param_types(body, tokens))
+    }
+  }
+}
+
+// ---- Resolver-driven extraction for SELECT/DELETE/UPDATE ----
+//
+// Routes through `statement_parser.parse` and `resolver.build_alias_map` /
+// `resolver.resolve_qualified` / `resolver.resolve_bare`. Falls back to the
+// legacy text-based path when:
+//   - statement_parser.parse fails (gives a worse-than-legacy error otherwise)
+//   - the parsed param count disagrees with EXPLAIN's variable_ops count
+//     (likely indicates a parser miss; opcode count is the ground truth)
+// Resolver hard-failures (Ambiguous, UnknownAlias, UnknownColumn,
+// UnknownColumnInTable) are *not* swallowed: they propagate as Errors.
+
+fn extract_select_parameters_resolved(
+  table_schemas: Dict(String, List(Column)),
+  tokens: List(tokenize.Token),
+  stmt_type: statement.StatementType,
+  param_count: Int,
+  opcode_fallback: fn() -> List(Parameter),
+) -> Result(List(Parameter), ParameterResolutionError) {
+  let typed_result = case statement_parser.parse(tokens) {
+    Ok(statement_parser.Select(stmt)) -> {
+      let bindings = list.map(stmt.body.from, fn(item) { item.binding })
+      // Walk every clause that can hold parameters, not just WHERE. HAVING,
+      // ORDER BY, LIMIT, and GROUP BY can all carry binders (`HAVING SUM(x) >
+      // @min`, `LIMIT @n`, etc.). Restricting to WHERE would silently drop
+      // those binders, then count-mismatch into opcode_fallback - which loses
+      // the original named-parameter name.
+      let body_tokens =
+        list.flatten([
+          option.unwrap(stmt.body.where, []),
+          option.unwrap(stmt.body.group_by, []),
+          option.unwrap(stmt.body.having, []),
+          option.unwrap(stmt.body.order_by, []),
+          option.unwrap(stmt.body.limit, []),
+        ])
+      Ok(extract_via_resolver(table_schemas, bindings, body_tokens))
+    }
+    Ok(statement_parser.Delete(stmt)) -> {
+      let bindings = [stmt.target]
+      let where_tokens = option.unwrap(stmt.where, [])
+      Ok(extract_via_resolver(table_schemas, bindings, where_tokens))
+    }
+    _ -> Error(Nil)
+  }
+  case typed_result {
+    Ok(typed) ->
+      case typed {
+        Ok(params) ->
+          case list.length(params) == param_count {
+            True -> Ok(params)
+            False -> {
+              let _ = stmt_type
+              Ok(opcode_fallback())
+            }
+          }
+        Error(e) -> Error(e)
+      }
+    Error(_) -> {
+      let parsed =
+        extract_select_parameters(table_schemas, tokens, stmt_type)
+      case list.length(parsed) == param_count {
+        True -> Ok(parsed)
+        False -> Ok(opcode_fallback())
+      }
+    }
+  }
+}
+
+fn extract_update_parameters_resolved(
+  table_schemas: Dict(String, List(Column)),
+  tokens: List(tokenize.Token),
+  param_count: Int,
+  opcode_fallback: fn() -> List(Parameter),
+) -> Result(List(Parameter), ParameterResolutionError) {
+  let typed_result = case statement_parser.parse(tokens) {
+    Ok(statement_parser.Update(stmt)) -> {
+      let from_bindings = list.map(stmt.from, fn(item) { item.binding })
+      let bindings = [stmt.target, ..from_bindings]
+      // SET also has parameters. Combine the SET and WHERE slices for binder
+      // discovery so `find_param_binders` walks both regions.
+      let where_tokens = option.unwrap(stmt.where, [])
+      let body_tokens = list.append(stmt.set, where_tokens)
+      Ok(extract_via_resolver(table_schemas, bindings, body_tokens))
+    }
+    _ -> Error(Nil)
+  }
+  case typed_result {
+    Ok(typed) ->
+      case typed {
+        Ok(params) ->
+          case list.length(params) == param_count {
+            True -> Ok(params)
+            False -> Ok(opcode_fallback())
+          }
+        Error(e) -> Error(e)
+      }
+    Error(_) -> {
+      let parsed = extract_update_parameters(table_schemas, tokens)
+      case list.length(parsed) == param_count {
+        True -> Ok(parsed)
+        False -> Ok(opcode_fallback())
+      }
+    }
+  }
+}
+
+fn extract_via_resolver(
+  table_schemas: Dict(String, List(Column)),
+  bindings: List(statement_parser.TableBinding),
+  body_tokens: List(tokenize.Token),
+) -> Result(List(Parameter), ParameterResolutionError) {
+  let alias_map_result = resolver.build_alias_map(bindings)
+  use map <- result.try(case alias_map_result {
+    Ok(m) -> Ok(m)
+    Error(resolver.AliasCollision(name)) -> Error(AliasMapCollision(name))
+  })
+  // Mark each binder with the depth at which it was discovered. The resolver
+  // only sees the outer FROM's alias map; binders inside parenthesized
+  // regions (subqueries) reference columns from an inner FROM the resolver
+  // can't see. For those, fall back to the legacy search-all-tables
+  // resolution (which transparently includes subquery tables), so the
+  // resolver migration doesn't spuriously surface "unknown column" errors
+  // for legitimate subquery-scoped binders.
+  let depth_binders = find_binders_with_depth(body_tokens)
+  let subquery_tables = subquery.find_all_subquery_tables(body_tokens)
+  let outer_tables = dict.keys(map)
+  let legacy_tables =
+    list.append(outer_tables, subquery_tables)
+    |> list.unique
+    |> list.filter(fn(t) {
+      case dict.get(table_schemas, t) {
+        Ok(_) -> True
+        Error(_) -> False
+      }
+    })
+  list.try_map(depth_binders, fn(pair) {
+    let #(b, depth) = pair
+    case depth > 0 {
+      True ->
+        Ok(legacy_resolve_binder(b, legacy_tables, table_schemas))
+      False -> resolve_one_binder(b, map, table_schemas)
+    }
+  })
+}
+
+/// Walk tokens and recover binders alongside the parenthesis depth at which
+/// each was discovered. Mirrors `binder.find_param_binders` but threads a
+/// depth counter so the caller can choose a different resolution strategy
+/// for binders inside subqueries.
+fn find_binders_with_depth(
+  tokens: List(tokenize.Token),
+) -> List(#(binder.Binder, Int)) {
+  let all = binder.find_param_binders(tokens)
+  let depths = collect_param_depths(tokens, 0, [])
+  // `find_param_binders` skips duplicates of the same named param; `depths`
+  // emits one entry per occurrence. Walk both, advancing `depths` even when
+  // a binder is skipped, so depths line up with the binders we kept.
+  zip_binders_with_depths(all, depths, [])
+}
+
+fn collect_param_depths(
+  tokens: List(tokenize.Token),
+  depth: Int,
+  acc: List(#(String, Int)),
+) -> List(#(String, Int)) {
+  case tokens {
+    [] -> list.reverse(acc)
+    [tokenize.OpenParen, ..rest] ->
+      collect_param_depths(rest, depth + 1, acc)
+    [tokenize.CloseParen, ..rest] ->
+      collect_param_depths(rest, depth - 1, acc)
+    [tokenize.ParamAnon, ..rest] ->
+      collect_param_depths(rest, depth, [#("?", depth), ..acc])
+    [tokenize.ParamNamed(name), ..rest] ->
+      collect_param_depths(rest, depth, [#(name, depth), ..acc])
+    [_, ..rest] -> collect_param_depths(rest, depth, acc)
+  }
+}
+
+fn zip_binders_with_depths(
+  binders: List(binder.Binder),
+  depths: List(#(String, Int)),
+  acc: List(#(binder.Binder, Int)),
+) -> List(#(binder.Binder, Int)) {
+  case binders, depths {
+    [], _ -> list.reverse(acc)
+    [_, ..], [] -> list.reverse(acc)
+    [b, ..b_rest], [#(name, depth), ..d_rest] -> {
+      case name == "?" {
+        True ->
+          // Anon binders: one depth entry per `?` token, one binder per `?`
+          // (no dedup in `find_param_binders` for anon). Pair them 1:1.
+          zip_binders_with_depths(b_rest, d_rest, [#(b, depth), ..acc])
+        False ->
+          // Named binders: `find_param_binders` keeps only the first
+          // occurrence of each named param. Pair this depth entry with the
+          // matching binder, then skip any later depth entries that repeat
+          // the same name (they refer to a binder that wasn't kept).
+          case name == b.name {
+            True ->
+              zip_binders_with_depths(b_rest, drop_dups(d_rest, name), [
+                #(b, depth),
+                ..acc
+              ])
+            False -> zip_binders_with_depths(binders, d_rest, acc)
+          }
+      }
+    }
+  }
+}
+
+fn drop_dups(
+  depths: List(#(String, Int)),
+  name: String,
+) -> List(#(String, Int)) {
+  case depths {
+    [#(n, _), ..rest] if n == name -> drop_dups(rest, name)
+    _ -> depths
+  }
+}
+
+fn legacy_resolve_binder(
+  b: binder.Binder,
+  all_tables: List(String),
+  table_schemas: Dict(String, List(Column)),
+) -> Parameter {
+  let names_to_try = case b.binder_column {
+    option.Some(col) if col != b.name -> [b.name, col]
+    _ -> [b.name]
+  }
+  // First try the local subquery scope (outer + FROM-discovered subquery
+  // tables). Fall back to a global search across all known schemas so we
+  // match the legacy behavior on JOIN'd tables inside subqueries (which
+  // `subquery.find_all_subquery_tables` does not currently surface).
+  let local =
+    resolve_binder_type(names_to_try, all_tables, table_schemas)
+    |> result.lazy_or(fn() {
+      resolve_binder_type(names_to_try, dict.keys(table_schemas), table_schemas)
+    })
+  case local {
+    Ok(col) ->
+      Parameter(
+        name: b.name,
+        column_type: col.column_type,
+        nullable: col.nullable,
+      )
+    Error(_) ->
+      Parameter(name: b.name, column_type: StringType, nullable: False)
+  }
+}
+
+fn resolve_one_binder(
+  b: binder.Binder,
+  map: Dict(String, statement_parser.TableRef),
+  table_schemas: Dict(String, List(Column)),
+) -> Result(Parameter, ParameterResolutionError) {
+  // No column context at all: the binder lives somewhere `find_param_binders`
+  // couldn't tie back to a column reference (LIMIT/OFFSET, function args,
+  // CASE branches, etc.). The resolver can't usefully type these; surfacing
+  // a typed UnknownColumn would be a regression for queries like
+  // `... LIMIT @n`. Drop to StringType silently; opcode fallback /
+  // fix_limit_offset_param_types will refine the type from EXPLAIN context.
+  case b.binder_column {
+    option.None ->
+      Ok(Parameter(name: b.name, column_type: StringType, nullable: False))
+    option.Some(_) -> resolve_one_binder_with_column(b, map, table_schemas)
+  }
+}
+
+fn resolve_one_binder_with_column(
+  b: binder.Binder,
+  map: Dict(String, statement_parser.TableRef),
+  table_schemas: Dict(String, List(Column)),
+) -> Result(Parameter, ParameterResolutionError) {
+  let resolution = case b.binder_column {
+    option.Some(col) ->
+      case string.split_once(col, ".") {
+        Ok(#(alias, col_name)) ->
+          resolver.resolve_qualified(map, alias, col_name, table_schemas)
+        Error(_) -> resolver.resolve_bare(map, col, table_schemas)
+      }
+    option.None -> resolver.resolve_bare(map, b.name, table_schemas)
+  }
+  case resolution {
+    resolver.Resolved(rc) ->
+      Ok(Parameter(
+        name: b.name,
+        column_type: rc.column.column_type,
+        nullable: rc.column.nullable,
+      ))
+    resolver.UnknownTableRef ->
+      Ok(Parameter(name: b.name, column_type: StringType, nullable: False))
+    resolver.AmbiguousColumn -> {
+      let column_name = case b.binder_column {
+        option.Some(col) ->
+          case string.split_once(col, ".") {
+            Ok(#(_, c)) -> c
+            Error(_) -> col
+          }
+        option.None -> b.name
+      }
+      Error(AmbiguousColumn(
+        column: column_name,
+        candidates: dict.keys(map),
+      ))
+    }
+    resolver.UnknownQualifiedAlias -> {
+      let alias = case b.binder_column {
+        option.Some(col) ->
+          case string.split_once(col, ".") {
+            Ok(#(a, _)) -> a
+            Error(_) -> col
+          }
+        option.None -> b.name
+      }
+      Error(UnknownAlias(alias: alias))
+    }
+    resolver.UnknownColumnInKnownTable -> {
+      let #(table, col_name) = case b.binder_column {
+        option.Some(col) ->
+          case string.split_once(col, ".") {
+            Ok(#(a, c)) -> #(a, c)
+            Error(_) -> #("", col)
+          }
+        option.None -> #("", b.name)
+      }
+      Error(UnknownColumnInTable(table: table, column: col_name))
+    }
+    resolver.UnknownBareColumn -> {
+      let col_name = case b.binder_column {
+        option.Some(col) ->
+          case string.split_once(col, ".") {
+            Ok(#(_, c)) -> c
+            Error(_) -> col
+          }
+        option.None -> b.name
+      }
+      Error(UnknownColumn(column: col_name))
     }
   }
 }
