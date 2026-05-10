@@ -180,13 +180,14 @@ Alias map registration rule:
 
 This rule handles self-joins like `users u JOIN users manager ON manager.id = u.manager_id` correctly because both items have explicit aliases and the bare table name `users` is never registered.
 
-Column resolution returns one of five outcomes. The resolver itself returns the typed `Resolution`; mapping to `MarmotError` happens at the consumer.
+Column resolution returns one of six outcomes. The resolver itself returns the typed `Resolution`; mapping to `MarmotError` happens at the consumer. Only `UnknownTableRef` is a non-error fallback; the other four "unknown / ambiguous" outcomes must become `MarmotError` so the silent-miscoercion bug class does not return.
 
 - `Resolved(table, column)`: the reference points to exactly one column in scope.
-- `AmbiguousColumn`: a bare reference matches columns in multiple in-scope tables. Consumers map this to a `MarmotError` asking the user to qualify.
-- `UnknownQualifiedAlias`: `u.email` where `u` is not in the alias map. Consumers map to a `MarmotError`.
-- `UnknownColumnInKnownTable`: `u.nope` where `u` resolves but `nope` is not in that table. Consumers map to a `MarmotError`.
-- `UnknownTableRef`: a known FROM name that has no schema entry (CTE, view, attached DB table that was not introspected). Returned as a non-error fallback signal so existing CTE behavior is preserved.
+- `AmbiguousColumn`: a bare reference matches columns in multiple known in-scope tables. Consumers map this to `AmbiguousColumnReference` (`MarmotError`) asking the user to qualify.
+- `UnknownQualifiedAlias`: `u.email` where `u` is not in the alias map. Consumers map to `UnknownColumnAlias`.
+- `UnknownColumnInKnownTable`: `u.nope` where `u` resolves to a known table but `nope` is not in that table's schema. Consumers map to `UnknownColumnInTable`.
+- `UnknownBareColumn`: a bare reference matches zero known columns and every in-scope table has a known schema. Consumers map to `UnknownColumnReference`.
+- `UnknownTableRef`: at least one in-scope table has no schema entry (CTE, view, attached DB table that was not introspected). Returned as a non-error fallback signal so existing CTE behavior is preserved. Bare resolution returns this when the reference matched nothing in the known tables *and* there is at least one unknown-schema table that could plausibly own the column.
 
 Module surface:
 
@@ -198,6 +199,7 @@ pub type Resolution {
   AmbiguousColumn
   UnknownQualifiedAlias
   UnknownColumnInKnownTable
+  UnknownBareColumn
   UnknownTableRef
 }
 
@@ -257,9 +259,19 @@ Three layers.
 - `users u JOIN orders o`: `u.email` resolves to users.email, `o.total` to orders.total, bare `email` (only in users) resolves, bare `id` (in both) is `AmbiguousColumn`.
 - `users u JOIN users manager ON manager.id = u.manager_id`: both aliases resolve, no false-positive on duplicate table name.
 - `users JOIN orders`: bare `email` resolves via implicit table-name registration.
-- `WITH foo AS (...) SELECT * FROM foo`: `foo.x` resolves to `UnknownTableRef`, not an error.
+- `WITH foo AS (...) SELECT * FROM foo WHERE x = ?`: bare `x` returns `UnknownTableRef` (foo has no schema, so the column might live there). Not an error.
+- All in-scope tables known, bare `nonexistent` matches none: `UnknownBareColumn`.
 - `SELECT * FROM users u WHERE u.nope = ?`: `UnknownColumnInKnownTable`.
 - `SELECT * FROM users u WHERE x.id = ?`: `UnknownQualifiedAlias`.
+
+**Consumer mapping.** At the parameter-extraction boundary, only `UnknownTableRef` falls back to `StringType` (preserving CTE/view behavior). The other four "unknown / ambiguous" outcomes become typed `MarmotError` variants:
+
+- `AmbiguousColumn` -> `AmbiguousColumnReference(path, column, candidates)`
+- `UnknownQualifiedAlias` -> `UnknownColumnAlias(path, alias)`
+- `UnknownColumnInKnownTable` -> `UnknownColumnInTable(path, table, column)`
+- `UnknownBareColumn` -> `UnknownColumnReference(path, column)`
+
+Mapping every non-resolved outcome to `StringType` would preserve the silent-miscoercion bug class. Don't.
 
 **Integration regression tests** for the bug class. SQL fixtures plus tests that compile and run them:
 
