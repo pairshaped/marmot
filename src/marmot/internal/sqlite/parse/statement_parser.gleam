@@ -114,6 +114,7 @@ pub type Statement {
 pub fn parse(tokens: List(Token)) -> Result(Statement, MarmotError) {
   case classify(tokens) {
     SelectKind -> parse_select(tokens) |> result.map(Select)
+    InsertKind -> parse_insert(tokens) |> result.map(Insert)
     _ -> Ok(Unsupported(tokens))
   }
 }
@@ -528,5 +529,89 @@ fn parse_on_or_using(tokens: List(Token)) -> Option(List(Token)) {
         _ -> None
       }
     _ -> None
+  }
+}
+
+fn parse_insert(tokens: List(Token)) -> Result(InsertStmt, MarmotError) {
+  let #(action, after_kw) = parse_insert_conflict_action(tokens)
+  let after_into = drop_into(after_kw)
+  let #(target, after_target) = parse_table_binding(after_into)
+  let #(column_list, after_cols) = parse_optional_column_list(after_target)
+  // Source parsing comes in Task 8. Default placeholder for now.
+  let source = DefaultValuesSource
+  // Scan forward to RETURNING at top level (VALUES clause sits between column
+  // list and RETURNING when source tokens are present).
+  let #(_, after_source) =
+    take_until_top_level_keyword(after_cols, ["RETURNING"])
+  let #(returning, _rest) = take_clause(after_source, "RETURNING", [])
+  Ok(InsertStmt(
+    conflict_action: action,
+    target: target,
+    column_list: column_list,
+    source: source,
+    upsert: None,
+    returning: returning,
+  ))
+}
+
+fn parse_insert_conflict_action(
+  tokens: List(Token),
+) -> #(InsertConflictAction, List(Token)) {
+  case tokens {
+    [Word(insert_kw), ..rest] ->
+      case string.uppercase(insert_kw) {
+        "REPLACE" -> #(ConflictReplace, rest)
+        "INSERT" ->
+          case rest {
+            [Word(or_kw), Word(action), ..r2] ->
+              case string.uppercase(or_kw) == "OR" {
+                True ->
+                  case string.uppercase(action) {
+                    "REPLACE" -> #(ConflictReplace, r2)
+                    "IGNORE" -> #(ConflictIgnore, r2)
+                    "FAIL" -> #(ConflictFail, r2)
+                    "ROLLBACK" -> #(ConflictRollback, r2)
+                    "ABORT" -> #(ConflictAbort, r2)
+                    _ -> #(ConflictAbort, rest)
+                  }
+                False -> #(ConflictAbort, rest)
+              }
+            _ -> #(ConflictAbort, rest)
+          }
+        _ -> #(ConflictAbort, tokens)
+      }
+    _ -> #(ConflictAbort, tokens)
+  }
+}
+
+fn drop_into(tokens: List(Token)) -> List(Token) {
+  case tokens {
+    [Word(w), ..rest] ->
+      case string.uppercase(w) == "INTO" {
+        True -> rest
+        False -> tokens
+      }
+    _ -> tokens
+  }
+}
+
+fn parse_optional_column_list(
+  tokens: List(Token),
+) -> #(Option(List(String)), List(Token)) {
+  case tokens {
+    [tokenize.OpenParen, ..rest] -> {
+      let #(inner, after) = tokenize.collect_inside_parens(rest)
+      let cols =
+        tokenize.split_on_commas(inner)
+        |> list.filter_map(fn(group) {
+          case group {
+            [Word(c)] -> Ok(c)
+            [tokenize.QuotedId(c)] -> Ok(c)
+            _ -> Error(Nil)
+          }
+        })
+      #(Some(cols), after)
+    }
+    _ -> #(None, tokens)
   }
 }

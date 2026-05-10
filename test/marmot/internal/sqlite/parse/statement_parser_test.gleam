@@ -1,8 +1,9 @@
 import gleam/list
 import gleam/option.{None, Some}
 import marmot/internal/sqlite/parse/statement_parser.{
-  CteDef, FromItem, Identifier, Select, SelectBody, SelectStmt, TableBinding,
-  TableRef, Unsupported, parse,
+  ConflictAbort, ConflictFail, ConflictIgnore, ConflictReplace, ConflictRollback,
+  CteDef, FromItem, Identifier, Insert, InsertStmt, Select, SelectBody,
+  SelectStmt, TableBinding, TableRef, Unsupported, parse,
 }
 import marmot/internal/sqlite/tokenize.{Word}
 
@@ -219,4 +220,54 @@ pub fn parse_with_multiple_ctes_test() {
       "WITH a AS (SELECT 1), b AS (SELECT 2) SELECT * FROM a, b",
     )
   let assert [CteDef(name: "a", ..), CteDef(name: "b", ..)] = ctes
+}
+
+pub fn parse_insert_default_conflict_test() {
+  let assert Ok(Insert(stmt)) = parse_sql("INSERT INTO t (a) VALUES (?)")
+  let assert ConflictAbort = stmt.conflict_action
+  let assert TableBinding(
+    table: TableRef(_, name: Identifier("t", False)),
+    alias: None,
+  ) = stmt.target
+}
+
+pub fn parse_insert_or_ignore_test() {
+  let assert Ok(Insert(stmt)) =
+    parse_sql("INSERT OR IGNORE INTO t (a) VALUES (?)")
+  let assert ConflictIgnore = stmt.conflict_action
+}
+
+pub fn parse_insert_or_replace_test() {
+  let assert Ok(Insert(stmt)) =
+    parse_sql("INSERT OR REPLACE INTO t (a) VALUES (?)")
+  let assert ConflictReplace = stmt.conflict_action
+}
+
+pub fn parse_insert_or_fail_test() {
+  let assert Ok(Insert(stmt)) =
+    parse_sql("INSERT OR FAIL INTO t (a) VALUES (?)")
+  let assert ConflictFail = stmt.conflict_action
+}
+
+pub fn parse_insert_or_rollback_test() {
+  let assert Ok(Insert(stmt)) =
+    parse_sql("INSERT OR ROLLBACK INTO t (a) VALUES (?)")
+  let assert ConflictRollback = stmt.conflict_action
+}
+
+pub fn parse_replace_shorthand_test() {
+  let assert Ok(Insert(stmt)) = parse_sql("REPLACE INTO t (a) VALUES (?)")
+  let assert ConflictReplace = stmt.conflict_action
+}
+
+pub fn parse_insert_with_target_alias_test() {
+  let assert Ok(Insert(stmt)) =
+    parse_sql("INSERT INTO t AS u (a) VALUES (?)")
+  let assert TableBinding(_, alias: Some("u")) = stmt.target
+}
+
+pub fn parse_insert_returning_slice_test() {
+  let assert Ok(Insert(stmt)) =
+    parse_sql("INSERT INTO t (a) VALUES (?) RETURNING id, name")
+  let assert Some(_) = stmt.returning
 }
