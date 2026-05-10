@@ -594,13 +594,55 @@ fn drop_keyword(tokens: List(Token), keyword: String) -> List(Token) {
   }
 }
 
+/// Slice the INSERT source body. Stops at top-level `ON CONFLICT` or
+/// `RETURNING`. Plain `ON` (from a JOIN's ON clause) does NOT terminate the
+/// slice.
+fn take_until_insert_source_end(
+  tokens: List(Token),
+) -> #(List(Token), List(Token)) {
+  do_take_insert_source(tokens, [], 0)
+}
+
+fn do_take_insert_source(
+  tokens: List(Token),
+  acc: List(Token),
+  depth: Int,
+) -> #(List(Token), List(Token)) {
+  case tokens {
+    [] -> #(list.reverse(acc), [])
+    [tokenize.OpenParen, ..rest] ->
+      do_take_insert_source(rest, [tokenize.OpenParen, ..acc], depth + 1)
+    [tokenize.CloseParen, ..rest] ->
+      do_take_insert_source(rest, [tokenize.CloseParen, ..acc], depth - 1)
+    [Word(w1), Word(w2), ..] if depth == 0 ->
+      case string.uppercase(w1) == "ON" && string.uppercase(w2) == "CONFLICT" {
+        True -> #(list.reverse(acc), tokens)
+        False ->
+          case string.uppercase(w1) == "RETURNING" {
+            True -> #(list.reverse(acc), tokens)
+            False ->
+              do_take_insert_source(
+                list.drop(tokens, 1),
+                [Word(w1), ..acc],
+                depth,
+              )
+          }
+      }
+    [Word(w), ..rest] if depth == 0 ->
+      case string.uppercase(w) == "RETURNING" {
+        True -> #(list.reverse(acc), tokens)
+        False -> do_take_insert_source(rest, [Word(w), ..acc], depth)
+      }
+    [t, ..rest] -> do_take_insert_source(rest, [t, ..acc], depth)
+  }
+}
+
 fn parse_insert(tokens: List(Token)) -> Result(InsertStmt, MarmotError) {
   let #(action, after_kw) = parse_insert_conflict_action(tokens)
   let after_into = drop_into(after_kw)
   let #(target, after_target) = parse_table_binding(after_into)
   let #(column_list, after_cols) = parse_optional_column_list(after_target)
-  let #(source_tokens, after_source) =
-    take_until_top_level_keyword(after_cols, ["ON", "RETURNING"])
+  let #(source_tokens, after_source) = take_until_insert_source_end(after_cols)
   let source = parse_insert_source(source_tokens)
   let #(upsert, after_upsert) = take_clause(after_source, "ON", ["RETURNING"])
   let #(returning, _rest) = take_clause(after_upsert, "RETURNING", [])

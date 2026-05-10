@@ -337,3 +337,25 @@ pub fn parse_update_returning_test() {
     parse_sql("UPDATE users SET name = ? WHERE id = ? RETURNING id, name")
   let assert Some(_) = stmt.returning
 }
+
+pub fn parse_insert_select_with_join_on_test() {
+  // Regression: the JOIN's ON must NOT be mistaken for ON CONFLICT.
+  let assert Ok(Insert(stmt)) =
+    parse_sql(
+      "INSERT INTO t (a, b) SELECT a.id, b.id FROM a JOIN b ON a.id = b.a_id",
+    )
+  let assert SelectSource(SelectStmt(_, body)) = stmt.source
+  // Both tables made it into the FROM list (proves the source slice
+  // wasn't truncated at the JOIN's ON).
+  let assert [_, _] = body.from
+  let assert None = stmt.upsert
+}
+
+pub fn parse_insert_on_conflict_upsert_test() {
+  // Positive case: real ON CONFLICT actually starts the upsert slice.
+  let assert Ok(Insert(stmt)) =
+    parse_sql(
+      "INSERT INTO t (a) VALUES (?) ON CONFLICT (a) DO UPDATE SET a = excluded.a",
+    )
+  let assert Some(_) = stmt.upsert
+}
