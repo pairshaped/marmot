@@ -1909,3 +1909,145 @@ pub fn introspect_select_with_multiplication_param_test() {
     Parameter(name: "threshold", column_type: IntType, nullable: False),
   ] = result.parameters
 }
+
+// ---- Adversarial SQL regression probes ----
+//
+// These cases are small versions of SQL shapes that tend to expose parser
+// boundary or binder-scope bugs. They are direct assertions so wrong fallback
+// parameters are visible as test failures.
+
+pub fn introspect_param_inside_cte_body_resolves_column_type_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE orders (
+        id INTEGER NOT NULL PRIMARY KEY,
+        org_id INTEGER NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "test",
+      "WITH filtered AS (
+         SELECT id FROM orders WHERE org_id = @org_id
+       )
+       SELECT COUNT(*) FROM filtered",
+    )
+  let assert [Parameter(name: "org_id", column_type: IntType, nullable: False)] =
+    result.parameters
+}
+
+pub fn introspect_param_in_second_union_arm_resolves_column_type_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        org_id INTEGER NOT NULL
+      );
+      CREATE TABLE archived_users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        org_id INTEGER NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "test",
+      "SELECT id FROM users
+       UNION ALL
+       SELECT id FROM archived_users WHERE org_id = @org_id",
+    )
+  let assert [Parameter(name: "org_id", column_type: IntType, nullable: False)] =
+    result.parameters
+}
+
+pub fn introspect_param_in_join_on_resolves_column_type_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE participants (
+        id INTEGER NOT NULL PRIMARY KEY
+      );
+      CREATE TABLE line_items (
+        id INTEGER NOT NULL PRIMARY KEY,
+        participant_id INTEGER NOT NULL,
+        org_id INTEGER NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "test",
+      "SELECT p.id
+       FROM participants p
+       JOIN line_items li
+         ON li.participant_id = p.id
+        AND li.org_id = @org_id",
+    )
+  let assert [Parameter(name: "org_id", column_type: IntType, nullable: False)] =
+    result.parameters
+}
+
+pub fn introspect_update_from_where_param_resolves_column_type_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE participants (
+        id INTEGER NOT NULL PRIMARY KEY,
+        name TEXT NOT NULL
+      );
+      CREATE TABLE line_items (
+        id INTEGER NOT NULL PRIMARY KEY,
+        participant_id INTEGER NOT NULL,
+        org_id INTEGER NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "test",
+      "UPDATE participants
+       SET name = @name
+       FROM line_items li
+       WHERE li.participant_id = participants.id
+         AND li.org_id = @org_id",
+    )
+  let assert [
+    Parameter(name: "name", column_type: StringType, nullable: False),
+    Parameter(name: "org_id", column_type: IntType, nullable: False),
+  ] = result.parameters
+}
+
+pub fn introspect_inner_alias_shadowing_resolves_inner_scope_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY
+      );
+      CREATE TABLE audit_logs (
+        id INTEGER NOT NULL PRIMARY KEY,
+        actor_id INTEGER NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "test",
+      "SELECT *
+       FROM users u
+       WHERE EXISTS (
+         SELECT 1 FROM audit_logs u WHERE u.actor_id = @actor_id
+       )",
+    )
+  let assert [
+    Parameter(name: "actor_id", column_type: IntType, nullable: False),
+  ] = result.parameters
+}
