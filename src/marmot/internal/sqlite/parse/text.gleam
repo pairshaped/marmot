@@ -66,23 +66,33 @@ fn do_strip_suffixes(
       case in_single || in_double {
         True -> do_strip_suffixes(rest, [ch, ..acc], ch, in_single, in_double)
         False ->
-          case { ch == "!" || ch == "?" } && is_ident_char(prev) {
-            True -> {
-              let next_ok = case rest {
-                [] -> True
-                [c, ..] ->
-                  c == " " || c == "," || c == ")" || c == "\t" || c == "\n"
-              }
-              case next_ok {
-                True -> do_strip_suffixes(rest, acc, prev, in_single, in_double)
-                False ->
-                  do_strip_suffixes(rest, [ch, ..acc], ch, in_single, in_double)
-              }
-            }
-            False ->
-              do_strip_suffixes(rest, [ch, ..acc], ch, in_single, in_double)
-          }
+          strip_suffix_or_keep_char(ch, rest, acc, prev, in_single, in_double)
       }
+  }
+}
+
+fn strip_suffix_or_keep_char(
+  ch: String,
+  rest: List(String),
+  acc: List(String),
+  prev: String,
+  in_single: Bool,
+  in_double: Bool,
+) -> List(String) {
+  case is_nullability_suffix(ch, prev) && suffix_has_valid_next(rest) {
+    True -> do_strip_suffixes(rest, acc, prev, in_single, in_double)
+    False -> do_strip_suffixes(rest, [ch, ..acc], ch, in_single, in_double)
+  }
+}
+
+fn is_nullability_suffix(ch: String, prev: String) -> Bool {
+  { ch == "!" || ch == "?" } && is_ident_char(prev)
+}
+
+fn suffix_has_valid_next(rest: List(String)) -> Bool {
+  case rest {
+    [] -> True
+    [c, ..] -> c == " " || c == "," || c == ")" || c == "\t" || c == "\n"
   }
 }
 
