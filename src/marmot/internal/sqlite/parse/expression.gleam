@@ -196,55 +196,64 @@ fn infer_case_type(alias: String, tokens: List(Token)) -> Column {
   let #(branches, has_else) = extract_case_branches(tokens)
   case branches {
     [] -> Column(name: alias, column_type: StringType, nullable: True)
-    _ -> {
-      let types =
-        list.filter_map(branches, fn(branch) {
-          case branch {
-            [Word(w)] ->
-              case string.uppercase(w) == "NULL" {
-                True -> Error(Nil)
-                False -> Error(Nil)
-              }
-            _ ->
-              case infer_literal_token_type(branch) {
-                option.Some(t) -> Ok(t)
-                option.None -> Error(Nil)
-              }
-          }
-        })
-      let has_null =
-        list.any(branches, fn(b) {
-          case b {
-            [Word(w)] -> string.uppercase(w) == "NULL"
-            _ -> False
-          }
-        })
-      let null_count =
-        list.count(branches, fn(b) {
-          case b {
-            [Word(w)] -> string.uppercase(w) == "NULL"
-            _ -> False
-          }
-        })
-      let has_unresolved =
-        list.length(types) + null_count != list.length(branches)
-      case has_unresolved {
-        True -> Column(name: alias, column_type: StringType, nullable: True)
-        False ->
-          case types {
-            [] -> Column(name: alias, column_type: StringType, nullable: True)
-            [first, ..rest_types] ->
-              case list.all(rest_types, fn(t) { t == first }) {
-                True -> {
-                  let nullable = has_null || !has_else
-                  Column(name: alias, column_type: first, nullable: nullable)
-                }
-                False ->
-                  Column(name: alias, column_type: StringType, nullable: True)
-              }
-          }
+    _ -> infer_case_type_from_branches(alias, branches, has_else)
+  }
+}
+
+fn infer_case_type_from_branches(
+  alias: String,
+  branches: List(List(Token)),
+  has_else: Bool,
+) -> Column {
+  let types = list.filter_map(branches, infer_case_branch_type)
+  let has_null = list.any(branches, is_null_case_branch)
+  let null_count = list.count(branches, is_null_case_branch)
+  let has_unresolved = list.length(types) + null_count != list.length(branches)
+
+  case has_unresolved {
+    True -> Column(name: alias, column_type: StringType, nullable: True)
+    False -> infer_resolved_case_type(alias, types, has_null, has_else)
+  }
+}
+
+fn infer_case_branch_type(branch: List(Token)) -> Result(ColumnType, Nil) {
+  case branch {
+    [Word(w)] ->
+      case string.uppercase(w) == "NULL" {
+        True -> Error(Nil)
+        False -> Error(Nil)
       }
-    }
+    _ ->
+      case infer_literal_token_type(branch) {
+        option.Some(t) -> Ok(t)
+        option.None -> Error(Nil)
+      }
+  }
+}
+
+fn is_null_case_branch(branch: List(Token)) -> Bool {
+  case branch {
+    [Word(w)] -> string.uppercase(w) == "NULL"
+    _ -> False
+  }
+}
+
+fn infer_resolved_case_type(
+  alias: String,
+  types: List(ColumnType),
+  has_null: Bool,
+  has_else: Bool,
+) -> Column {
+  case types {
+    [] -> Column(name: alias, column_type: StringType, nullable: True)
+    [first, ..rest_types] ->
+      case list.all(rest_types, fn(t) { t == first }) {
+        True -> {
+          let nullable = has_null || !has_else
+          Column(name: alias, column_type: first, nullable: nullable)
+        }
+        False -> Column(name: alias, column_type: StringType, nullable: True)
+      }
   }
 }
 
@@ -281,14 +290,7 @@ fn do_extract_case_branches(
 ) -> #(List(List(Token)), Bool) {
   case tokens {
     [] -> {
-      let final_acc = case state {
-        InThen | InElse ->
-          case current {
-            [] -> acc
-            _ -> [list.reverse(current), ..acc]
-          }
-        _ -> acc
-      }
+      let final_acc = flush_case_branch(state, current, acc)
       #(list.reverse(final_acc), has_else)
     }
     [OpenParen, ..rest] ->
@@ -313,84 +315,26 @@ fn do_extract_case_branches(
       let upper = string.uppercase(w)
       case depth == 0 {
         False ->
-          // Nested CASE ... END tracking
-          case upper == "CASE" {
-            True ->
-              do_extract_case_branches(
-                rest,
-                [Word(w), ..current],
-                acc,
-                has_else,
-                depth + 1,
-                state,
-              )
-            False ->
-              case upper == "END" {
-                True ->
-                  do_extract_case_branches(
-                    rest,
-                    [Word(w), ..current],
-                    acc,
-                    has_else,
-                    depth - 1,
-                    state,
-                  )
-                False ->
-                  do_extract_case_branches(
-                    rest,
-                    [Word(w), ..current],
-                    acc,
-                    has_else,
-                    depth,
-                    state,
-                  )
-              }
-          }
+          extract_nested_case_word(
+            w,
+            upper,
+            rest,
+            current,
+            acc,
+            has_else,
+            depth,
+            state,
+          )
         True ->
-          case upper {
-            "WHEN" -> {
-              let new_acc = case state {
-                InThen | InElse ->
-                  case current {
-                    [] -> acc
-                    _ -> [list.reverse(current), ..acc]
-                  }
-                _ -> acc
-              }
-              do_extract_case_branches(rest, [], new_acc, has_else, 0, InWhen)
-            }
-            "THEN" ->
-              do_extract_case_branches(rest, [], acc, has_else, 0, InThen)
-            "ELSE" -> {
-              let new_acc = case state {
-                InThen ->
-                  case current {
-                    [] -> acc
-                    _ -> [list.reverse(current), ..acc]
-                  }
-                _ -> acc
-              }
-              do_extract_case_branches(rest, [], new_acc, True, 0, InElse)
-            }
-            "CASE" ->
-              do_extract_case_branches(
-                rest,
-                [Word(w), ..current],
-                acc,
-                has_else,
-                depth + 1,
-                state,
-              )
-            _ ->
-              do_extract_case_branches(
-                rest,
-                [Word(w), ..current],
-                acc,
-                has_else,
-                depth,
-                state,
-              )
-          }
+          extract_top_level_case_word(
+            w,
+            upper,
+            rest,
+            current,
+            acc,
+            has_else,
+            state,
+          )
       }
     }
     [token, ..rest] ->
@@ -400,6 +344,98 @@ fn do_extract_case_branches(
         acc,
         has_else,
         depth,
+        state,
+      )
+  }
+}
+
+fn flush_case_branch(
+  state: CaseScanState,
+  current: List(Token),
+  acc: List(List(Token)),
+) -> List(List(Token)) {
+  case state {
+    InThen | InElse ->
+      case current {
+        [] -> acc
+        _ -> [list.reverse(current), ..acc]
+      }
+    _ -> acc
+  }
+}
+
+fn flush_then_case_branch(
+  state: CaseScanState,
+  current: List(Token),
+  acc: List(List(Token)),
+) -> List(List(Token)) {
+  case state {
+    InThen -> flush_case_branch(state, current, acc)
+    _ -> acc
+  }
+}
+
+fn extract_nested_case_word(
+  word: String,
+  upper: String,
+  rest: List(Token),
+  current: List(Token),
+  acc: List(List(Token)),
+  has_else: Bool,
+  depth: Int,
+  state: CaseScanState,
+) -> #(List(List(Token)), Bool) {
+  let next_depth = case upper {
+    "CASE" -> depth + 1
+    "END" -> depth - 1
+    _ -> depth
+  }
+
+  do_extract_case_branches(
+    rest,
+    [Word(word), ..current],
+    acc,
+    has_else,
+    next_depth,
+    state,
+  )
+}
+
+fn extract_top_level_case_word(
+  word: String,
+  upper: String,
+  rest: List(Token),
+  current: List(Token),
+  acc: List(List(Token)),
+  has_else: Bool,
+  state: CaseScanState,
+) -> #(List(List(Token)), Bool) {
+  case upper {
+    "WHEN" -> {
+      let new_acc = flush_case_branch(state, current, acc)
+      do_extract_case_branches(rest, [], new_acc, has_else, 0, InWhen)
+    }
+    "THEN" -> do_extract_case_branches(rest, [], acc, has_else, 0, InThen)
+    "ELSE" -> {
+      let new_acc = flush_then_case_branch(state, current, acc)
+      do_extract_case_branches(rest, [], new_acc, True, 0, InElse)
+    }
+    "CASE" ->
+      do_extract_case_branches(
+        rest,
+        [Word(word), ..current],
+        acc,
+        has_else,
+        1,
+        state,
+      )
+    _ ->
+      do_extract_case_branches(
+        rest,
+        [Word(word), ..current],
+        acc,
+        has_else,
+        0,
         state,
       )
   }
