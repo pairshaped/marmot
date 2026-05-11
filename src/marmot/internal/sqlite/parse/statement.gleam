@@ -27,7 +27,6 @@ pub fn classify_statement(tokens: List(Token)) -> StatementType {
   }
 }
 
-/// Extract table name after a keyword (INTO, UPDATE, FROM for DELETE).
 fn extract_name_after_keyword(tokens: List(Token), keyword: String) -> String {
   case tokenize.split_at_keyword(tokens, keyword) {
     Ok(#(_, after)) -> tokenize.first_word(after)

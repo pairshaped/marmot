@@ -1,6 +1,9 @@
-import marmot/internal/sqlite/parse/text
+//// Public facade for text-level SQL parse helpers.
+////
+//// Implementations live in `sqlite/parse/text.gleam`; this module keeps the
+//// older import path stable for callers elsewhere in the codebase.
 
-// ---- String operations (pre-tokenization) ----
+import marmot/internal/sqlite/parse/text
 
 /// Normalize SQL whitespace: strip comments, replace newlines/tabs with spaces
 /// (preserving string literals), collapse runs, and trim.

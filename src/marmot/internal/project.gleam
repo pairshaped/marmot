@@ -44,13 +44,11 @@ pub fn parse_config(
   args: List(String),
   env_database: Option(String),
 ) -> Config {
-  // Parse toml values
   let #(toml_database, toml_output, toml_query_function, toml_sql_dir) = case
     tom.parse(toml_content)
   {
     Ok(parsed) -> {
       warn_unknown_config_keys(parsed)
-      warn_marmot_section(parsed)
       #(
         tom.get_string(parsed, ["tools", "marmot", "database"])
           |> result.map(option.Some)
@@ -69,10 +67,8 @@ pub fn parse_config(
     Error(_) -> #(option.None, option.None, option.None, option.None)
   }
 
-  // Parse CLI args
   let cli = parse_cli_args(args)
 
-  // Apply precedence: env > cli > toml
   let database = case env_database {
     option.Some(_) -> env_database
     option.None ->
@@ -251,7 +247,8 @@ fn find_sql_directory_from_child_dir(
   }
 }
 
-/// List all .sql files in a directory.
+/// Return sorted `.sql` paths directly inside `dir`; nested directories are
+/// discovered before this by `find_sql_directories`.
 pub fn list_sql_files(dir: String) -> List(String) {
   case simplifile.read_directory(dir) {
     Ok(entries) ->
@@ -364,32 +361,5 @@ fn warn_unknown_config_keys(parsed: dict.Dict(String, tom.Toml)) -> Nil {
       }
     }
     Error(_) -> Nil
-  }
-}
-
-fn warn_marmot_section(parsed: dict.Dict(String, tom.Toml)) -> Nil {
-  case legacy_marmot_section_warning_from_parsed(parsed) {
-    option.Some(warning) -> io.println_error(warning)
-    option.None -> Nil
-  }
-}
-
-@internal
-pub fn legacy_marmot_section_warning(toml_content: String) -> Option(String) {
-  case tom.parse(toml_content) {
-    Ok(parsed) -> legacy_marmot_section_warning_from_parsed(parsed)
-    Error(_) -> option.None
-  }
-}
-
-fn legacy_marmot_section_warning_from_parsed(
-  parsed: dict.Dict(String, tom.Toml),
-) -> Option(String) {
-  case tom.get_table(parsed, ["marmot"]) {
-    Ok(_) ->
-      option.Some(
-        "warning: Found [marmot] section in gleam.toml. Marmot configuration belongs under [tools.marmot].",
-      )
-    Error(_) -> option.None
   }
 }

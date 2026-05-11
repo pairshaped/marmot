@@ -177,9 +177,8 @@ pub fn generate_module_with_config(
   query_function: Option(String),
 ) -> Result(String, error.MarmotError) {
   let config = parse_query_function(query_function)
-  // Phase 2: Import selection
   let imports = generate_imports(queries, config)
-  // Phase 3: Helper emission
+
   let needs_date_decoder =
     list.any(queries, fn(q) {
       list.any(q.columns, fn(c) { c.column_type == DateType })
@@ -212,12 +211,10 @@ pub fn generate_module_with_config(
 
   use _ <- result.try(check_generated_declarations(queries, "generated module"))
 
-  // Phase 4: Shared row groups
   use #(shared_groups, _plain_queries) <- result.try(group_shared_queries(
     queries,
   ))
 
-  // Shared types (one per group)
   let shared_types = case shared_groups {
     [] -> ""
     _ ->
@@ -236,7 +233,6 @@ pub fn generate_module_with_config(
       |> fn(s) { "\n\n" <> s }
   }
 
-  // Shared decoders (one per group)
   let shared_decoders = case shared_groups {
     [] -> ""
     _ ->
@@ -246,7 +242,6 @@ pub fn generate_module_with_config(
       |> fn(s) { "\n\n" <> s }
   }
 
-  // Phase 6: Function generation (row types + functions)
   let functions =
     queries
     |> list.map(fn(q) {

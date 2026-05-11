@@ -445,19 +445,3 @@ pub fn validate_output_double_traversal_test() {
     )
   let assert Error(Nil) = project.validate_output(config)
 }
-
-pub fn legacy_marmot_section_warning_test() {
-  let warning =
-    project.legacy_marmot_section_warning(
-      "[marmot]\ndatabase = \"dev.sqlite\"\n",
-    )
-  let assert option.Some(_) = warning
-}
-
-pub fn legacy_marmot_section_warning_none_test() {
-  let warning =
-    project.legacy_marmot_section_warning(
-      "[tools.marmot]\ndatabase = \"dev.sqlite\"\n",
-    )
-  let assert option.None = warning
-}

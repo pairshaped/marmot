@@ -1030,7 +1030,7 @@ pub fn schema_loader_int_pk_is_not_rowid_alias_test() {
   let assert False = bigint_id.is_rowid_alias
 }
 
-// ---- Resolver-driven parameter extraction (T14) ----
+// ---- Resolver-driven parameter extraction ----
 
 pub fn introspect_disambiguates_via_alias_test() {
   let assert Ok(conn) = sqlight.open(":memory:")
@@ -1514,11 +1514,11 @@ pub fn update_set_write_nullable_but_where_read_non_nullable_test() {
   ] = query.parameters
 }
 
-// ---- T16: sqlite.gleam derives Statement structure from parser ----
+// ---- sqlite.gleam derives Statement structure from parser ----
 
 pub fn introspect_insert_returning_via_typed_statement_test() {
-  // Locks in the behavior after T16: RETURNING presence and target table
-  // come from the typed Statement, not from global keyword probes.
+  // RETURNING presence and target table come from the typed Statement, not
+  // from global keyword probes.
   let assert Ok(conn) = sqlight.open(":memory:")
   let assert Ok(_) =
     sqlight.exec(
@@ -1555,7 +1555,7 @@ pub fn introspect_insert_no_returning_test() {
   let assert [] = query.columns
 }
 
-// ---- T15: results.gleam uses typed Statement ----
+// ---- results.gleam uses typed Statement ----
 
 pub fn results_extract_columns_via_typed_statement_test() {
   // Regression: extract_result_columns must derive select-list and from-table
@@ -1664,9 +1664,9 @@ pub fn insert_values_without_rowid_pk_is_not_nullable_on_write_test() {
 
 pub fn insert_values_composite_pk_is_not_rowid_alias_on_write_test() {
   // Regression: composite PK columns are NOT rowid aliases. Write
-  // nullability follows the read-side calculation (which T2 fixed:
-  // composite PK columns are nullable on ordinary rowid tables per
-  // SQLite's legacy quirk, unless explicitly NOT NULL).
+  // nullability follows the read-side calculation: composite PK columns are
+  // nullable on ordinary rowid tables per SQLite's legacy quirk, unless
+  // explicitly NOT NULL.
   let assert Ok(conn) = sqlight.open(":memory:")
   let assert Ok(_) =
     sqlight.exec(
@@ -1762,7 +1762,7 @@ pub fn insert_values_placeholders_across_multiple_rows_test() {
 pub fn introspect_cast_conditional_bypass_param_test() {
   // Same named param appears twice each: once as a zero-guard
   // (`CAST(@p AS INTEGER) = 0`) and once as a column comparison
-  // (`created_at >= CAST(@p AS INTEGER)`). Verify dedup keeps one entry per
+  // (`created_at >= CAST(@p AS INTEGER)`). Dedup must keep one entry per
   // name while still using the later column comparisons as type evidence.
   use db <- sqlight.with_connection(":memory:")
   let assert Ok(_) =
@@ -1828,9 +1828,9 @@ pub fn introspect_not_exists_subquery_with_param_test() {
 
 pub fn introspect_order_by_case_with_named_param_test() {
   // @by_date is reused across WHERE (twice) and ORDER BY CASE (once).
-  // @from_ts is reused across WHERE (twice). Verify dedup keeps one entry
-  // per name. Type for @by_date comes from string-literal comparison context;
-  // @from_ts from `created_at` (INTEGER).
+  // @from_ts is reused across WHERE (twice). Dedup must keep one entry per
+  // name. Type for @by_date comes from string-literal comparison context;
+  // @from_ts comes from `created_at` (INTEGER).
   use db <- sqlight.with_connection(":memory:")
   let assert Ok(_) =
     sqlight.exec(

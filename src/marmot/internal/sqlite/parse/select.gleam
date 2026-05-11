@@ -36,9 +36,6 @@ pub type SelectItem {
 /// the item with StringType and names derived from aliases or expression text.
 /// Known blind spots: subquery columns in the SELECT list, CTE references, and
 /// deeply nested expressions with function calls.
-/// Parse a select-list slice (no SELECT keyword, no FROM and beyond).
-/// Body-level entry point. The whole-statement helper `parse_select_items/1`
-/// is now a shim that slices and delegates.
 pub fn parse_select_item_list(
   select_list_tokens: List(Token),
 ) -> List(SelectItem) {
@@ -85,7 +82,6 @@ fn skip_select_keyword(tokens: List(Token)) -> List(Token) {
   }
 }
 
-/// Parse a single SELECT-list item from tokens.
 pub fn parse_select_item(tokens: List(Token)) -> SelectItem {
   let #(expr_tokens, alias_tokens, has_as) = case
     tokenize.split_at_last_keyword(tokens, "AS")
@@ -106,7 +102,6 @@ pub fn parse_select_item(tokens: List(Token)) -> SelectItem {
 
   let bare_column = detect_bare_column(expr_tokens)
 
-  // Check for nullability override at end of alias tokens
   let #(final_alias, override) = case list.last(alias_tokens) {
     Ok(NullOverride) -> #(
       strip_override_from_alias(alias_text),

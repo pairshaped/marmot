@@ -1,6 +1,8 @@
 -module(marmot_ffi).
 -export([run_executable/2, run_executable_in/3, run_executable_in_timeout/4, find_executable/1, get_env/1, make_tmp_file/2]).
 
+%% Erlang FFI for shell-safe process execution, env lookup, and temp files.
+
 -define(EXEC_TIMEOUT_MS, 10000).
 
 %% Run an executable with args using open_port (no shell interpretation).

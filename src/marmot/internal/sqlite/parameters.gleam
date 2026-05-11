@@ -652,7 +652,7 @@ fn find_limit_offset_param_positions(
   }
 }
 
-/// T17 metadata-driven INSERT extraction.
+/// Metadata-driven INSERT VALUES extraction.
 ///
 /// When `column_list = None`, derives the bindable column list from the table
 /// schema in declared order, skipping generated and hidden columns (hidden != 0).
@@ -930,7 +930,8 @@ fn binder_names_to_try(b: binder.Binder) -> List(String) {
   }
 }
 
-/// For SELECT/DELETE statements, scan tokens for `column OP ?` patterns
+/// Legacy fallback for SELECT/DELETE when resolver output cannot be trusted:
+/// scan tokens for simple `column OP ?` patterns across known tables.
 fn extract_select_parameters(
   table_schemas: Dict(String, List(Column)),
   tokens: List(tokenize.Token),
@@ -990,7 +991,6 @@ fn resolve_binder_type(
   }
 }
 
-/// Collect every table referenced in the tokens
 fn collect_all_tables(
   tokens: List(tokenize.Token),
   stmt_type: statement.StatementType,
@@ -1013,7 +1013,6 @@ fn collect_all_tables(
   |> list.unique
 }
 
-/// For UPDATE statements
 fn extract_update_parameters(
   table_schemas: Dict(String, List(Column)),
   tokens: List(tokenize.Token),

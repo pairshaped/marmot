@@ -613,8 +613,8 @@ pub fn split_on_and_or_between_nested_test() {
   let tokens = tokenize.tokenize("a = 1 AND b BETWEEN (SELECT x AND y) AND c")
   let groups = tokenize.split_on_and_or(tokens)
   let assert 2 = list.length(groups)
-  // Verify the BETWEEN group contains the nested AND (preserved) and the
-  // depth-0 AND (consumed as BETWEEN's AND), both in the same group.
+  // The BETWEEN group must contain the nested AND (preserved) and the depth-0
+  // AND (consumed as BETWEEN's AND), both in the same group.
   let and_count =
     groups
     |> list.fold(0, fn(acc, g) {

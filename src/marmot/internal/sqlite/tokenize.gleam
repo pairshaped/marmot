@@ -1,3 +1,8 @@
+//// SQL tokenizer and token-list helpers.
+////
+//// The tokenizer preserves quoted strings and identifiers, drops SQL comments
+//// and whitespace, and exposes paren-aware helpers used by the parser modules.
+
 import gleam/bool
 import gleam/list
 import gleam/option.{type Option}

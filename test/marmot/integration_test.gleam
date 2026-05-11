@@ -431,7 +431,6 @@ pub fn delete_exec_test() {
       ],
       expecting: decode.success(Nil),
     )
-  // Verify deleted
   let assert Ok([]) =
     sqlight.query("SELECT id FROM users", on: db, with: [], expecting: {
       use id <- decode.field(0, decode.int)
@@ -459,11 +458,9 @@ pub fn introspect_and_codegen_select_test() {
     "SELECT id, username, bio, is_active, created_at FROM users WHERE email = ?"
   let assert Ok(result) = sqlite.introspect_query(db, "test", sql)
 
-  // Verify introspection found correct columns
   let assert 5 = list.length(result.columns)
   let assert 1 = list.length(result.parameters)
 
-  // Generate code and verify it looks right
   let q =
     query.Query(
       name: "find_user_by_email",
@@ -474,18 +471,17 @@ pub fn introspect_and_codegen_select_test() {
       custom_type_name: option.None,
     )
   let code = codegen.generate_function(q)
-  // Code should contain the function name and row type
   let assert True = string.contains(code, "find_user_by_email")
   let assert True = string.contains(code, "FindUserByEmailRow")
   let assert True = string.contains(code, "sqlight.Connection")
 }
 
-// --- T20: INSERT VALUES with no column list, end-to-end ---
+// --- INSERT VALUES with no column list, end-to-end ---
 
 pub fn integration_bare_insert_with_rowid_pk_test() {
-  // Locks in T17's schema-fallback behavior: column-less INSERT VALUES
-  // derives parameter names and types from the table schema, with the
-  // rowid alias getting nullable: True (SQLite auto-assigns).
+  // Column-less INSERT VALUES derives parameter names and types from the
+  // table schema. Rowid aliases are nullable on write because SQLite
+  // auto-assigns them.
   let assert Ok(conn) = sqlight.open(":memory:")
   let assert Ok(_) =
     sqlight.exec(

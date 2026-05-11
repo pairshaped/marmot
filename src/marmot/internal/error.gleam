@@ -1,3 +1,8 @@
+//// User-facing Marmot errors and message rendering.
+////
+//// Error variants carry enough context for `to_string` to print the path,
+//// failing value, and recovery hint without reaching back into pipeline state.
+
 import gleam/bool
 import gleam/int
 import gleam/list

@@ -239,7 +239,6 @@ fn has_not_exists_subquery(tokens: List(Token), upper_word: String) -> Bool {
 fn parse_simple_where_condition(
   tokens: List(Token),
 ) -> List(#(String, String)) {
-  // Find the operator and extract LHS column
   let lhs_result = extract_lhs_column(tokens)
   case lhs_result {
     option.None -> []
@@ -276,7 +275,6 @@ fn parse_simple_where_lhs_column(
 }
 
 fn extract_lhs_column(tokens: List(Token)) -> Option(String) {
-  // Walk tokens to find the comparison operator, collect LHS
   do_extract_lhs(tokens, [])
 }
 

@@ -112,7 +112,6 @@ fn generate_all(db: sqlight.Connection, config: project.Config) -> Nil {
   case sql_dirs {
     [] -> io.println("No sql/ directories found under src/")
     dirs -> {
-      // Detect output path collisions when using configured output directory
       let outputs =
         list.map(dirs, fn(dir) { project.output_path(dir, config.output) })
       case list.length(list.unique(outputs)) != list.length(outputs) {
@@ -617,7 +616,7 @@ fn halt(code: Int) -> Nil {
   // init:stop/1 performs a graceful shutdown that flushes I/O buffers,
   // unlike erlang:halt/1 which exits immediately and may lose stderr output
   init_stop(code)
-  // init:stop is async; brief wait for graceful shutdown, then force exit
+  // init:stop is async; give it one scheduler tick before forcing exit.
   timer_sleep(100)
   erlang_halt(code)
 }

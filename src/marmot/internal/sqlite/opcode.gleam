@@ -428,7 +428,6 @@ fn parameter_from_seek_rowid(
   Parameter(name: name, column_type: query.IntType, nullable: False)
 }
 
-/// Find the Column opcode that writes to target_reg, closest to but before cmp_addr
 fn find_nearest_column_source(
   target_reg: Int,
   cmp_addr: Int,
@@ -495,7 +494,6 @@ fn resolve_seek_cursor_key(
   }
 }
 
-/// Resolve a cursor + column index to a Parameter
 fn resolve_column_to_parameter(
   cursor: Int,
   col_idx: Int,

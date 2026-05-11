@@ -94,7 +94,6 @@ pub fn introspect_query(
   // detection and SQL parsing below relies on single-space separators.
   let normalized_sql = parse.normalize_sql_whitespace(sql)
 
-  // Get all table metadata in a single pass
   let v2 = schema.get_table_metadata_v2(db)
   let table_schemas =
     dict.map_values(v2.columns, fn(_, metas) {
@@ -146,7 +145,6 @@ pub fn introspect_query(
     }),
   )
 
-  // Build cursor -> table mapping from OpenRead/OpenWrite opcodes
   let cursor_table =
     list.fold(opcodes, dict.new(), fn(acc, op) {
       case op.opcode {
@@ -161,10 +159,8 @@ pub fn introspect_query(
 
   let join_nullability = opcode.compute_join_nullability(opcodes, cursor_table)
 
-  // Tokenize once for all analysis
   let tokens = tokenize.tokenize(normalized_sql)
 
-  // Parse the statement skeleton to derive RETURNING presence and kind
   let parsed_stmt = statement_parser.parse(tokens)
   let returning_tokens = case parsed_stmt {
     Ok(statement_parser.Insert(stmt)) -> stmt.returning
@@ -178,7 +174,6 @@ pub fn introspect_query(
     _ -> False
   }
 
-  // Determine result columns
   let columns = case has_returning {
     True -> {
       let table_name = case parsed_stmt {
@@ -343,7 +338,8 @@ fn validate_rows_preflight(
   }
 }
 
-/// Delegate to parse module for public API compatibility
+/// Kept here so older internal callers do not need to know about
+/// `sqlite/parse.gleam`.
 pub fn strip_nullability_suffixes(sql: String) -> String {
   parse.strip_nullability_suffixes(sql)
 }
@@ -433,11 +429,9 @@ fn is_valid_pascal_case_identifier(name: String) -> Bool {
     [] -> False
     [first, ..rest] -> {
       let first_code = query.char_code(first)
-      // First char must be A-Z
       { first_code >= 65 && first_code <= 90 }
       && list.all(rest, fn(ch) {
         let code = query.char_code(ch)
-        // A-Z, a-z, 0-9
         { code >= 65 && code <= 90 }
         || { code >= 97 && code <= 122 }
         || { code >= 48 && code <= 57 }
