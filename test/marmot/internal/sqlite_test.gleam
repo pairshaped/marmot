@@ -1861,7 +1861,8 @@ pub fn introspect_update_with_column_arithmetic_param_test() {
   //   SET balance = balance + @delta
   //   WHERE balance + @min_delta >= 0
   // SET uses write-position inference, so @delta resolves from balance.
-  // WHERE still cannot infer @min_delta through arithmetic expression context.
+  // WHERE uses arithmetic expression context to resolve @min_delta from
+  // balance as a read-position Int param.
   use db <- sqlight.with_connection(":memory:")
   let assert Ok(_) =
     sqlight.exec(
@@ -1883,6 +1884,28 @@ pub fn introspect_update_with_column_arithmetic_param_test() {
   let assert [
     Parameter(name: "delta", column_type: IntType, nullable: False),
     Parameter(name: "id", column_type: IntType, nullable: False),
-    Parameter(name: "min_delta", column_type: StringType, nullable: False),
+    Parameter(name: "min_delta", column_type: IntType, nullable: False),
+  ] = result.parameters
+}
+
+pub fn introspect_select_with_multiplication_param_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE line_items (
+        id INTEGER NOT NULL PRIMARY KEY,
+        quantity INTEGER NOT NULL,
+        unit_price INTEGER NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "test",
+      "SELECT id FROM line_items WHERE quantity * unit_price >= quantity * @threshold",
+    )
+  let assert [
+    Parameter(name: "threshold", column_type: IntType, nullable: False),
   ] = result.parameters
 }

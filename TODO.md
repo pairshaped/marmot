@@ -7,9 +7,9 @@
   - Fixed by stripping `CAST(` while collecting binder evidence.
   - Pinned by the participant count wrapper regression shape.
 
-- [ ] Type params inside arithmetic expressions from nearby column context.
+- [x] Type params inside arithmetic expressions from nearby column context.
   - Example: `balance_cents + @min_delta >= 0` should infer `min_delta: Int` from `balance_cents`.
-  - Current behavior: `min_delta` falls back to `String`.
+  - Fixed by treating `+`, `-`, `*`, `/`, `%` as binder operators in `skip_operator_in_prev`.
   - Pinned by `introspect_update_with_column_arithmetic_param_test`.
 
 - [x] Collect typing evidence across all occurrences before deduping named params.

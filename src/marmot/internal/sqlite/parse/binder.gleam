@@ -4,8 +4,8 @@ import gleam/list
 import gleam/option.{type Option}
 import gleam/string
 import marmot/internal/sqlite/tokenize.{
-  type Token, CloseParen, Dot, Eq, Ge, Gt, Le, Lt, Ne, OpenParen, ParamAnon,
-  ParamNamed, QuotedId, Word,
+  type Token, CloseParen, Dot, Eq, Ge, Gt, Le, Lt, Minus, Ne, OpenParen,
+  ParamAnon, ParamNamed, Percent, Plus, QuotedId, Slash, Star, Word,
 }
 
 pub type Binder {
@@ -154,6 +154,12 @@ fn skip_operator_in_prev(prev: List(Token)) -> Option(List(Token)) {
     [Gt, ..rest] -> option.Some(rest)
     [Le, ..rest] -> option.Some(rest)
     [Ge, ..rest] -> option.Some(rest)
+    // Arithmetic operators (col + @p, col * @p, etc.)
+    [Plus, ..rest] -> option.Some(rest)
+    [Minus, ..rest] -> option.Some(rest)
+    [Star, ..rest] -> option.Some(rest)
+    [Slash, ..rest] -> option.Some(rest)
+    [Percent, ..rest] -> option.Some(rest)
     // Keyword operators (reversed, so just the word)
     [Word(w), ..rest] -> {
       let upper = string.uppercase(w)
