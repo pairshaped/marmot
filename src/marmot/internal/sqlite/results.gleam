@@ -42,7 +42,9 @@ pub fn extract_result_columns(
       let base_reg = rr.p1
       let count = rr.p2
       let result_regs = util.make_range(base_reg, count)
-      let #(select_list_tokens, from_tables) = case statement_parser.parse(tokens) {
+      let #(select_list_tokens, from_tables) = case
+        statement_parser.parse(tokens)
+      {
         Ok(statement_parser.Select(stmt)) -> {
           let from_names =
             stmt.body.from

@@ -223,19 +223,13 @@ pub fn get_table_metadata_v2(db: Connection) -> TableMetadataV2 {
 
   list.fold(
     tables,
-    TableMetadataV2(
-      columns: dict.new(),
-      pks: dict.new(),
-      rootpages: dict.new(),
-    ),
+    TableMetadataV2(columns: dict.new(), pks: dict.new(), rootpages: dict.new()),
     fn(acc, table) {
       let #(table_name, rootpage) = table
       let rootpages = dict.insert(acc.rootpages, rootpage, table_name)
       let is_without_rowid = set.contains(without_rowid_set, table_name)
       let pragma_sql =
-        "PRAGMA table_xinfo(\""
-        <> parse.quote_identifier(table_name)
-        <> "\")"
+        "PRAGMA table_xinfo(\"" <> parse.quote_identifier(table_name) <> "\")"
       case
         sqlight.query(pragma_sql, on: db, with: [], expecting: xinfo_decoder)
       {

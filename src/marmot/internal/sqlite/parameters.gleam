@@ -339,20 +339,18 @@ fn dedupe_named_binders_with_depth(
   case occurrences {
     [] -> list.reverse(acc)
     [
-      binder.BinderOccurrence(
-        binder: b,
-        depth: depth,
-        anonymous: anonymous,
-      ),
+      binder.BinderOccurrence(binder: b, depth: depth, anonymous: anonymous),
       ..rest
     ] -> {
       case anonymous {
         True -> dedupe_named_binders_with_depth(rest, [#(b, depth), ..acc])
         False ->
-          case list.find(acc, fn(pair) {
-            let #(existing, _) = pair
-            existing.name == b.name
-          }) {
+          case
+            list.find(acc, fn(pair) {
+              let #(existing, _) = pair
+              existing.name == b.name
+            })
+          {
             Ok(#(existing, _)) ->
               case existing.binder_column, b.binder_column {
                 option.None, option.Some(_) -> {

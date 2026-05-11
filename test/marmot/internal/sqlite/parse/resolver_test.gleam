@@ -34,7 +34,10 @@ pub fn alias_map_with_no_aliases_test() {
 }
 
 pub fn alias_map_self_join_test() {
-  let bindings = [binding("users", Some("u")), binding("users", Some("manager"))]
+  let bindings = [
+    binding("users", Some("u")),
+    binding("users", Some("manager")),
+  ]
   let assert Ok(map) = build_alias_map(bindings)
   let assert Ok(_) = dict.get(map, "u")
   let assert Ok(_) = dict.get(map, "manager")
@@ -72,7 +75,8 @@ pub fn resolve_qualified_known_test() {
 
 pub fn resolve_qualified_unknown_alias_test() {
   let assert Ok(map) = build_alias_map([binding("users", Some("u"))])
-  let assert UnknownQualifiedAlias = resolve_qualified(map, "x", "id", schemas())
+  let assert UnknownQualifiedAlias =
+    resolve_qualified(map, "x", "id", schemas())
 }
 
 pub fn resolve_qualified_unknown_column_test() {
@@ -83,13 +87,11 @@ pub fn resolve_qualified_unknown_column_test() {
 
 pub fn resolve_qualified_unknown_table_test() {
   let assert Ok(map) = build_alias_map([binding("foo_cte", None)])
-  let assert UnknownTableRef =
-    resolve_qualified(map, "foo_cte", "x", schemas())
+  let assert UnknownTableRef = resolve_qualified(map, "foo_cte", "x", schemas())
 }
 
 pub fn resolve_bare_unique_test() {
-  let assert Ok(map) =
-    build_alias_map([binding("users", Some("u"))])
+  let assert Ok(map) = build_alias_map([binding("users", Some("u"))])
   let assert Resolved(ResolvedColumn(_, Column("email", _, _))) =
     resolve_bare(map, "email", schemas())
 }

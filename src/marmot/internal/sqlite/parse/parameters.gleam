@@ -77,7 +77,9 @@ pub fn parse_values_placeholder_positions(tokens: List(Token)) -> List(Int) {
 
 /// Parse a SET body slice (no SET keyword, no following WHERE/RETURNING).
 /// The whole-statement helper `parse_update_set_columns/1` is now a shim.
-pub fn parse_update_set_body(set_tokens: List(Token)) -> List(#(String, String)) {
+pub fn parse_update_set_body(
+  set_tokens: List(Token),
+) -> List(#(String, String)) {
   tokenize.split_on_commas(set_tokens)
   |> list.filter_map(fn(assignment) {
     case split_tokens_on_eq(assignment) {

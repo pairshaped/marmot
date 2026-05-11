@@ -39,7 +39,9 @@ pub type SelectItem {
 /// Parse a select-list slice (no SELECT keyword, no FROM and beyond).
 /// Body-level entry point. The whole-statement helper `parse_select_items/1`
 /// is now a shim that slices and delegates.
-pub fn parse_select_item_list(select_list_tokens: List(Token)) -> List(SelectItem) {
+pub fn parse_select_item_list(
+  select_list_tokens: List(Token),
+) -> List(SelectItem) {
   tokenize.split_on_commas(select_list_tokens)
   |> list.map(parse_select_item)
 }

@@ -492,14 +492,9 @@ pub fn integration_bare_insert_with_rowid_pk_test() {
       "CREATE TABLE widgets (id INTEGER PRIMARY KEY, name TEXT NOT NULL, qty INTEGER);",
       conn,
     )
-  let assert Ok(sql) =
-    simplifile.read("examples/edge_cases/bare_insert.sql")
+  let assert Ok(sql) = simplifile.read("examples/edge_cases/bare_insert.sql")
   let assert Ok(query) =
-    sqlite.introspect_query(
-      conn,
-      "examples/edge_cases/bare_insert.sql",
-      sql,
-    )
+    sqlite.introspect_query(conn, "examples/edge_cases/bare_insert.sql", sql)
   let assert [
     Parameter(name: "id", column_type: IntType, nullable: True),
     Parameter(name: "name", column_type: StringType, nullable: False),
@@ -525,11 +520,7 @@ pub fn integration_keyword_table_returning_test() {
     )
   let assert Ok(sql) = simplifile.read("examples/edge_cases/keyword_table.sql")
   let assert Ok(query) =
-    sqlite.introspect_query(
-      conn,
-      "examples/edge_cases/keyword_table.sql",
-      sql,
-    )
+    sqlite.introspect_query(conn, "examples/edge_cases/keyword_table.sql", sql)
   let assert [Parameter(name: "id", column_type: IntType, nullable: False)] =
     query.parameters
 }

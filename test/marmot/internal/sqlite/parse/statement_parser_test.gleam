@@ -26,10 +26,7 @@ pub fn table_binding_constructor_test() {
     table: TableRef(schema: None, name: Identifier("users", False)),
     alias: None,
   ) =
-    TableBinding(
-      table: TableRef(None, Identifier("users", False)),
-      alias: None,
-    )
+    TableBinding(table: TableRef(None, Identifier("users", False)), alias: None)
 }
 
 pub fn parse_select_simple_test() {
@@ -118,17 +115,15 @@ pub fn parse_from_single_table_test() {
 pub fn parse_from_aliased_table_test() {
   let assert Ok(Select(SelectStmt(_, body))) =
     parse_sql("SELECT * FROM users AS u")
-  let assert [
-    FromItem(binding: TableBinding(_, alias: Some("u")), on: None),
-  ] = body.from
+  let assert [FromItem(binding: TableBinding(_, alias: Some("u")), on: None)] =
+    body.from
 }
 
 pub fn parse_from_alias_without_as_test() {
   let assert Ok(Select(SelectStmt(_, body))) =
     parse_sql("SELECT * FROM users u")
-  let assert [
-    FromItem(binding: TableBinding(_, alias: Some("u")), on: None),
-  ] = body.from
+  let assert [FromItem(binding: TableBinding(_, alias: Some("u")), on: None)] =
+    body.from
 }
 
 pub fn parse_from_schema_qualified_test() {
@@ -164,9 +159,7 @@ pub fn parse_from_quoted_identifier_test() {
 
 pub fn parse_from_join_with_on_test() {
   let assert Ok(Select(SelectStmt(_, body))) =
-    parse_sql(
-      "SELECT * FROM users u JOIN orders o ON o.user_id = u.id",
-    )
+    parse_sql("SELECT * FROM users u JOIN orders o ON o.user_id = u.id")
   let assert [
     FromItem(binding: TableBinding(_, alias: Some("u")), on: None),
     FromItem(binding: TableBinding(_, alias: Some("o")), on: Some(_)),
@@ -232,9 +225,7 @@ pub fn parse_with_recursive_cte_test() {
 
 pub fn parse_with_multiple_ctes_test() {
   let assert Ok(Select(SelectStmt(ctes, _))) =
-    parse_sql(
-      "WITH a AS (SELECT 1), b AS (SELECT 2) SELECT * FROM a, b",
-    )
+    parse_sql("WITH a AS (SELECT 1), b AS (SELECT 2) SELECT * FROM a, b")
   let assert [CteDef(name: "a", ..), CteDef(name: "b", ..)] = ctes
 }
 
@@ -277,8 +268,7 @@ pub fn parse_replace_shorthand_test() {
 }
 
 pub fn parse_insert_with_target_alias_test() {
-  let assert Ok(Insert(stmt)) =
-    parse_sql("INSERT INTO t AS u (a) VALUES (?)")
+  let assert Ok(Insert(stmt)) = parse_sql("INSERT INTO t AS u (a) VALUES (?)")
   let assert TableBinding(_, alias: Some("u")) = stmt.target
 }
 
@@ -289,8 +279,7 @@ pub fn parse_insert_returning_slice_test() {
 }
 
 pub fn parse_insert_values_single_row_test() {
-  let assert Ok(Insert(stmt)) =
-    parse_sql("INSERT INTO t (a, b) VALUES (?, ?)")
+  let assert Ok(Insert(stmt)) = parse_sql("INSERT INTO t (a, b) VALUES (?, ?)")
   let assert ValuesSource(raw: _, rows: [[col1, col2]]) = stmt.source
   let assert [tokenize.ParamAnon] = col1
   let assert [tokenize.ParamAnon] = col2
@@ -421,8 +410,7 @@ pub fn parse_insert_on_conflict_upsert_test() {
 }
 
 pub fn parse_delete_simple_test() {
-  let assert Ok(Delete(stmt)) =
-    parse_sql("DELETE FROM users WHERE id = ?")
+  let assert Ok(Delete(stmt)) = parse_sql("DELETE FROM users WHERE id = ?")
   let assert TableBinding(
     table: TableRef(_, name: Identifier("users", False)),
     alias: None,

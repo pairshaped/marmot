@@ -262,10 +262,7 @@ fn parse_one_cte(tokens: List(Token)) -> Result(#(CteDef, List(Token)), Nil) {
             True -> {
               let #(body, after_body) =
                 tokenize.collect_inside_parens(body_rest)
-              Ok(#(
-                CteDef(name: name, columns: columns, body: body),
-                after_body,
-              ))
+              Ok(#(CteDef(name: name, columns: columns, body: body), after_body))
             }
             False -> Error(Nil)
           }
@@ -279,7 +276,9 @@ fn parse_one_cte(tokens: List(Token)) -> Result(#(CteDef, List(Token)), Nil) {
 fn parse_select_body(tokens: List(Token)) -> SelectBody {
   let #(is_distinct, after_select) = case tokens {
     [Word(s), Word(d), ..rest] ->
-      case string.uppercase(s) == "SELECT" && string.uppercase(d) == "DISTINCT" {
+      case
+        string.uppercase(s) == "SELECT" && string.uppercase(d) == "DISTINCT"
+      {
         True -> #(True, rest)
         False ->
           case string.uppercase(s) == "SELECT" {
@@ -298,19 +297,38 @@ fn parse_select_body(tokens: List(Token)) -> SelectBody {
   let compound_boundaries = ["UNION", "INTERSECT", "EXCEPT"]
   let #(select_list, rest) =
     take_until_top_level_keyword(after_select, [
-      "FROM", "WHERE", "GROUP", "HAVING", "ORDER", "LIMIT",
+      "FROM",
+      "WHERE",
+      "GROUP",
+      "HAVING",
+      "ORDER",
+      "LIMIT",
       ..compound_boundaries
     ])
   let #(from_tokens, rest) =
     take_clause(rest, "FROM", [
-      "WHERE", "GROUP", "HAVING", "ORDER", "LIMIT", ..compound_boundaries
+      "WHERE",
+      "GROUP",
+      "HAVING",
+      "ORDER",
+      "LIMIT",
+      ..compound_boundaries
     ])
   let #(where, rest) =
     take_clause(rest, "WHERE", [
-      "GROUP", "HAVING", "ORDER", "LIMIT", ..compound_boundaries
+      "GROUP",
+      "HAVING",
+      "ORDER",
+      "LIMIT",
+      ..compound_boundaries
     ])
   let #(group_by, rest) =
-    take_clause(rest, "GROUP", ["HAVING", "ORDER", "LIMIT", ..compound_boundaries])
+    take_clause(rest, "GROUP", [
+      "HAVING",
+      "ORDER",
+      "LIMIT",
+      ..compound_boundaries
+    ])
   let #(having, rest) =
     take_clause(rest, "HAVING", ["ORDER", "LIMIT", ..compound_boundaries])
   let #(order_by, rest) =
@@ -528,8 +546,8 @@ fn is_clause_or_join_keyword(word: String) -> Bool {
   list.contains(
     [
       "ON", "USING", "JOIN", "WHERE", "GROUP", "HAVING", "ORDER", "LIMIT",
-      "VALUES", "DEFAULT", "SELECT", "WITH", "SET", "RETURNING",
-      "UNION", "INTERSECT", "EXCEPT",
+      "VALUES", "DEFAULT", "SELECT", "WITH", "SET", "RETURNING", "UNION",
+      "INTERSECT", "EXCEPT",
     ],
     upper,
   )
@@ -575,8 +593,7 @@ fn parse_delete(tokens: List(Token)) -> Result(DeleteStmt, MarmotError) {
   let after_delete = drop_keyword(tokens, "DELETE")
   let after_from = drop_keyword(after_delete, "FROM")
   let #(target, after_target) = parse_table_binding(after_from)
-  let #(where, after_where) =
-    take_clause(after_target, "WHERE", ["RETURNING"])
+  let #(where, after_where) = take_clause(after_target, "WHERE", ["RETURNING"])
   let #(returning, _rest) = take_clause(after_where, "RETURNING", [])
   Ok(DeleteStmt(target: target, where: where, returning: returning))
 }

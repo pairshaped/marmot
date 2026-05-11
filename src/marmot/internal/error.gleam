@@ -46,12 +46,7 @@ pub type MarmotError {
   UnknownColumnReference(path: String, column: String)
   /// INSERT VALUES row has a different number of expressions than the number
   /// of bindable columns (from the explicit column list or the table schema).
-  InsertValuesCountMismatch(
-    path: String,
-    expected: Int,
-    got: Int,
-    row: Int,
-  )
+  InsertValuesCountMismatch(path: String, expected: Int, got: Int, row: Int)
 }
 
 pub fn to_string(error: MarmotError) -> String {
@@ -189,7 +184,8 @@ pub fn to_string(error: MarmotError) -> String {
   \u{2502}
   hint: Check the alias spelling, or add the table to FROM."
 
-    UnknownColumnInTable(path:, table:, column:) -> "error: Unknown column on table
+    UnknownColumnInTable(path:, table:, column:) ->
+      "error: Unknown column on table
   \u{250c}\u{2500} " <> path <> "
   \u{2502}
   \u{2502} Column `" <> column <> "` does not exist on table `" <> table <> "`
@@ -205,17 +201,11 @@ pub fn to_string(error: MarmotError) -> String {
 
     InsertValuesCountMismatch(path:, expected:, got:, row:) ->
       "error: INSERT VALUES column count mismatch
-  \u{250c}\u{2500} "
-      <> path
-      <> "
+  \u{250c}\u{2500} " <> path <> "
   \u{2502}
-  \u{2502} Row "
-      <> int.to_string(row)
-      <> " has "
-      <> int.to_string(got)
-      <> " expression(s) but "
-      <> int.to_string(expected)
-      <> " column(s) expected
+  \u{2502} Row " <> int.to_string(row) <> " has " <> int.to_string(got) <> " expression(s) but " <> int.to_string(
+        expected,
+      ) <> " column(s) expected
   \u{2502}
   hint: Each VALUES row must have exactly one expression per bindable column."
   }

@@ -113,9 +113,7 @@ pub fn introspect_query(
   // while the extraction-stage check is a safety net for the param pipeline
   // (different error type, different layer). Keep both.
   let preflight_tokens = tokenize.tokenize(normalized_sql)
-  use _ <- result.try(
-    validate_insert_values_counts(preflight_tokens, v2, path),
-  )
+  use _ <- result.try(validate_insert_values_counts(preflight_tokens, v2, path))
 
   // Get EXPLAIN output (strip Marmot-specific `!`/`?` suffixes from aliases
   // before handing to SQLite)
@@ -256,11 +254,9 @@ fn resolution_error_to_marmot_error(
     // sole candidate) rather than inventing a new public variant for an
     // internal collision.
     parameters.AliasMapCollision(name:) ->
-      error.AmbiguousColumnReference(
-        path: path,
-        column: name,
-        candidates: [name],
-      )
+      error.AmbiguousColumnReference(path: path, column: name, candidates: [
+        name,
+      ])
     parameters.InsertValuesCountMismatch(expected:, got:, row:) ->
       error.InsertValuesCountMismatch(
         path: path,
