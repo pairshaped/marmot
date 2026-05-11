@@ -40,38 +40,48 @@ pub fn parse_insert_table_name(tokens: List(Token)) -> String {
     [Word(w), ..rest] -> {
       let upper = string.uppercase(w)
       case upper == "INSERT" || upper == "REPLACE" {
-        True ->
-          case rest {
-            [Word(or_kw), Word(next), ..rest2] -> {
-              case string.uppercase(or_kw) == "OR" {
-                True ->
-                  case rest2 {
-                    [Word(into), ..rest3] -> {
-                      case string.uppercase(into) == "INTO" {
-                        True -> tokenize.first_word(rest3)
-                        False -> tokenize.first_word(rest2)
-                      }
-                    }
-                    _ -> tokenize.first_word(rest2)
-                  }
-                False ->
-                  case string.uppercase(or_kw) == "INTO" {
-                    True -> tokenize.first_word([Word(next), ..rest2])
-                    False -> tokenize.first_word(rest)
-                  }
-              }
-            }
-            [Word(into), ..rest2] ->
-              case string.uppercase(into) == "INTO" {
-                True -> tokenize.first_word(rest2)
-                False -> tokenize.first_word(rest)
-              }
-            _ -> tokenize.first_word(rest)
-          }
+        True -> parse_insert_table_name_after_verb(rest)
         False -> extract_name_after_keyword(tokens, "INTO")
       }
     }
     _ -> ""
+  }
+}
+
+fn parse_insert_table_name_after_verb(tokens: List(Token)) -> String {
+  case tokens {
+    [Word(or_kw), Word(next), ..rest] ->
+      parse_insert_table_name_after_two_words(or_kw, next, rest, tokens)
+    [Word(into), ..rest] ->
+      case string.uppercase(into) == "INTO" {
+        True -> tokenize.first_word(rest)
+        False -> tokenize.first_word(tokens)
+      }
+    _ -> tokenize.first_word(tokens)
+  }
+}
+
+fn parse_insert_table_name_after_two_words(
+  first: String,
+  second: String,
+  rest: List(Token),
+  original: List(Token),
+) -> String {
+  case string.uppercase(first) {
+    "OR" -> parse_insert_table_name_after_conflict(rest)
+    "INTO" -> tokenize.first_word([Word(second), ..rest])
+    _ -> tokenize.first_word(original)
+  }
+}
+
+fn parse_insert_table_name_after_conflict(tokens: List(Token)) -> String {
+  case tokens {
+    [Word(into), ..rest] ->
+      case string.uppercase(into) == "INTO" {
+        True -> tokenize.first_word(rest)
+        False -> tokenize.first_word(tokens)
+      }
+    _ -> tokenize.first_word(tokens)
   }
 }
 

@@ -192,17 +192,26 @@ fn skip_cte_definitions(tokens: List(Token)) -> List(Token) {
     option.None -> tokens
     option.Some(as_idx) -> {
       let after_as = list.drop(tokens, as_idx + 1)
-      case after_as {
-        [OpenParen, ..rest] -> {
-          let remaining = tokenize.skip_matching_paren(rest, 1)
-          case remaining {
-            [Comma, ..rest2] -> skip_cte_definitions(rest2)
-            _ -> remaining
-          }
-        }
-        _ -> tokens
-      }
+      skip_cte_definition_after_as(after_as, tokens)
     }
+  }
+}
+
+fn skip_cte_definition_after_as(
+  after_as: List(Token),
+  original: List(Token),
+) -> List(Token) {
+  case after_as {
+    [OpenParen, ..rest] -> skip_cte_definition_body(rest)
+    _ -> original
+  }
+}
+
+fn skip_cte_definition_body(tokens: List(Token)) -> List(Token) {
+  let remaining = tokenize.skip_matching_paren(tokens, 1)
+  case remaining {
+    [Comma, ..rest] -> skip_cte_definitions(rest)
+    _ -> remaining
   }
 }
 
@@ -255,17 +264,23 @@ fn do_split_on_joins(
     [Word(w), ..rest] -> {
       let upper = string.uppercase(w)
       case upper == "JOIN" {
-        True -> {
-          let cleaned = strip_trailing_join_modifiers(current)
-          case cleaned {
-            [] -> do_split_on_joins(rest, [], acc)
-            _ -> do_split_on_joins(rest, [], [list.reverse(cleaned), ..acc])
-          }
-        }
+        True -> do_split_on_join_keyword(rest, current, acc)
         False -> do_split_on_joins(rest, [Word(w), ..current], acc)
       }
     }
     [token, ..rest] -> do_split_on_joins(rest, [token, ..current], acc)
+  }
+}
+
+fn do_split_on_join_keyword(
+  rest: List(Token),
+  current: List(Token),
+  acc: List(List(Token)),
+) -> List(List(Token)) {
+  let cleaned = strip_trailing_join_modifiers(current)
+  case cleaned {
+    [] -> do_split_on_joins(rest, [], acc)
+    _ -> do_split_on_joins(rest, [], [list.reverse(cleaned), ..acc])
   }
 }
 
