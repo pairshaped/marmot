@@ -3,6 +3,7 @@
 import gleam/bool
 import gleam/list
 import gleam/option.{type Option}
+import gleam/result
 import gleam/string
 import marmot/internal/query
 import marmot/internal/sqlite/parse/util
@@ -53,23 +54,27 @@ fn find_first_paren_group(tokens: List(Token)) -> Option(List(Token)) {
 pub fn parse_values_placeholder_positions(tokens: List(Token)) -> List(Int) {
   case tokenize.split_at_keyword(tokens, "VALUES") {
     Error(_) -> []
-    Ok(#(_, after)) ->
-      case after {
-        [OpenParen, ..rest] -> {
-          let #(inner, _) = tokenize.collect_inside_parens(rest)
-          let parts = tokenize.split_on_commas(inner)
-          list.index_map(parts, fn(part, idx) { #(part, idx) })
-          |> list.filter_map(fn(pair) {
-            let #(part, idx) = pair
-            case part {
-              [ParamAnon] -> Ok(idx)
-              [ParamNamed(_)] -> Ok(idx)
-              _ -> Error(Nil)
-            }
-          })
-        }
-        _ -> []
-      }
+    Ok(#(_, after)) -> parse_values_placeholders_after_keyword(after)
+  }
+}
+
+fn parse_values_placeholders_after_keyword(tokens: List(Token)) -> List(Int) {
+  case tokens {
+    [OpenParen, ..rest] -> {
+      let #(inner, _) = tokenize.collect_inside_parens(rest)
+      tokenize.split_on_commas(inner)
+      |> list.index_map(fn(part, idx) { #(part, idx) })
+      |> list.filter_map(values_placeholder_position)
+    }
+    _ -> []
+  }
+}
+
+fn values_placeholder_position(pair: #(List(Token), Int)) -> Result(Int, Nil) {
+  let #(part, idx) = pair
+  case part {
+    [ParamAnon] | [ParamNamed(_)] -> Ok(idx)
+    _ -> Error(Nil)
   }
 }
 
@@ -81,22 +86,21 @@ pub fn parse_update_set_body(
   set_tokens: List(Token),
 ) -> List(#(String, String)) {
   tokenize.split_on_commas(set_tokens)
-  |> list.filter_map(fn(assignment) {
-    case split_tokens_on_eq(assignment) {
-      Error(_) -> Error(Nil)
-      Ok(#(lhs_tokens, rhs_tokens)) -> {
-        let col = util.token_list_to_name(lhs_tokens)
-        case has_param_token(rhs_tokens) {
-          True ->
-            case find_named_param_in_tokens(rhs_tokens) {
-              option.Some(param_name) -> Ok(#(param_name, col))
-              option.None -> Ok(#(col, col))
-            }
-          False -> Error(Nil)
-        }
-      }
-    }
-  })
+  |> list.filter_map(parse_update_set_assignment)
+}
+
+fn parse_update_set_assignment(
+  assignment: List(Token),
+) -> Result(#(String, String), Nil) {
+  use split <- result.try(split_tokens_on_eq(assignment))
+  let #(lhs_tokens, rhs_tokens) = split
+  use <- bool.guard(!has_param_token(rhs_tokens), Error(Nil))
+
+  let col = util.token_list_to_name(lhs_tokens)
+  case find_named_param_in_tokens(rhs_tokens) {
+    option.Some(param_name) -> Ok(#(param_name, col))
+    option.None -> Ok(#(col, col))
+  }
 }
 
 pub fn parse_update_set_columns(
@@ -168,15 +172,13 @@ pub fn parse_where_columns(tokens: List(Token)) -> List(#(String, String)) {
 }
 
 fn parse_where_condition(tokens: List(Token)) -> List(#(String, String)) {
-  case has_param_token(tokens) {
-    False -> []
+  use <- bool.guard(!has_param_token(tokens), [])
+
+  case has_subquery(tokens) {
     True ->
-      case has_subquery(tokens) {
-        True ->
-          extract_all_named_params_from_tokens(tokens)
-          |> list.map(fn(name) { #(name, name) })
-        False -> parse_simple_where_condition(tokens)
-      }
+      extract_all_named_params_from_tokens(tokens)
+      |> list.map(fn(name) { #(name, name) })
+    False -> parse_simple_where_condition(tokens)
   }
 }
 
@@ -191,23 +193,7 @@ fn do_has_subquery(tokens: List(Token)) -> Bool {
     [Word(w), OpenParen, Word(s), ..] -> {
       let uw = string.uppercase(w)
       let us = string.uppercase(s)
-      case { uw == "IN" || uw == "EXISTS" } && us == "SELECT" {
-        True -> True
-        False ->
-          case uw == "NOT" {
-            True ->
-              // Peek at the next word inside parens: NOT EXISTS (SELECT ...)
-              case list.drop(tokens, 2) {
-                [Word(next), ..] ->
-                  case string.uppercase(next) == "EXISTS" {
-                    True -> True
-                    False -> do_has_subquery(list.drop(tokens, 1))
-                  }
-                _ -> do_has_subquery(list.drop(tokens, 1))
-              }
-            False -> do_has_subquery(list.drop(tokens, 1))
-          }
-      }
+      has_subquery_after_word_paren(tokens, uw, us)
     }
     // = (SELECT ...) or < (SELECT ...) or > (SELECT ...) etc.
     [Eq, OpenParen, Word(w), ..]
@@ -224,6 +210,32 @@ fn do_has_subquery(tokens: List(Token)) -> Bool {
   }
 }
 
+fn has_subquery_after_word_paren(
+  tokens: List(Token),
+  upper_word: String,
+  upper_second: String,
+) -> Bool {
+  use <- bool.guard(
+    { upper_word == "IN" || upper_word == "EXISTS" } && upper_second == "SELECT",
+    True,
+  )
+  has_not_exists_subquery(tokens, upper_word)
+}
+
+fn has_not_exists_subquery(tokens: List(Token), upper_word: String) -> Bool {
+  use <- bool.guard(upper_word != "NOT", do_has_subquery(list.drop(tokens, 1)))
+
+  // Peek at the next word inside parens: NOT EXISTS (SELECT ...)
+  case list.drop(tokens, 2) {
+    [Word(next), ..] ->
+      case string.uppercase(next) == "EXISTS" {
+        True -> True
+        False -> do_has_subquery(list.drop(tokens, 1))
+      }
+    _ -> do_has_subquery(list.drop(tokens, 1))
+  }
+}
+
 fn parse_simple_where_condition(
   tokens: List(Token),
 ) -> List(#(String, String)) {
@@ -231,24 +243,35 @@ fn parse_simple_where_condition(
   let lhs_result = extract_lhs_column(tokens)
   case lhs_result {
     option.None -> []
-    option.Some(lhs) ->
-      // Check if LHS contains a named param (arithmetic expression)
-      case find_named_param_in_name(lhs) {
-        option.Some(param_name) -> {
-          let lookup = extract_column_before_param(lhs)
-          [#(param_name, normalize_column_ref(lookup))]
-        }
-        option.None -> {
-          let col_name = normalize_column_ref(lhs)
-          // Extract all named params from the RHS and map each to the LHS column.
-          // Handles BETWEEN @from AND @to and single-param cases like col = @val.
-          let rhs_params = extract_all_named_params_from_tokens(tokens)
-          case rhs_params {
-            [] -> [#(col_name, col_name)]
-            params -> list.map(params, fn(p) { #(p, col_name) })
-          }
-        }
-      }
+    option.Some(lhs) -> parse_simple_where_lhs(lhs, tokens)
+  }
+}
+
+fn parse_simple_where_lhs(
+  lhs: String,
+  tokens: List(Token),
+) -> List(#(String, String)) {
+  // Check if LHS contains a named param (arithmetic expression)
+  case find_named_param_in_name(lhs) {
+    option.Some(param_name) -> {
+      let lookup = extract_column_before_param(lhs)
+      [#(param_name, normalize_column_ref(lookup))]
+    }
+    option.None -> parse_simple_where_lhs_column(lhs, tokens)
+  }
+}
+
+fn parse_simple_where_lhs_column(
+  lhs: String,
+  tokens: List(Token),
+) -> List(#(String, String)) {
+  let col_name = normalize_column_ref(lhs)
+  // Extract all named params from the RHS and map each to the LHS column.
+  // Handles BETWEEN @from AND @to and single-param cases like col = @val.
+  let rhs_params = extract_all_named_params_from_tokens(tokens)
+  case rhs_params {
+    [] -> [#(col_name, col_name)]
+    params -> list.map(params, fn(p) { #(p, col_name) })
   }
 }
 
@@ -270,43 +293,65 @@ fn do_extract_lhs(tokens: List(Token), acc: List(Token)) -> Option(String) {
     // operator boundary (e.g., NOT LIKE, NOT IN, NOT BETWEEN).
     [Word(w), ..] -> {
       let upper = string.uppercase(w)
-      case upper == "NOT" {
-        True ->
-          case list.drop(tokens, 1) {
-            [Word(next), ..] -> {
-              let next_upper = string.uppercase(next)
-              case
-                next_upper == "LIKE"
-                || next_upper == "IN"
-                || next_upper == "BETWEEN"
-              {
-                True ->
-                  case acc {
-                    [] -> option.None
-                    _ -> option.Some(tokens_to_column_name(list.reverse(acc)))
-                  }
-                False -> do_extract_lhs(list.drop(tokens, 1), [Word(w), ..acc])
-              }
-            }
-            _ -> do_extract_lhs(list.drop(tokens, 1), [Word(w), ..acc])
-          }
-        False ->
-          case
-            upper == "LIKE"
-            || upper == "IN"
-            || upper == "IS"
-            || upper == "BETWEEN"
-          {
-            True ->
-              case acc {
-                [] -> option.None
-                _ -> option.Some(tokens_to_column_name(list.reverse(acc)))
-              }
-            False -> do_extract_lhs(list.drop(tokens, 1), [Word(w), ..acc])
-          }
-      }
+      extract_lhs_from_word(tokens, w, upper, acc)
     }
     [token, ..rest] -> do_extract_lhs(rest, [token, ..acc])
+  }
+}
+
+fn extract_lhs_from_word(
+  tokens: List(Token),
+  word: String,
+  upper: String,
+  acc: List(Token),
+) -> Option(String) {
+  case upper == "NOT" {
+    True -> extract_lhs_from_not_operator(tokens, word, acc)
+    False -> extract_lhs_from_keyword_operator(tokens, word, upper, acc)
+  }
+}
+
+fn extract_lhs_from_not_operator(
+  tokens: List(Token),
+  word: String,
+  acc: List(Token),
+) -> Option(String) {
+  case list.drop(tokens, 1) {
+    [Word(next), ..] -> {
+      let next_upper = string.uppercase(next)
+      case is_not_keyword_operator(next_upper) {
+        True -> column_name_from_lhs_acc(acc)
+        False -> do_extract_lhs(list.drop(tokens, 1), [Word(word), ..acc])
+      }
+    }
+    _ -> do_extract_lhs(list.drop(tokens, 1), [Word(word), ..acc])
+  }
+}
+
+fn extract_lhs_from_keyword_operator(
+  tokens: List(Token),
+  word: String,
+  upper: String,
+  acc: List(Token),
+) -> Option(String) {
+  case is_keyword_operator(upper) {
+    True -> column_name_from_lhs_acc(acc)
+    False -> do_extract_lhs(list.drop(tokens, 1), [Word(word), ..acc])
+  }
+}
+
+fn is_not_keyword_operator(upper: String) -> Bool {
+  upper == "LIKE" || upper == "IN" || upper == "BETWEEN"
+}
+
+fn is_keyword_operator(upper: String) -> Bool {
+  is_not_keyword_operator(upper) || upper == "IS"
+}
+
+fn column_name_from_lhs_acc(acc: List(Token)) -> Option(String) {
+  case acc {
+    [] -> option.None
+    _ -> option.Some(tokens_to_column_name(list.reverse(acc)))
   }
 }
 
