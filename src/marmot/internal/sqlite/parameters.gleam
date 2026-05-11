@@ -1,5 +1,6 @@
 //// Parameter extraction from opcodes plus parsed SQL context.
 
+import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
@@ -59,19 +60,13 @@ pub fn extract_parameters(
     _ -> {
       let opcode_fallback = fn() {
         list.map(variable_ops, fn(var_op) {
-          case
-            opcode.infer_parameter_type(
-              var_op,
-              opcodes,
-              cursor_table,
-              table_schemas,
-              pk_columns,
-            )
-          {
-            Ok(p) -> p
-            Error(_) ->
-              Parameter(name: "param", column_type: StringType, nullable: False)
-          }
+          infer_parameter_or_string(
+            var_op,
+            opcodes,
+            cursor_table,
+            table_schemas,
+            pk_columns,
+          )
         })
       }
 
@@ -99,33 +94,15 @@ pub fn extract_parameters(
             param_count,
             opcode_fallback,
           )
-        Ok(statement_parser.Insert(stmt)) -> {
-          case stmt.source {
-            statement_parser.ValuesSource(_, _)
-            | statement_parser.DefaultValuesSource -> {
-              use parsed <- result.try(extract_insert_parameters_v2(
-                stmt,
-                table_metadata,
-              ))
-              // If the extracted param count doesn't match (e.g. upsert with
-              // ON CONFLICT DO UPDATE SET adds more `?` parameters beyond the
-              // VALUES row), fall back to opcode inference so those extra
-              // parameters aren't silently dropped.
-              case list.length(parsed) == param_count {
-                True -> Ok(parsed)
-                False -> Ok(opcode_fallback())
-              }
-            }
-            statement_parser.SelectSource(_) -> {
-              let parsed =
-                extract_insert_select_parameters(stmt, table_schemas, tokens)
-              case list.length(parsed) == param_count {
-                True -> Ok(parsed)
-                False -> Ok(opcode_fallback())
-              }
-            }
-          }
-        }
+        Ok(statement_parser.Insert(stmt)) ->
+          extract_insert_body_result(
+            stmt,
+            table_metadata,
+            table_schemas,
+            tokens,
+            param_count,
+            opcode_fallback,
+          )
         Ok(statement_parser.Unsupported(_)) | Error(_) -> Ok(opcode_fallback())
       }
 
@@ -133,6 +110,89 @@ pub fn extract_parameters(
       Ok(fix_limit_offset_param_types(body, tokens))
     }
   }
+}
+
+fn infer_parameter_or_string(
+  var_op: Opcode,
+  opcodes: List(Opcode),
+  cursor_table: Dict(Int, String),
+  table_schemas: Dict(String, List(Column)),
+  pk_columns: Dict(String, String),
+) -> Parameter {
+  case
+    opcode.infer_parameter_type(
+      var_op,
+      opcodes,
+      cursor_table,
+      table_schemas,
+      pk_columns,
+    )
+  {
+    Ok(p) -> p
+    Error(_) ->
+      Parameter(name: "param", column_type: StringType, nullable: False)
+  }
+}
+
+fn extract_insert_values_body_result(
+  stmt: statement_parser.InsertStmt,
+  table_metadata: schema.TableMetadataV2,
+  param_count: Int,
+  opcode_fallback: fn() -> List(Parameter),
+) -> Result(List(Parameter), ParameterResolutionError) {
+  use parsed <- result.try(extract_insert_parameters_v2(stmt, table_metadata))
+  // If the extracted param count doesn't match (e.g. upsert with ON CONFLICT DO
+  // UPDATE SET adds more `?` parameters beyond the VALUES row), fall back to
+  // opcode inference so those extra parameters aren't silently dropped.
+  return_parsed_when_count_matches(parsed, param_count, opcode_fallback)
+}
+
+fn extract_insert_body_result(
+  stmt: statement_parser.InsertStmt,
+  table_metadata: schema.TableMetadataV2,
+  table_schemas: Dict(String, List(Column)),
+  tokens: List(tokenize.Token),
+  param_count: Int,
+  opcode_fallback: fn() -> List(Parameter),
+) -> Result(List(Parameter), ParameterResolutionError) {
+  case stmt.source {
+    statement_parser.ValuesSource(_, _)
+    | statement_parser.DefaultValuesSource ->
+      extract_insert_values_body_result(
+        stmt,
+        table_metadata,
+        param_count,
+        opcode_fallback,
+      )
+    statement_parser.SelectSource(_) ->
+      extract_insert_select_body_result(
+        stmt,
+        table_schemas,
+        tokens,
+        param_count,
+        opcode_fallback,
+      )
+  }
+}
+
+fn extract_insert_select_body_result(
+  stmt: statement_parser.InsertStmt,
+  table_schemas: Dict(String, List(Column)),
+  tokens: List(tokenize.Token),
+  param_count: Int,
+  opcode_fallback: fn() -> List(Parameter),
+) -> Result(List(Parameter), ParameterResolutionError) {
+  let parsed = extract_insert_select_parameters(stmt, table_schemas, tokens)
+  return_parsed_when_count_matches(parsed, param_count, opcode_fallback)
+}
+
+fn return_parsed_when_count_matches(
+  parsed: List(Parameter),
+  param_count: Int,
+  opcode_fallback: fn() -> List(Parameter),
+) -> Result(List(Parameter), ParameterResolutionError) {
+  use <- bool.guard(list.length(parsed) != param_count, Ok(opcode_fallback()))
+  Ok(parsed)
 }
 
 // ---- Resolver-driven extraction for SELECT/DELETE/UPDATE ----
@@ -341,34 +401,66 @@ fn dedupe_named_binders_with_depth(
     ] -> {
       case anonymous {
         True -> dedupe_named_binders_with_depth(rest, [#(b, depth), ..acc])
-        False ->
-          case
-            list.find(acc, fn(pair) {
-              let #(existing, _) = pair
-              existing.name == b.name
-            })
-          {
-            Ok(#(existing, _)) ->
-              case existing.binder_column, b.binder_column {
-                option.None, option.Some(_) -> {
-                  let new_acc =
-                    list.map(acc, fn(pair) {
-                      let #(existing, _) = pair
-                      case existing.name == b.name {
-                        True -> #(b, depth)
-                        False -> pair
-                      }
-                    })
-                  dedupe_named_binders_with_depth(rest, new_acc)
-                }
-                _, _ -> dedupe_named_binders_with_depth(rest, acc)
-              }
-            Error(_) ->
-              dedupe_named_binders_with_depth(rest, [#(b, depth), ..acc])
-          }
+        False -> dedupe_named_binder_occurrence(b, depth, rest, acc)
       }
     }
   }
+}
+
+fn dedupe_named_binder_occurrence(
+  b: binder.Binder,
+  depth: Int,
+  rest: List(binder.BinderOccurrence),
+  acc: List(#(binder.Binder, Int)),
+) -> List(#(binder.Binder, Int)) {
+  case find_existing_binder(b.name, acc) {
+    Ok(existing) ->
+      dedupe_existing_binder_occurrence(b, depth, rest, acc, existing)
+    Error(_) -> dedupe_named_binders_with_depth(rest, [#(b, depth), ..acc])
+  }
+}
+
+fn find_existing_binder(
+  name: String,
+  acc: List(#(binder.Binder, Int)),
+) -> Result(binder.Binder, Nil) {
+  list.find_map(acc, fn(pair) {
+    let #(existing, _) = pair
+    case existing.name == name {
+      True -> Ok(existing)
+      False -> Error(Nil)
+    }
+  })
+}
+
+fn dedupe_existing_binder_occurrence(
+  b: binder.Binder,
+  depth: Int,
+  rest: List(binder.BinderOccurrence),
+  acc: List(#(binder.Binder, Int)),
+  existing: binder.Binder,
+) -> List(#(binder.Binder, Int)) {
+  case existing.binder_column, b.binder_column {
+    option.None, option.Some(_) -> {
+      let new_acc = replace_binder_occurrence(b, depth, acc)
+      dedupe_named_binders_with_depth(rest, new_acc)
+    }
+    _, _ -> dedupe_named_binders_with_depth(rest, acc)
+  }
+}
+
+fn replace_binder_occurrence(
+  b: binder.Binder,
+  depth: Int,
+  acc: List(#(binder.Binder, Int)),
+) -> List(#(binder.Binder, Int)) {
+  list.map(acc, fn(pair) {
+    let #(existing, _) = pair
+    case existing.name == b.name {
+      True -> #(b, depth)
+      False -> pair
+    }
+  })
 }
 
 fn legacy_resolve_binder(
@@ -611,28 +703,49 @@ fn extract_insert_parameters_v2(
       // column positions across rows.
       let params =
         list.flat_map(rows, fn(row) {
-          list.zip(row, bound_metas)
-          |> list.filter_map(fn(pair) {
-            let #(expr_tokens, meta) = pair
-            case expr_tokens {
-              [tokenize.ParamAnon] | [tokenize.ParamNamed(_)] ->
-                Ok(Parameter(
-                  name: case expr_tokens {
-                    [tokenize.ParamNamed(n)] -> n
-                    _ -> meta.column.name
-                  },
-                  column_type: meta.column.column_type,
-                  nullable: meta.column.nullable || meta.is_rowid_alias,
-                ))
-              _ -> Error(Nil)
-            }
-          })
+          params_from_insert_values_row(row, bound_metas)
         })
       Ok(params)
     }
     statement_parser.DefaultValuesSource -> Ok([])
     // SelectSource is handled before this function is called.
     statement_parser.SelectSource(_) -> Ok([])
+  }
+}
+
+fn params_from_insert_values_row(
+  row: List(List(tokenize.Token)),
+  bound_metas: List(schema.ColumnMetadata),
+) -> List(Parameter) {
+  list.zip(row, bound_metas)
+  |> list.filter_map(fn(pair) {
+    let #(expr_tokens, meta) = pair
+    param_from_insert_values_expr(expr_tokens, meta)
+  })
+}
+
+fn param_from_insert_values_expr(
+  expr_tokens: List(tokenize.Token),
+  meta: schema.ColumnMetadata,
+) -> Result(Parameter, Nil) {
+  case expr_tokens {
+    [tokenize.ParamAnon] | [tokenize.ParamNamed(_)] ->
+      Ok(Parameter(
+        name: param_name_from_insert_values_expr(expr_tokens, meta),
+        column_type: meta.column.column_type,
+        nullable: meta.column.nullable || meta.is_rowid_alias,
+      ))
+    _ -> Error(Nil)
+  }
+}
+
+fn param_name_from_insert_values_expr(
+  expr_tokens: List(tokenize.Token),
+  meta: schema.ColumnMetadata,
+) -> String {
+  case expr_tokens {
+    [tokenize.ParamNamed(n)] -> n
+    _ -> meta.column.name
   }
 }
 
@@ -649,16 +762,17 @@ fn validate_row_counts(
 ) -> Result(Nil, ParameterResolutionError) {
   case rows {
     [] -> Ok(Nil)
-    [row, ..rest] ->
-      case list.length(row) == expected {
-        True -> validate_row_counts(rest, expected, index + 1)
-        False ->
-          Error(InsertValuesCountMismatch(
-            expected: expected,
-            got: list.length(row),
-            row: index,
-          ))
-      }
+    [row, ..rest] -> {
+      use <- bool.guard(
+        list.length(row) != expected,
+        Error(InsertValuesCountMismatch(
+          expected: expected,
+          got: list.length(row),
+          row: index,
+        )),
+      )
+      validate_row_counts(rest, expected, index + 1)
+    }
   }
 }
 
@@ -690,45 +804,12 @@ fn extract_insert_select_parameters(
       let select_params =
         items
         |> list.index_map(fn(item_tokens, idx) {
-          let is_anon = item_tokens == [tokenize.ParamAnon]
-          let is_named = case item_tokens {
-            [tokenize.ParamNamed(_)] -> True
-            _ -> False
-          }
-          case is_anon || is_named {
-            True ->
-              case list.drop(target_cols, idx) |> list.first {
-                Ok(col_name) ->
-                  case
-                    list.find(target_col_types, fn(c) { c.name == col_name })
-                  {
-                    Ok(col) -> {
-                      let param_name = case item_tokens {
-                        [tokenize.ParamNamed(n)] -> n
-                        _ -> col_name
-                      }
-                      option.Some(Parameter(
-                        name: param_name,
-                        column_type: col.column_type,
-                        nullable: col.nullable,
-                      ))
-                    }
-                    Error(_) -> {
-                      let param_name = case item_tokens {
-                        [tokenize.ParamNamed(n)] -> n
-                        _ -> col_name
-                      }
-                      option.Some(Parameter(
-                        name: param_name,
-                        column_type: StringType,
-                        nullable: False,
-                      ))
-                    }
-                  }
-                Error(_) -> option.None
-              }
-            False -> option.None
-          }
+          insert_select_projection_param(
+            item_tokens,
+            idx,
+            target_cols,
+            target_col_types,
+          )
         })
         |> list.filter_map(fn(o) {
           case o {
@@ -741,12 +822,7 @@ fn extract_insert_select_parameters(
       let from_onwards = tokenize.drop_until_keyword(after_select, "FROM")
       let where_tables =
         subquery.find_all_subquery_tables(from_onwards)
-        |> list.filter(fn(t) {
-          case dict.get(table_schemas, t) {
-            Ok(_) -> True
-            Error(_) -> False
-          }
-        })
+        |> list.filter(fn(t) { dict.has_key(table_schemas, t) })
       let where_binders = binder.find_param_binders(from_onwards)
       let select_param_names = list.map(select_params, fn(p) { p.name })
       let unmatched_where_binders =
@@ -755,42 +831,102 @@ fn extract_insert_select_parameters(
         })
       let where_params =
         list.map(unmatched_where_binders, fn(binder) {
-          let names_to_try = case binder.binder_column {
-            option.Some(col) -> {
-              let bare_col = case string.split_once(col, ".") {
-                Ok(#(_, after)) -> after
-                Error(_) -> col
-              }
-              case bare_col == binder.name {
-                True -> [binder.name]
-                False -> [bare_col, binder.name]
-              }
-            }
-            option.None -> [binder.name]
-          }
-          case
-            list.find_map(names_to_try, fn(name) {
-              list.find_map(where_tables, fn(table) {
-                query.find_column(table_schemas, table, name)
-              })
-            })
-          {
-            Ok(col) ->
-              Parameter(
-                name: binder.name,
-                column_type: col.column_type,
-                nullable: False,
-              )
-            Error(_) ->
-              Parameter(
-                name: binder.name,
-                column_type: StringType,
-                nullable: False,
-              )
-          }
+          insert_select_where_param(binder, where_tables, table_schemas)
         })
       list.append(select_params, where_params)
     }
+  }
+}
+
+fn insert_select_projection_param(
+  item_tokens: List(tokenize.Token),
+  idx: Int,
+  target_cols: List(String),
+  target_col_types: List(Column),
+) -> option.Option(Parameter) {
+  use <- bool.guard(!is_param_expr(item_tokens), option.None)
+
+  case list.drop(target_cols, idx) |> list.first {
+    Ok(col_name) ->
+      insert_select_projection_param_for_column(
+        item_tokens,
+        col_name,
+        target_col_types,
+      )
+    Error(_) -> option.None
+  }
+}
+
+fn insert_select_projection_param_for_column(
+  item_tokens: List(tokenize.Token),
+  col_name: String,
+  target_col_types: List(Column),
+) -> option.Option(Parameter) {
+  let param_name = param_name_from_projection_expr(item_tokens, col_name)
+
+  case list.find(target_col_types, fn(c) { c.name == col_name }) {
+    Ok(col) ->
+      option.Some(Parameter(
+        name: param_name,
+        column_type: col.column_type,
+        nullable: col.nullable,
+      ))
+    Error(_) ->
+      option.Some(Parameter(
+        name: param_name,
+        column_type: StringType,
+        nullable: False,
+      ))
+  }
+}
+
+fn is_param_expr(tokens: List(tokenize.Token)) -> Bool {
+  tokens == [tokenize.ParamAnon]
+  || case tokens {
+    [tokenize.ParamNamed(_)] -> True
+    _ -> False
+  }
+}
+
+fn param_name_from_projection_expr(
+  item_tokens: List(tokenize.Token),
+  col_name: String,
+) -> String {
+  case item_tokens {
+    [tokenize.ParamNamed(n)] -> n
+    _ -> col_name
+  }
+}
+
+fn insert_select_where_param(
+  b: binder.Binder,
+  where_tables: List(String),
+  table_schemas: Dict(String, List(Column)),
+) -> Parameter {
+  let names_to_try = binder_names_to_try(b)
+  let found_col =
+    list.find_map(names_to_try, fn(name) {
+      list.find_map(where_tables, fn(table) {
+        query.find_column(table_schemas, table, name)
+      })
+    })
+
+  parameter_from_column_result(b.name, found_col, False)
+}
+
+fn binder_names_to_try(b: binder.Binder) -> List(String) {
+  case b.binder_column {
+    option.Some(col) -> {
+      let bare_col = case string.split_once(col, ".") {
+        Ok(#(_, after)) -> after
+        Error(_) -> col
+      }
+      case bare_col == b.name {
+        True -> [b.name]
+        False -> [bare_col, b.name]
+      }
+    }
+    option.None -> [b.name]
   }
 }
 
@@ -891,20 +1027,8 @@ fn extract_update_parameters(
       let set_parameters =
         list.map(set_params, fn(param) {
           let #(param_name, lookup_col) = param
-          case list.find(table_cols, fn(c) { c.name == lookup_col }) {
-            Ok(col) ->
-              Parameter(
-                name: param_name,
-                column_type: col.column_type,
-                nullable: col.nullable,
-              )
-            Error(_) ->
-              Parameter(
-                name: param_name,
-                column_type: StringType,
-                nullable: False,
-              )
-          }
+          let found_col = list.find(table_cols, fn(c) { c.name == lookup_col })
+          parameter_from_column_result(param_name, found_col, True)
         })
       let where_parameters =
         list.map(where_params, fn(param) {
@@ -912,24 +1036,9 @@ fn extract_update_parameters(
           let found_col =
             list.find(table_cols, fn(c) { c.name == lookup_col })
             |> result.lazy_or(fn() {
-              dict.values(table_schemas)
-              |> list.flatten
-              |> list.find(fn(c) { c.name == lookup_col })
+              find_column_in_all_tables(table_schemas, lookup_col)
             })
-          case found_col {
-            Ok(col) ->
-              Parameter(
-                name: param_name,
-                column_type: col.column_type,
-                nullable: False,
-              )
-            Error(_) ->
-              Parameter(
-                name: param_name,
-                column_type: StringType,
-                nullable: False,
-              )
-          }
+          parameter_from_column_result(param_name, found_col, False)
         })
       list.append(set_parameters, where_parameters)
     }
@@ -946,6 +1055,31 @@ fn extract_update_parameters(
         })
       list.append(set_parameters, where_parameters)
     }
+  }
+}
+
+fn find_column_in_all_tables(
+  table_schemas: Dict(String, List(Column)),
+  column_name: String,
+) -> Result(Column, Nil) {
+  dict.values(table_schemas)
+  |> list.flatten
+  |> list.find(fn(c) { c.name == column_name })
+}
+
+fn parameter_from_column_result(
+  name: String,
+  found_col: Result(Column, Nil),
+  preserve_nullability: Bool,
+) -> Parameter {
+  case found_col {
+    Ok(col) ->
+      Parameter(
+        name: name,
+        column_type: col.column_type,
+        nullable: preserve_nullability && col.nullable,
+      )
+    Error(_) -> Parameter(name: name, column_type: StringType, nullable: False)
   }
 }
 
