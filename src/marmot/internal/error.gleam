@@ -129,15 +129,7 @@ pub fn to_string(error: MarmotError) -> String {
         list.map(conflicts, fn(pair) {
           let #(path, cols) = pair
           let shape =
-            list.map(cols, fn(c) {
-              c.name
-              <> ": "
-              <> query.gleam_type(c.column_type)
-              <> case c.nullable {
-                True -> "?"
-                False -> ""
-              }
-            })
+            list.map(cols, format_shared_column)
             |> string.join(", ")
           "  \u{2502} " <> path <> "\n  \u{2502}   returns: [" <> shape <> "]"
         })
@@ -209,6 +201,15 @@ pub fn to_string(error: MarmotError) -> String {
   \u{2502}
   hint: Each VALUES row must have exactly one expression per bindable column."
   }
+}
+
+fn format_shared_column(column: Column) -> String {
+  let suffix = case column.nullable {
+    True -> "?"
+    False -> ""
+  }
+
+  column.name <> ": " <> query.gleam_type(column.column_type) <> suffix
 }
 
 fn sql_error_hint(message: String) -> String {

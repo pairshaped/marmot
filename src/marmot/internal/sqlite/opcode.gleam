@@ -9,6 +9,7 @@
 //// What lives elsewhere: the EXPLAIN query itself -> sqlite.gleam; result column
 //// extraction -> results.gleam; SQL text parsing -> parse/*.gleam.
 
+import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/dynamic/decode
 import gleam/int
@@ -101,14 +102,10 @@ fn build_autoindex_source(
               }),
             ),
             fn(op) {
-              case op.opcode {
-                "Column" | "Rowid" | "IdxRowid" ->
-                  case dict.has_key(cursor_table, op.p1) {
-                    True -> Ok(op.p1)
-                    False -> Error(Nil)
-                  }
-                _ -> Error(Nil)
-              }
+              source_cursor_from_autoindex_op(
+                cursor_table: cursor_table,
+                op: op,
+              )
             },
           )
         case source {
@@ -118,6 +115,25 @@ fn build_autoindex_source(
       }
     }
   })
+}
+
+fn source_cursor_from_autoindex_op(
+  cursor_table cursor_table: Dict(Int, String),
+  op op: Opcode,
+) -> Result(Int, Nil) {
+  case op.opcode {
+    "Column" | "Rowid" | "IdxRowid" ->
+      cursor_from_known_table(cursor_table, op.p1)
+    _ -> Error(Nil)
+  }
+}
+
+fn cursor_from_known_table(
+  cursor_table: Dict(Int, String),
+  cursor: Int,
+) -> Result(Int, Nil) {
+  use <- bool.guard(!dict.has_key(cursor_table, cursor), Error(Nil))
+  Ok(cursor)
 }
 
 /// Compute join nullability info from opcodes and cursor-to-table mapping.
@@ -256,10 +272,8 @@ fn resolve_rowid_column(
 pub fn debug_warning(message: String) -> Nil {
   // Keep regular generation quiet. These warnings are useful while working on
   // inference, but noisy during normal use and tests.
-  case marmot_debug_warnings_enabled() {
-    True -> io.println_error(message)
-    False -> Nil
-  }
+  use <- bool.guard(!marmot_debug_warnings_enabled(), Nil)
+  io.println_error(message)
 }
 
 @internal
@@ -382,30 +396,7 @@ pub fn infer_parameter_type(
           op.opcode == "SeekRowid" && op.p3 == var_reg
         })
       case seek_rowid {
-        Ok(sr) ->
-          case dict.get(cursor_table, sr.p1) {
-            Ok(table) ->
-              case dict.get(pk_columns, table) {
-                Ok(pk_name) ->
-                  Ok(Parameter(
-                    name: pk_name,
-                    column_type: query.IntType,
-                    nullable: False,
-                  ))
-                Error(_) ->
-                  Ok(Parameter(
-                    name: "id",
-                    column_type: query.IntType,
-                    nullable: False,
-                  ))
-              }
-            Error(_) ->
-              Ok(Parameter(
-                name: "id",
-                column_type: query.IntType,
-                nullable: False,
-              ))
-          }
+        Ok(sr) -> Ok(parameter_from_seek_rowid(sr, cursor_table, pk_columns))
         Error(_) -> {
           debug_warning(
             "warning: no comparison context for Variable p1="
@@ -418,6 +409,23 @@ pub fn infer_parameter_type(
       }
     }
   }
+}
+
+fn parameter_from_seek_rowid(
+  sr: Opcode,
+  cursor_table: Dict(Int, String),
+  pk_columns: Dict(String, String),
+) -> Parameter {
+  let name = case dict.get(cursor_table, sr.p1) {
+    Ok(table) ->
+      case dict.get(pk_columns, table) {
+        Ok(pk_name) -> pk_name
+        Error(_) -> "id"
+      }
+    Error(_) -> "id"
+  }
+
+  Parameter(name: name, column_type: query.IntType, nullable: False)
 }
 
 /// Find the Column opcode that writes to target_reg, closest to but before cmp_addr

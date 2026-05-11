@@ -12,6 +12,7 @@
 //// tokenize.gleam, text parsing -> parse/*.gleam, result extraction ->
 //// results.gleam, parameter extraction -> parameters.gleam.
 
+import gleam/bool
 import gleam/dict
 import gleam/dynamic/decode
 import gleam/list
@@ -280,27 +281,43 @@ fn validate_insert_values_counts(
   path: String,
 ) -> Result(Nil, MarmotError) {
   case statement_parser.parse(tokens) {
-    Ok(statement_parser.Insert(stmt)) -> {
-      case stmt.source {
-        statement_parser.ValuesSource(_, rows) -> {
-          let target_name = stmt.target.table.name.text
-          case dict.get(v2.columns, target_name) {
-            // Unknown table: skip pre-flight, let EXPLAIN report the real error.
-            Error(_) -> Ok(Nil)
-            Ok(metadatas) -> {
-              let bindable = list.filter(metadatas, fn(m) { m.hidden == 0 })
-              let bound_count = case stmt.column_list {
-                option.Some(names) -> list.length(names)
-                option.None -> list.length(bindable)
-              }
-              validate_rows_preflight(rows, bound_count, 1, path)
-            }
-          }
-        }
-        _ -> Ok(Nil)
-      }
-    }
+    Ok(statement_parser.Insert(stmt)) ->
+      validate_insert_statement_values_counts(stmt, v2, path)
     _ -> Ok(Nil)
+  }
+}
+
+fn validate_insert_statement_values_counts(
+  stmt: statement_parser.InsertStmt,
+  v2: schema.TableMetadataV2,
+  path: String,
+) -> Result(Nil, MarmotError) {
+  case stmt.source {
+    statement_parser.ValuesSource(_, rows) ->
+      validate_insert_values_source(stmt, rows, v2, path)
+    _ -> Ok(Nil)
+  }
+}
+
+fn validate_insert_values_source(
+  stmt: statement_parser.InsertStmt,
+  rows: List(List(List(tokenize.Token))),
+  v2: schema.TableMetadataV2,
+  path: String,
+) -> Result(Nil, MarmotError) {
+  let target_name = stmt.target.table.name.text
+
+  case dict.get(v2.columns, target_name) {
+    // Unknown table: skip pre-flight, let EXPLAIN report the real error.
+    Error(_) -> Ok(Nil)
+    Ok(metadatas) -> {
+      let bindable = list.filter(metadatas, fn(m) { m.hidden == 0 })
+      let bound_count = case stmt.column_list {
+        option.Some(names) -> list.length(names)
+        option.None -> list.length(bindable)
+      }
+      validate_rows_preflight(rows, bound_count, 1, path)
+    }
   }
 }
 
@@ -353,25 +370,34 @@ fn scan_for_returns(
       let trimmed = string.trim(first)
       case trimmed {
         "" -> scan_for_returns(rest)
-        _ -> {
-          case string.starts_with(trimmed, "--") {
-            False -> Ok(option.None)
-            True -> {
-              let body = string.drop_start(trimmed, 2) |> string.trim
-              case string.starts_with(body, "returns:") {
-                False -> scan_for_returns(rest)
-                True -> {
-                  let name_part =
-                    string.drop_start(body, 8)
-                    |> string.trim
-                  validate_returns_type_name(name_part)
-                  |> result.map(option.Some)
-                }
-              }
-            }
-          }
-        }
+        _ -> scan_for_returns_line(trimmed, rest)
       }
+    }
+  }
+}
+
+fn scan_for_returns_line(
+  trimmed: String,
+  rest: List(String),
+) -> Result(option.Option(String), ReturnsAnnotationError) {
+  use <- bool.guard(!string.starts_with(trimmed, "--"), Ok(option.None))
+  scan_for_returns_comment(trimmed, rest)
+}
+
+fn scan_for_returns_comment(
+  trimmed: String,
+  rest: List(String),
+) -> Result(option.Option(String), ReturnsAnnotationError) {
+  let body = string.drop_start(trimmed, 2) |> string.trim
+
+  case string.starts_with(body, "returns:") {
+    False -> scan_for_returns(rest)
+    True -> {
+      let name_part =
+        string.drop_start(body, 8)
+        |> string.trim
+      validate_returns_type_name(name_part)
+      |> result.map(option.Some)
     }
   }
 }

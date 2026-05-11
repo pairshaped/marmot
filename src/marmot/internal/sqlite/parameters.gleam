@@ -186,10 +186,7 @@ fn extract_select_parameters_resolved(
         Ok(params) ->
           case list.length(params) == param_count {
             True -> Ok(params)
-            False -> {
-              let _ = stmt_type
-              Ok(opcode_fallback())
-            }
+            False -> Ok(opcode_fallback())
           }
         Error(e) -> Error(e)
       }

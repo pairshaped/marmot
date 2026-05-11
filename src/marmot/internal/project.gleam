@@ -222,18 +222,32 @@ fn find_sql_directories_recursive(dir: String) -> List(String) {
     Ok(entries) -> {
       entries
       |> list.flat_map(fn(entry) {
-        let path = dir <> "/" <> entry
-        case simplifile.is_directory(path) {
-          Ok(True) ->
-            case entry {
-              "sql" -> [path]
-              _ -> find_sql_directories_recursive(path)
-            }
-          _ -> []
-        }
+        find_sql_directory_child(dir: dir, entry: entry)
       })
     }
     Error(_) -> []
+  }
+}
+
+fn find_sql_directory_child(
+  dir dir: String,
+  entry entry: String,
+) -> List(String) {
+  let path = dir <> "/" <> entry
+
+  case simplifile.is_directory(path) {
+    Ok(True) -> find_sql_directory_from_child_dir(path, entry)
+    _ -> []
+  }
+}
+
+fn find_sql_directory_from_child_dir(
+  path: String,
+  entry: String,
+) -> List(String) {
+  case entry {
+    "sql" -> [path]
+    _ -> find_sql_directories_recursive(path)
   }
 }
 
