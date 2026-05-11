@@ -105,27 +105,45 @@ fn dedupe_named_binders(
     [BinderOccurrence(binder: b, anonymous: anonymous, ..), ..rest] -> {
       case anonymous {
         True -> dedupe_named_binders(rest, [b, ..acc])
-        False ->
-          case list.find(acc, fn(existing) { existing.name == b.name }) {
-            Ok(existing) ->
-              case existing.binder_column, b.binder_column {
-                option.None, option.Some(_) -> {
-                  let new_acc =
-                    list.map(acc, fn(existing) {
-                      case existing.name == b.name {
-                        True -> b
-                        False -> existing
-                      }
-                    })
-                  dedupe_named_binders(rest, new_acc)
-                }
-                _, _ -> dedupe_named_binders(rest, acc)
-              }
-            Error(_) -> dedupe_named_binders(rest, [b, ..acc])
-          }
+        False -> dedupe_named_binder_occurrence(b, rest, acc)
       }
     }
   }
+}
+
+fn dedupe_named_binder_occurrence(
+  b: Binder,
+  rest: List(BinderOccurrence),
+  acc: List(Binder),
+) -> List(Binder) {
+  case list.find(acc, fn(existing) { existing.name == b.name }) {
+    Ok(existing) -> dedupe_existing_binder_occurrence(b, rest, acc, existing)
+    Error(_) -> dedupe_named_binders(rest, [b, ..acc])
+  }
+}
+
+fn dedupe_existing_binder_occurrence(
+  b: Binder,
+  rest: List(BinderOccurrence),
+  acc: List(Binder),
+  existing: Binder,
+) -> List(Binder) {
+  case existing.binder_column, b.binder_column {
+    option.None, option.Some(_) -> {
+      let new_acc = replace_binder_occurrence(b, acc)
+      dedupe_named_binders(rest, new_acc)
+    }
+    _, _ -> dedupe_named_binders(rest, acc)
+  }
+}
+
+fn replace_binder_occurrence(b: Binder, acc: List(Binder)) -> List(Binder) {
+  list.map(acc, fn(existing) {
+    case existing.name == b.name {
+      True -> b
+      False -> existing
+    }
+  })
 }
 
 /// Look backward in the reversed previous-token list for a column
@@ -163,36 +181,32 @@ fn skip_operator_in_prev(prev: List(Token)) -> Option(List(Token)) {
     // Keyword operators (reversed, so just the word)
     [Word(w), ..rest] -> {
       let upper = string.uppercase(w)
-      case
-        upper == "LIKE"
-        || upper == "IS"
-        || upper == "BETWEEN"
-        || upper == "AND"
-        || upper == "NOT"
-      {
-        True ->
-          // IS NOT: skip both
-          case upper == "NOT" {
-            True ->
-              case rest {
-                [Word(w2), ..rest2] ->
-                  case string.uppercase(w2) == "IS" {
-                    True -> option.Some(rest2)
-                    False -> option.Some(rest)
-                  }
-                _ -> option.Some(rest)
-              }
-            False ->
-              // AND after BETWEEN: skip AND, then look for BETWEEN
-              case upper == "AND" {
-                True -> skip_between_and(rest)
-                False -> option.Some(rest)
-              }
-          }
-        False -> option.None
-      }
+      skip_keyword_operator(upper, rest)
     }
     _ -> option.None
+  }
+}
+
+fn skip_keyword_operator(
+  upper: String,
+  rest: List(Token),
+) -> Option(List(Token)) {
+  case upper {
+    "NOT" -> skip_is_not(rest)
+    "AND" -> skip_between_and(rest)
+    "LIKE" | "IS" | "BETWEEN" -> option.Some(rest)
+    _ -> option.None
+  }
+}
+
+fn skip_is_not(rest: List(Token)) -> Option(List(Token)) {
+  case rest {
+    [Word(w2), ..rest2] ->
+      case string.uppercase(w2) == "IS" {
+        True -> option.Some(rest2)
+        False -> option.Some(rest)
+      }
+    _ -> option.Some(rest)
   }
 }
 
