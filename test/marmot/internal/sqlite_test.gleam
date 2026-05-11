@@ -1326,6 +1326,128 @@ pub fn read_param_inside_select_list_subquery_without_outer_where_resolves_colum
   ] = query.parameters
 }
 
+pub fn read_param_inside_derived_table_subquery_resolves_column_type_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE participants (
+        id INTEGER PRIMARY KEY,
+        org_id INTEGER NOT NULL
+      );",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/derived_table_subquery_param.sql",
+      "SELECT COUNT(*) FROM (
+        SELECT id FROM participants p WHERE p.org_id = @org_id
+      )",
+    )
+  let assert [
+    Parameter(name: "org_id", column_type: IntType, nullable: False),
+  ] = query.parameters
+}
+
+pub fn read_params_inside_derived_table_with_exists_resolve_names_and_types_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE participants (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL
+      );
+      CREATE TABLE participant_orgs (
+        participant_id INTEGER NOT NULL,
+        org_id INTEGER NOT NULL
+      );",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/derived_table_exists_param.sql",
+      "SELECT COUNT(*) FROM (
+        SELECT DISTINCT p.id
+        FROM participants p
+        WHERE EXISTS (
+          SELECT 1
+          FROM participant_orgs po
+          WHERE po.participant_id = p.id
+            AND po.org_id = @org_id
+        )
+        AND CAST(@search AS TEXT) = ''
+      )",
+    )
+  let assert [
+    Parameter(name: "org_id", column_type: IntType, nullable: False),
+    Parameter(name: "search", column_type: StringType, nullable: False),
+  ] = query.parameters
+}
+
+pub fn read_params_inside_count_wrapper_preserve_real_world_param_names_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE participants (
+        id INTEGER PRIMARY KEY,
+        first_name TEXT NOT NULL,
+        last_name TEXT NOT NULL,
+        email TEXT NOT NULL
+      );
+      CREATE TABLE line_items (
+        participant_id INTEGER NOT NULL,
+        item_id INTEGER
+      );
+      CREATE TABLE items (
+        id INTEGER PRIMARY KEY,
+        org_id INTEGER NOT NULL,
+        season INTEGER
+      );
+      CREATE TABLE waiver_responses (
+        participant_id INTEGER,
+        org_id INTEGER NOT NULL
+      );",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/count_participants_for_admin.sql",
+      "SELECT CAST(COUNT(*) AS INTEGER) AS count FROM (
+        SELECT DISTINCT p.id
+        FROM participants p
+        WHERE (
+          EXISTS (
+            SELECT 1 FROM line_items li2
+            JOIN items pr2 ON li2.item_id = pr2.id
+            WHERE li2.participant_id = p.id AND pr2.org_id = @org_id
+          )
+          OR EXISTS (
+            SELECT 1 FROM waiver_responses wa
+            WHERE wa.participant_id = p.id AND wa.org_id = @org_id
+          )
+        )
+        AND (CAST(@search AS TEXT) = ''
+          OR p.first_name LIKE CAST(@search AS TEXT) || '%'
+          OR p.last_name LIKE CAST(@search AS TEXT) || '%'
+          OR p.email LIKE CAST(@search AS TEXT) || '%')
+        AND (CAST(@season AS INTEGER) = 0 OR EXISTS (
+          SELECT 1 FROM line_items li3
+          JOIN items pr3 ON li3.item_id = pr3.id
+          WHERE li3.participant_id = p.id
+            AND pr3.org_id = @org_id
+            AND pr3.season = CAST(@season AS INTEGER)
+        ))
+      )",
+    )
+  let assert [
+    Parameter(name: "org_id", column_type: IntType, nullable: False),
+    Parameter(name: "search", column_type: StringType, nullable: False),
+    Parameter(name: "season", nullable: False, ..),
+  ] = query.parameters
+}
+
 pub fn update_set_write_nullable_but_where_read_non_nullable_test() {
   let assert Ok(conn) = sqlight.open(":memory:")
   let assert Ok(_) =

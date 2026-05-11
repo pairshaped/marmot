@@ -164,6 +164,7 @@ fn extract_select_parameters_resolved(
       let body_tokens =
         list.flatten([
           stmt.body.select_list,
+          option.unwrap(stmt.body.from_tokens, []),
           option.unwrap(stmt.body.where, []),
           option.unwrap(stmt.body.group_by, []),
           option.unwrap(stmt.body.having, []),

@@ -43,6 +43,7 @@ pub type SelectBody {
   SelectBody(
     is_distinct: Bool,
     select_list: List(Token),
+    from_tokens: Option(List(Token)),
     from: List(FromItem),
     where: Option(List(Token)),
     group_by: Option(List(Token)),
@@ -324,6 +325,7 @@ fn parse_select_body(tokens: List(Token)) -> SelectBody {
   SelectBody(
     is_distinct: is_distinct,
     select_list: select_list,
+    from_tokens: from_tokens,
     from: from,
     where: where,
     group_by: group_by,
