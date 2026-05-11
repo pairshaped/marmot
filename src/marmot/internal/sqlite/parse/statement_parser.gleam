@@ -12,6 +12,7 @@
 //// subquery scoping is left to the existing fallback path, and USING merging
 //// is reported as an ambiguous bare reference in v1.
 
+import gleam/bool
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
@@ -171,29 +172,45 @@ fn skip_cte_definitions(tokens: List(Token)) -> List(Token) {
 fn do_skip_ctes(tokens: List(Token)) -> List(Token) {
   case tokens {
     [Word(_), ..rest] -> {
-      let after_cols = case rest {
-        [tokenize.OpenParen, ..r] -> {
-          let #(_, after) = tokenize.collect_inside_parens(r)
-          after
-        }
-        _ -> rest
-      }
-      case after_cols {
-        [Word(as_kw), tokenize.OpenParen, ..body_rest] ->
-          case string.uppercase(as_kw) == "AS" {
-            True -> {
-              let #(_, after_body) = tokenize.collect_inside_parens(body_rest)
-              case after_body {
-                [tokenize.Comma, ..rest2] -> do_skip_ctes(rest2)
-                other -> other
-              }
-            }
-            False -> tokens
-          }
-        _ -> tokens
-      }
+      let after_cols = skip_cte_column_list(rest)
+      skip_cte_body_after_columns(after_cols, tokens)
     }
     _ -> tokens
+  }
+}
+
+fn skip_cte_column_list(tokens: List(Token)) -> List(Token) {
+  case tokens {
+    [tokenize.OpenParen, ..rest] -> {
+      let #(_, after) = tokenize.collect_inside_parens(rest)
+      after
+    }
+    _ -> tokens
+  }
+}
+
+fn skip_cte_body_after_columns(
+  after_cols: List(Token),
+  original: List(Token),
+) -> List(Token) {
+  case after_cols {
+    [Word(as_kw), tokenize.OpenParen, ..body_rest] ->
+      skip_cte_body_after_as(as_kw, body_rest, original)
+    _ -> original
+  }
+}
+
+fn skip_cte_body_after_as(
+  as_kw: String,
+  body_rest: List(Token),
+  original: List(Token),
+) -> List(Token) {
+  use <- bool.guard(string.uppercase(as_kw) != "AS", original)
+
+  let #(_, after_body) = tokenize.collect_inside_parens(body_rest)
+  case after_body {
+    [tokenize.Comma, ..rest] -> do_skip_ctes(rest)
+    other -> other
   }
 }
 
@@ -206,20 +223,21 @@ fn parse_ctes(tokens: List(Token)) -> #(List(CteDef), List(Token)) {
   case tokens {
     [Word(w), ..rest] ->
       case string.uppercase(w) == "WITH" {
-        True -> {
-          let after_with = case rest {
-            [Word(r), ..r2] ->
-              case string.uppercase(r) == "RECURSIVE" {
-                True -> r2
-                False -> rest
-              }
-            _ -> rest
-          }
-          collect_ctes(after_with, [])
-        }
+        True -> collect_ctes(drop_recursive_keyword(rest), [])
         False -> #([], tokens)
       }
     _ -> #([], tokens)
+  }
+}
+
+fn drop_recursive_keyword(tokens: List(Token)) -> List(Token) {
+  case tokens {
+    [Word(r), ..rest] ->
+      case string.uppercase(r) == "RECURSIVE" {
+        True -> rest
+        False -> tokens
+      }
+    _ -> tokens
   }
 }
 
@@ -240,37 +258,54 @@ fn collect_ctes(
 fn parse_one_cte(tokens: List(Token)) -> Result(#(CteDef, List(Token)), Nil) {
   case tokens {
     [Word(name), ..rest] -> {
-      let #(columns, after_cols) = case rest {
-        [tokenize.OpenParen, ..r] -> {
-          let #(inner, after) = tokenize.collect_inside_parens(r)
-          let cols =
-            tokenize.split_on_commas(inner)
-            |> list.filter_map(fn(group) {
-              case group {
-                [Word(c)] -> Ok(c)
-                [tokenize.QuotedId(c)] -> Ok(c)
-                _ -> Error(Nil)
-              }
-            })
-          #(cols, after)
-        }
-        _ -> #([], rest)
-      }
-      case after_cols {
-        [Word(as_kw), tokenize.OpenParen, ..body_rest] ->
-          case string.uppercase(as_kw) == "AS" {
-            True -> {
-              let #(body, after_body) =
-                tokenize.collect_inside_parens(body_rest)
-              Ok(#(CteDef(name: name, columns: columns, body: body), after_body))
-            }
-            False -> Error(Nil)
-          }
-        _ -> Error(Nil)
-      }
+      let #(columns, after_cols) = parse_cte_columns(rest)
+      parse_cte_body(name, columns, after_cols)
     }
     _ -> Error(Nil)
   }
+}
+
+fn parse_cte_columns(tokens: List(Token)) -> #(List(String), List(Token)) {
+  case tokens {
+    [tokenize.OpenParen, ..rest] -> {
+      let #(inner, after) = tokenize.collect_inside_parens(rest)
+      let cols =
+        tokenize.split_on_commas(inner)
+        |> list.filter_map(parse_cte_column_name)
+      #(cols, after)
+    }
+    _ -> #([], tokens)
+  }
+}
+
+fn parse_cte_column_name(group: List(Token)) -> Result(String, Nil) {
+  case group {
+    [Word(c)] | [tokenize.QuotedId(c)] -> Ok(c)
+    _ -> Error(Nil)
+  }
+}
+
+fn parse_cte_body(
+  name: String,
+  columns: List(String),
+  after_cols: List(Token),
+) -> Result(#(CteDef, List(Token)), Nil) {
+  case after_cols {
+    [Word(as_kw), tokenize.OpenParen, ..body_rest] ->
+      parse_cte_body_after_as(name, columns, as_kw, body_rest)
+    _ -> Error(Nil)
+  }
+}
+
+fn parse_cte_body_after_as(
+  name: String,
+  columns: List(String),
+  as_kw: String,
+  body_rest: List(Token),
+) -> Result(#(CteDef, List(Token)), Nil) {
+  use <- bool.guard(string.uppercase(as_kw) != "AS", Error(Nil))
+  let #(body, after_body) = tokenize.collect_inside_parens(body_rest)
+  Ok(#(CteDef(name: name, columns: columns, body: body), after_body))
 }
 
 fn parse_select_body(tokens: List(Token)) -> SelectBody {
@@ -762,24 +797,31 @@ fn parse_insert_conflict_action(
         "REPLACE" -> #(ConflictReplace, rest)
         "INSERT" ->
           case rest {
-            [Word(or_kw), Word(action), ..r2] ->
-              case string.uppercase(or_kw) == "OR" {
-                True ->
-                  case string.uppercase(action) {
-                    "REPLACE" -> #(ConflictReplace, r2)
-                    "IGNORE" -> #(ConflictIgnore, r2)
-                    "FAIL" -> #(ConflictFail, r2)
-                    "ROLLBACK" -> #(ConflictRollback, r2)
-                    "ABORT" -> #(ConflictAbort, r2)
-                    _ -> #(ConflictAbort, rest)
-                  }
-                False -> #(ConflictAbort, rest)
-              }
+            [Word(or_kw), Word(action), ..after_action] ->
+              parse_insert_or_conflict(or_kw, action, after_action, rest)
             _ -> #(ConflictAbort, rest)
           }
         _ -> #(ConflictAbort, tokens)
       }
     _ -> #(ConflictAbort, tokens)
+  }
+}
+
+fn parse_insert_or_conflict(
+  or_kw: String,
+  action: String,
+  after_action: List(Token),
+  original: List(Token),
+) -> #(InsertConflictAction, List(Token)) {
+  use <- bool.guard(string.uppercase(or_kw) != "OR", #(ConflictAbort, original))
+
+  case string.uppercase(action) {
+    "REPLACE" -> #(ConflictReplace, after_action)
+    "IGNORE" -> #(ConflictIgnore, after_action)
+    "FAIL" -> #(ConflictFail, after_action)
+    "ROLLBACK" -> #(ConflictRollback, after_action)
+    "ABORT" -> #(ConflictAbort, after_action)
+    _ -> #(ConflictAbort, original)
   }
 }
 
