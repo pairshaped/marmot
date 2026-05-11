@@ -63,7 +63,8 @@ pub fn introspect_query_select_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "SELECT id, username FROM users WHERE email = ?",
     )
   result
@@ -84,7 +85,8 @@ pub fn introspect_query_insert_returning_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "INSERT INTO users (username, created_at) VALUES (?, ?) RETURNING id, created_at",
     )
   result |> string.inspect |> birdie.snap(title: "insert returning")
@@ -104,7 +106,8 @@ pub fn introspect_insert_with_nullable_column_param_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "INSERT INTO users (username, bio, created_at) VALUES (@username, @bio, @created_at)",
     )
   result
@@ -149,7 +152,8 @@ pub fn introspect_query_multiple_params_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "SELECT id FROM users WHERE name = ? AND age > ?",
     )
   result |> string.inspect |> birdie.snap(title: "query multiple params")
@@ -166,7 +170,11 @@ pub fn introspect_query_nullable_result_test() {
       on: db,
     )
   let assert Ok(result) =
-    sqlite.introspect_query(db, "test", "SELECT id, bio FROM users WHERE id = ?")
+    sqlite.introspect_query(
+      db,
+      "test",
+      "SELECT id, bio FROM users WHERE id = ?",
+    )
   result |> string.inspect |> birdie.snap(title: "query nullable result")
 }
 
@@ -182,7 +190,11 @@ pub fn introspect_query_update_no_return_test() {
       on: db,
     )
   let assert Ok(result) =
-    sqlite.introspect_query(db, "test", "UPDATE users SET name = ? WHERE id = ?")
+    sqlite.introspect_query(
+      db,
+      "test",
+      "UPDATE users SET name = ? WHERE id = ?",
+    )
   result |> string.inspect |> birdie.snap(title: "query update no return")
 }
 
@@ -205,7 +217,8 @@ pub fn introspect_subquery_in_where_test() {
   // SELECT with subquery: uses EXPLAIN opcode path, should work
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "SELECT id, name FROM users WHERE id IN (SELECT user_id FROM bans WHERE reason = ?)",
     )
   result |> string.inspect |> birdie.snap(title: "subquery in where")
@@ -233,7 +246,8 @@ pub fn introspect_insert_with_subquery_test() {
   // The actual parameter is "name" from the WHERE clause.
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "INSERT INTO logs (user_id, action) SELECT id, 'login' FROM users WHERE name = ?",
     )
   // String parser would produce 2 params (one per INSERT column), but
@@ -255,7 +269,8 @@ pub fn introspect_query_mixed_case_where_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "SELECT id FROM users WHERE name = ? And age > ?",
     )
   result |> string.inspect |> birdie.snap(title: "query mixed case where")
@@ -274,7 +289,8 @@ pub fn introspect_query_update_returning_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "UPDATE users SET name = ?, updated_at = ? WHERE id = ? RETURNING id, updated_at",
     )
   result |> string.inspect |> birdie.snap(title: "query update returning")
@@ -295,7 +311,8 @@ pub fn introspect_returning_star_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "INSERT INTO users (name, email) VALUES (?, ?) RETURNING *",
     )
   result |> string.inspect |> birdie.snap(title: "returning star")
@@ -313,7 +330,8 @@ pub fn introspect_duplicate_parameter_names_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "SELECT id FROM users WHERE age > ? AND age < ?",
     )
   result |> string.inspect |> birdie.snap(title: "duplicate parameter names")
@@ -331,7 +349,8 @@ pub fn introspect_three_duplicate_parameter_names_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "SELECT id FROM users WHERE age > ? AND age < ? AND age = ?",
     )
   result
@@ -351,7 +370,8 @@ pub fn introspect_delete_returning_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "DELETE FROM users WHERE id = ? RETURNING id, name",
     )
   result |> string.inspect |> birdie.snap(title: "delete returning")
@@ -381,7 +401,8 @@ pub fn introspect_returning_alias_preserves_case_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "INSERT INTO users (name) VALUES (?) RETURNING id AS userId, name AS userName",
     )
   result
@@ -398,7 +419,11 @@ pub fn introspect_table_named_asset_test() {
     )
   // "asset" contains "SET" as a substring -- should not confuse the parser
   let assert Ok(result) =
-    sqlite.introspect_query(db, "test", "UPDATE asset SET value = ? WHERE id = ?")
+    sqlite.introspect_query(
+      db,
+      "test",
+      "UPDATE asset SET value = ? WHERE id = ?",
+    )
   result |> string.inspect |> birdie.snap(title: "table named asset")
 }
 
@@ -416,7 +441,8 @@ pub fn introspect_join_query_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "SELECT users.name, posts.title FROM posts JOIN users ON users.id = posts.user_id WHERE posts.user_id = ?",
     )
   // Columns from joined tables should resolve correctly
@@ -436,7 +462,8 @@ pub fn debug_exists_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "SELECT EXISTS(SELECT 1 FROM item_features WHERE item_id = ? AND field_key = ?) AS has_feature",
     )
   result |> string.inspect |> birdie.snap(title: "debug exists")
@@ -459,7 +486,8 @@ pub fn introspect_left_join_marks_right_side_nullable_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "SELECT u.id, u.name, p.bio
        FROM users u
        LEFT JOIN profiles p ON p.user_id = u.id",
@@ -492,7 +520,8 @@ pub fn introspect_left_join_on_unindexed_column_marks_right_side_nullable_test()
   // addr 5, NullRow targeting cursor 2 (the autoindex), not cursor 1.
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "SELECT u.name, p.bio
        FROM users u
        LEFT JOIN profiles p ON p.user_name = u.name",
@@ -521,7 +550,8 @@ pub fn introspect_inner_join_keeps_both_sides_non_nullable_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "SELECT u.name, p.bio
        FROM users u
        JOIN profiles p ON p.user_id = u.id",
@@ -542,7 +572,8 @@ pub fn introspect_chained_left_joins_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "SELECT a.a_val, b.b_val, c.c_val
        FROM a
        LEFT JOIN b ON b.a_id = a.id
@@ -564,7 +595,8 @@ pub fn introspect_left_join_strength_reduced_by_where_test() {
   // should correctly report bio as non-nullable.
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "SELECT p.bio
        FROM users u
        LEFT JOIN profiles p ON p.user_id = u.id
@@ -586,7 +618,8 @@ pub fn introspect_mixed_inner_and_left_joins_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "SELECT a.a_val, b.b_val, c.c_val
        FROM a
        JOIN b ON b.a_id = a.id
@@ -604,7 +637,8 @@ pub fn introspect_row_number_returns_int_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "SELECT id, ROW_NUMBER() OVER (ORDER BY created_at) AS position FROM items",
     )
   result |> string.inspect |> birdie.snap(title: "row number returns int")
@@ -619,7 +653,8 @@ pub fn introspect_rank_returns_int_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "SELECT id, RANK() OVER (ORDER BY score DESC) AS rk FROM items",
     )
   result |> string.inspect |> birdie.snap(title: "rank returns int")
@@ -643,7 +678,8 @@ pub fn introspect_order_by_with_sorter_resolves_columns_correctly_test() {
   // write), causing column types and nullability to resolve incorrectly.
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "SELECT id, name_en, name_fr FROM items ORDER BY name_fr",
     )
   result
@@ -694,7 +730,8 @@ pub fn introspect_update_with_coalesce_named_param_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "UPDATE participants SET gender = COALESCE(@gender, gender), birthdate = COALESCE(@birthdate, birthdate), updated_at = @updated_at WHERE id = @id",
     )
   result
@@ -720,7 +757,8 @@ pub fn introspect_update_with_subquery_named_param_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "UPDATE line_items SET discount_cents = COALESCE((SELECT SUM(amount_cents) FROM line_item_discounts WHERE line_item_id = line_items.id), 0) WHERE order_id = @order_id",
     )
   result
@@ -753,7 +791,8 @@ pub fn introspect_update_with_in_subquery_named_param_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "UPDATE line_item_question_values SET question_name = @question_name WHERE question_key = @question_key AND line_item_id IN (SELECT li.id FROM line_items li JOIN orders o ON o.id = li.order_id WHERE o.org_id = @org_id)",
     )
   result
@@ -775,7 +814,8 @@ pub fn introspect_insert_select_with_named_params_in_select_list_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "INSERT INTO item_features (item_id, field_key, created_at)
        SELECT @item_id, lf.field_key, @created_at
        FROM item_features lf
@@ -798,7 +838,8 @@ pub fn introspect_cte_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "WITH big_orders AS (
         SELECT id, user_id, total FROM orders WHERE total > ?
       )
@@ -816,7 +857,8 @@ pub fn introspect_recursive_cte_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "WITH RECURSIVE tree AS (
         SELECT id, parent_id, name, 0 AS depth FROM categories WHERE id = ?
         UNION ALL
@@ -839,7 +881,8 @@ pub fn introspect_correlated_subquery_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "SELECT u.id, u.name,
         (SELECT COUNT(*) FROM orders o WHERE o.user_id = u.id) AS order_count
       FROM users u
@@ -859,7 +902,8 @@ pub fn introspect_multiple_joins_test() {
     )
   let assert Ok(result) =
     sqlite.introspect_query(
-      db, "test",
+      db,
+      "test",
       "SELECT u.name AS user_name, o.status, oi.product_name, oi.qty
       FROM users u
       INNER JOIN orders o ON o.user_id = u.id
@@ -928,7 +972,8 @@ pub fn schema_loader_marks_rowid_alias_test() {
   let metadata = schema.get_table_metadata_v2(conn)
 
   let assert Ok(rowid_cols) = dict.get(metadata.columns, "rowid_t")
-  let assert Ok(rowid_id) = list.find(rowid_cols, fn(m) { m.column.name == "id" })
+  let assert Ok(rowid_id) =
+    list.find(rowid_cols, fn(m) { m.column.name == "id" })
   let assert True = rowid_id.is_rowid_alias
   let assert False = rowid_id.column.nullable
 
@@ -1193,9 +1238,8 @@ pub fn read_param_with_not_null_guard_is_non_nullable_test() {
       "SELECT id FROM tasks
        WHERE @account_id IS NOT NULL AND account_id = @account_id",
     )
-  let assert [
-    Parameter(name: "account_id", nullable: False, ..),
-  ] = query.parameters
+  let assert [Parameter(name: "account_id", nullable: False, ..)] =
+    query.parameters
 }
 
 pub fn read_param_with_range_null_guard_is_non_nullable_test() {
@@ -1215,9 +1259,8 @@ pub fn read_param_with_range_null_guard_is_non_nullable_test() {
       "SELECT id FROM tasks
        WHERE @from_date IS NULL OR created_at >= @from_date",
     )
-  let assert [
-    Parameter(name: "from_date", nullable: False, ..),
-  ] = query.parameters
+  let assert [Parameter(name: "from_date", nullable: False, ..)] =
+    query.parameters
 }
 
 pub fn delete_where_read_param_against_nullable_column_is_non_nullable_test() {
@@ -1321,9 +1364,8 @@ pub fn read_param_inside_select_list_subquery_without_outer_where_resolves_colum
        ) AS c
        FROM feature_requests",
     )
-  let assert [
-    Parameter(name: "org_id", column_type: IntType, nullable: False),
-  ] = query.parameters
+  let assert [Parameter(name: "org_id", column_type: IntType, nullable: False)] =
+    query.parameters
 }
 
 pub fn read_param_inside_derived_table_subquery_resolves_column_type_test() {
@@ -1344,9 +1386,8 @@ pub fn read_param_inside_derived_table_subquery_resolves_column_type_test() {
         SELECT id FROM participants p WHERE p.org_id = @org_id
       )",
     )
-  let assert [
-    Parameter(name: "org_id", column_type: IntType, nullable: False),
-  ] = query.parameters
+  let assert [Parameter(name: "org_id", column_type: IntType, nullable: False)] =
+    query.parameters
 }
 
 pub fn read_params_inside_derived_table_with_exists_resolve_names_and_types_test() {
@@ -1444,7 +1485,7 @@ pub fn read_params_inside_count_wrapper_preserve_real_world_param_names_test() {
   let assert [
     Parameter(name: "org_id", column_type: IntType, nullable: False),
     Parameter(name: "search", column_type: StringType, nullable: False),
-    Parameter(name: "season", nullable: False, ..),
+    Parameter(name: "season", column_type: IntType, nullable: False),
   ] = query.parameters
 }
 
@@ -1590,10 +1631,7 @@ pub fn insert_values_skips_generated_columns_test() {
 pub fn insert_values_count_mismatch_errors_test() {
   let assert Ok(conn) = sqlight.open(":memory:")
   let assert Ok(_) =
-    sqlight.exec(
-      "CREATE TABLE t (a INTEGER, b INTEGER, c INTEGER);",
-      conn,
-    )
+    sqlight.exec("CREATE TABLE t (a INTEGER, b INTEGER, c INTEGER);", conn)
   let assert Error(error.InsertValuesCountMismatch(_, _, _, _)) =
     sqlite.introspect_query(
       conn,
@@ -1652,10 +1690,7 @@ pub fn insert_values_explicit_column_list_count_mismatch_test() {
   // Don't only validate the no-column-list case.
   let assert Ok(conn) = sqlight.open(":memory:")
   let assert Ok(_) =
-    sqlight.exec(
-      "CREATE TABLE t (a INTEGER, b INTEGER, c INTEGER);",
-      conn,
-    )
+    sqlight.exec("CREATE TABLE t (a INTEGER, b INTEGER, c INTEGER);", conn)
   let assert Error(error.InsertValuesCountMismatch(_, _, _, _)) =
     sqlite.introspect_query(
       conn,
@@ -1702,10 +1737,7 @@ pub fn insert_values_placeholders_across_multiple_rows_test() {
   // types. Row 1 has placeholder at column b; row 2 at column a.
   let assert Ok(conn) = sqlight.open(":memory:")
   let assert Ok(_) =
-    sqlight.exec(
-      "CREATE TABLE t (a INTEGER NOT NULL, b TEXT NOT NULL);",
-      conn,
-    )
+    sqlight.exec("CREATE TABLE t (a INTEGER NOT NULL, b TEXT NOT NULL);", conn)
   let assert Ok(query) =
     sqlite.introspect_query(
       conn,
@@ -1731,12 +1763,7 @@ pub fn introspect_cast_conditional_bypass_param_test() {
   // Same named param appears twice each: once as a zero-guard
   // (`CAST(@p AS INTEGER) = 0`) and once as a column comparison
   // (`created_at >= CAST(@p AS INTEGER)`). Verify dedup keeps one entry per
-  // name. Pinning current behavior: @org_id resolves to IntType from a bare
-  // column equality, but @start and @end fall back to StringType. The
-  // first-occurrence-wins dedup keeps the `CAST(@p AS INTEGER) = 0` site,
-  // and the binder cannot see through `CAST(...)` to the column-comparison
-  // site that would supply IntType. If inference is improved to walk all
-  // binder occurrences before dedup, this test should be updated.
+  // name while still using the later column comparisons as type evidence.
   use db <- sqlight.with_connection(":memory:")
   let assert Ok(_) =
     sqlight.exec(
@@ -1758,8 +1785,8 @@ pub fn introspect_cast_conditional_bypass_param_test() {
     )
   let assert [
     Parameter(name: "org_id", column_type: IntType, nullable: False),
-    Parameter(name: "start", column_type: StringType, nullable: False),
-    Parameter(name: "end", column_type: StringType, nullable: False),
+    Parameter(name: "start", column_type: IntType, nullable: False),
+    Parameter(name: "end", column_type: IntType, nullable: False),
   ] = result.parameters
 }
 
@@ -1794,8 +1821,9 @@ pub fn introspect_not_exists_subquery_with_param_test() {
          WHERE li.participant_id = p.id AND li.status = @status
        )",
     )
-  let assert [Parameter(name: "status", column_type: StringType, nullable: False)] =
-    result.parameters
+  let assert [
+    Parameter(name: "status", column_type: StringType, nullable: False),
+  ] = result.parameters
 }
 
 pub fn introspect_order_by_case_with_named_param_test() {

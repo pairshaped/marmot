@@ -12,6 +12,10 @@ pub type Binder {
   Binder(name: String, binder_column: Option(String))
 }
 
+pub type BinderOccurrence {
+  BinderOccurrence(binder: Binder, depth: Int, anonymous: Bool)
+}
+
 /// Find parameter binders in a token list.
 ///
 /// Heuristic walker: scans for `?` or `@name` tokens and looks backward through
@@ -21,41 +25,106 @@ pub type Binder {
 /// nested expressions, function calls, subqueries. Known blind spots: parameters
 /// in ON clauses of nested joins, parameters inside CASE expressions.
 pub fn find_param_binders(tokens: List(Token)) -> List(Binder) {
-  do_find_param_binders(tokens, [], [])
+  find_param_binder_occurrences(tokens)
+  |> dedupe_named_binders([])
 }
 
-fn do_find_param_binders(
+pub fn find_param_binder_occurrences(
+  tokens: List(Token),
+) -> List(BinderOccurrence) {
+  do_find_param_binder_occurrences(tokens, [], 0, [])
+}
+
+fn do_find_param_binder_occurrences(
   tokens: List(Token),
   prev: List(Token),
-  acc: List(Binder),
-) -> List(Binder) {
+  depth: Int,
+  acc: List(BinderOccurrence),
+) -> List(BinderOccurrence) {
   case tokens {
     [] -> list.reverse(acc)
+    [OpenParen, ..rest] ->
+      do_find_param_binder_occurrences(
+        rest,
+        [OpenParen, ..prev],
+        depth + 1,
+        acc,
+      )
+    [CloseParen, ..rest] ->
+      do_find_param_binder_occurrences(
+        rest,
+        [CloseParen, ..prev],
+        depth - 1,
+        acc,
+      )
     [ParamAnon, ..rest] -> {
       let col = extract_column_from_prev(prev)
       case col {
-        option.None -> do_find_param_binders(rest, [ParamAnon, ..prev], acc)
+        option.None ->
+          do_find_param_binder_occurrences(
+            rest,
+            [ParamAnon, ..prev],
+            depth,
+            acc,
+          )
         option.Some(name) -> {
           let bare = strip_table_prefix(name)
-          do_find_param_binders(rest, [ParamAnon, ..prev], [
-            Binder(name: bare, binder_column: option.Some(name)),
+          do_find_param_binder_occurrences(rest, [ParamAnon, ..prev], depth, [
+            BinderOccurrence(
+              binder: Binder(name: bare, binder_column: option.Some(name)),
+              depth: depth,
+              anonymous: True,
+            ),
             ..acc
           ])
         }
       }
     }
-    [ParamNamed(name), ..rest] ->
-      case list.find(acc, fn(b) { b.name == name }) {
-        Ok(_) -> do_find_param_binders(rest, [ParamNamed(name), ..prev], acc)
-        Error(_) -> {
-          let column = extract_column_from_prev(prev)
-          do_find_param_binders(rest, [ParamNamed(name), ..prev], [
-            Binder(name: name, binder_column: column),
-            ..acc
-          ])
-        }
+    [ParamNamed(name), ..rest] -> {
+      let column = extract_column_from_prev(prev)
+      do_find_param_binder_occurrences(rest, [ParamNamed(name), ..prev], depth, [
+        BinderOccurrence(
+          binder: Binder(name: name, binder_column: column),
+          depth: depth,
+          anonymous: False,
+        ),
+        ..acc
+      ])
+    }
+    [token, ..rest] ->
+      do_find_param_binder_occurrences(rest, [token, ..prev], depth, acc)
+  }
+}
+
+fn dedupe_named_binders(
+  occurrences: List(BinderOccurrence),
+  acc: List(Binder),
+) -> List(Binder) {
+  case occurrences {
+    [] -> list.reverse(acc)
+    [BinderOccurrence(binder: b, anonymous: anonymous, ..), ..rest] -> {
+      case anonymous {
+        True -> dedupe_named_binders(rest, [b, ..acc])
+        False ->
+          case list.find(acc, fn(existing) { existing.name == b.name }) {
+            Ok(existing) ->
+              case existing.binder_column, b.binder_column {
+                option.None, option.Some(_) -> {
+                  let new_acc =
+                    list.map(acc, fn(existing) {
+                      case existing.name == b.name {
+                        True -> b
+                        False -> existing
+                      }
+                    })
+                  dedupe_named_binders(rest, new_acc)
+                }
+                _, _ -> dedupe_named_binders(rest, acc)
+              }
+            Error(_) -> dedupe_named_binders(rest, [b, ..acc])
+          }
       }
-    [token, ..rest] -> do_find_param_binders(rest, [token, ..prev], acc)
+    }
   }
 }
 
@@ -65,11 +134,11 @@ fn extract_column_from_prev(prev: List(Token)) -> Option(String) {
   // prev is reversed: for "col = ?", prev is [Eq, Word("col")].
   // For "col BETWEEN ?", prev is [Word("BETWEEN"), Word("col")].
   // Always skip the operator first, then extract the column after it.
-  case skip_operator_in_prev(prev) {
+  let effective_prev = skip_cast_wrapper(prev)
+  case skip_operator_in_prev(effective_prev) {
     option.Some(after_op) -> extract_column_word(after_op)
     option.None ->
-      // No recognized operator; check for quoted identifier
-      case prev {
+      case effective_prev {
         [QuotedId(col), ..] -> option.Some(col)
         _ -> option.None
       }
@@ -191,6 +260,17 @@ fn collect_inside_reversed_parens(
         [token, ..rest] ->
           collect_inside_reversed_parens(rest, depth, [token, ..acc])
       }
+  }
+}
+
+fn skip_cast_wrapper(prev: List(Token)) -> List(Token) {
+  case prev {
+    [OpenParen, Word(w), ..rest] ->
+      case string.uppercase(w) == "CAST" {
+        True -> rest
+        False -> prev
+      }
+    _ -> prev
   }
 }
 

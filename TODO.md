@@ -2,9 +2,9 @@
 
 ## Parameter Inference Gaps
 
-- [ ] Type params inside CAST wrappers from surrounding column context.
+- [x] Type params inside CAST wrappers from surrounding column context.
   - Example: `pr3.season = CAST(@season AS INTEGER)` should infer `season: Int`.
-  - Current behavior: the param name is preserved, but the type can fall back to `String`.
+  - Fixed by stripping `CAST(` while collecting binder evidence.
   - Pinned by the participant count wrapper regression shape.
 
 - [ ] Type params inside arithmetic expressions from nearby column context.
@@ -12,9 +12,9 @@
   - Current behavior: `min_delta` falls back to `String`.
   - Pinned by `introspect_update_with_column_arithmetic_param_test`.
 
-- [ ] Collect typing evidence across all occurrences before deduping named params.
+- [x] Collect typing evidence across all occurrences before deduping named params.
   - Example: `CAST(@start AS INTEGER) = 0 OR created_at >= CAST(@start AS INTEGER)`.
-  - Current behavior: first occurrence can win before a later occurrence supplies stronger type evidence.
+  - Fixed by collecting occurrences first, then preserving first output order while upgrading missing type evidence.
   - Pinned by `introspect_cast_conditional_bypass_param_test`.
 
 ## Release Notes

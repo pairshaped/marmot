@@ -328,70 +328,51 @@ fn extract_via_resolver(
 fn find_binders_with_depth(
   tokens: List(tokenize.Token),
 ) -> List(#(binder.Binder, Int)) {
-  let all = binder.find_param_binders(tokens)
-  let depths = collect_param_depths(tokens, 0, [])
-  // `find_param_binders` skips duplicates of the same named param; `depths`
-  // emits one entry per occurrence. Walk both, advancing `depths` even when
-  // a binder is skipped, so depths line up with the binders we kept.
-  zip_binders_with_depths(all, depths, [])
+  binder.find_param_binder_occurrences(tokens)
+  |> dedupe_named_binders_with_depth([])
 }
 
-fn collect_param_depths(
-  tokens: List(tokenize.Token),
-  depth: Int,
-  acc: List(#(String, Int)),
-) -> List(#(String, Int)) {
-  case tokens {
-    [] -> list.reverse(acc)
-    [tokenize.OpenParen, ..rest] -> collect_param_depths(rest, depth + 1, acc)
-    [tokenize.CloseParen, ..rest] -> collect_param_depths(rest, depth - 1, acc)
-    [tokenize.ParamAnon, ..rest] ->
-      collect_param_depths(rest, depth, [#("?", depth), ..acc])
-    [tokenize.ParamNamed(name), ..rest] ->
-      collect_param_depths(rest, depth, [#(name, depth), ..acc])
-    [_, ..rest] -> collect_param_depths(rest, depth, acc)
-  }
-}
-
-fn zip_binders_with_depths(
-  binders: List(binder.Binder),
-  depths: List(#(String, Int)),
+fn dedupe_named_binders_with_depth(
+  occurrences: List(binder.BinderOccurrence),
   acc: List(#(binder.Binder, Int)),
 ) -> List(#(binder.Binder, Int)) {
-  case binders, depths {
-    [], _ -> list.reverse(acc)
-    [_, ..], [] -> list.reverse(acc)
-    [b, ..b_rest], [#(name, depth), ..d_rest] -> {
-      case name == "?" {
-        True ->
-          // Anon binders: one depth entry per `?` token, one binder per `?`
-          // (no dedup in `find_param_binders` for anon). Pair them 1:1.
-          zip_binders_with_depths(b_rest, d_rest, [#(b, depth), ..acc])
+  case occurrences {
+    [] -> list.reverse(acc)
+    [
+      binder.BinderOccurrence(
+        binder: b,
+        depth: depth,
+        anonymous: anonymous,
+      ),
+      ..rest
+    ] -> {
+      case anonymous {
+        True -> dedupe_named_binders_with_depth(rest, [#(b, depth), ..acc])
         False ->
-          // Named binders: `find_param_binders` keeps only the first
-          // occurrence of each named param. Pair this depth entry with the
-          // matching binder, then skip any later depth entries that repeat
-          // the same name (they refer to a binder that wasn't kept).
-          case name == b.name {
-            True ->
-              zip_binders_with_depths(b_rest, drop_dups(d_rest, name), [
-                #(b, depth),
-                ..acc
-              ])
-            False -> zip_binders_with_depths(binders, d_rest, acc)
+          case list.find(acc, fn(pair) {
+            let #(existing, _) = pair
+            existing.name == b.name
+          }) {
+            Ok(#(existing, _)) ->
+              case existing.binder_column, b.binder_column {
+                option.None, option.Some(_) -> {
+                  let new_acc =
+                    list.map(acc, fn(pair) {
+                      let #(existing, _) = pair
+                      case existing.name == b.name {
+                        True -> #(b, depth)
+                        False -> pair
+                      }
+                    })
+                  dedupe_named_binders_with_depth(rest, new_acc)
+                }
+                _, _ -> dedupe_named_binders_with_depth(rest, acc)
+              }
+            Error(_) ->
+              dedupe_named_binders_with_depth(rest, [#(b, depth), ..acc])
           }
       }
     }
-  }
-}
-
-fn drop_dups(
-  depths: List(#(String, Int)),
-  name: String,
-) -> List(#(String, Int)) {
-  case depths {
-    [#(n, _), ..rest] if n == name -> drop_dups(rest, name)
-    _ -> depths
   }
 }
 
