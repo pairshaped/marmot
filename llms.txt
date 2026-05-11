@@ -16,16 +16,16 @@ Write SQL in `src/**/sql/*.sql`, one query per file. Filename becomes the functi
 
 1. Reads config: `DATABASE_URL` env > `--database` CLI flag > `gleam.toml [tools.marmot]`
 2. Opens the SQLite file, scans `src/` for `sql/` directories
-3. For each `.sql` file: reads SQL, introspects via `PRAGMA table_info` + `EXPLAIN`
+3. For each `.sql` file: reads SQL, tokenizes it, parses the statement shape, loads schema metadata with `PRAGMA table_xinfo`/`PRAGMA table_list`, and runs `EXPLAIN`
 4. Generates a `sql.gleam` module per `sql/` directory with typed functions + decoders
 
 ## Config (`[tools.marmot]` in `gleam.toml`)
 
 | Key | Default | Purpose |
 |---|---|---|
-| `database` | — | Path to the SQLite file used for introspection (also `DATABASE_URL` env, `--database` CLI) |
+| `database` | none | Path to the SQLite file used for introspection (also `DATABASE_URL` env, `--database` CLI) |
 | `output` | `src/generated/sql` | Output directory for generated modules (must be under `src/`). Marmot infers the directory structure by finding the longest common path prefix between `output` and each `sql/` directory, then uses the remainder as the namespace (e.g. `src/app/users/sql/` with default output produces `src/generated/sql/app/users_sql.gleam`). |
-| `sql_dir` | — | Custom directory for SQL file discovery. When set, Marmot recursively finds all directories under this path that contain `.sql` files, instead of the default `src/**/sql/` convention. |
+| `sql_dir` | none | Custom directory for SQL file discovery. When set, Marmot recursively finds all directories under this path that contain `.sql` files, instead of the default `src/**/sql/` convention. |
 | `query_function` | `sqlight.query` | Fully-qualified function (`module/path.name`) that generated code calls instead of `sqlight.query`. Wrapper must match `sqlight.query`'s labelled signature (`sql: String, on connection, with parameters, expecting decoder`). Useful for logging, timing, instrumentation. |
 
 ## Project structure
@@ -42,10 +42,12 @@ src/
       codegen.gleam               -- Gleam source generation (functions, row types, decoders)
 ```
 
-## Key design decisions
+## Design decisions
 
 - **Live SQLite introspection**: connects to real `.db` file, not static analysis
 - **EXPLAIN-based type inference**: traces opcodes to map result columns and `?` params back to source table columns
+- **Grammar-aware statement parsing**: a token-based statement parser finds SELECT, INSERT, UPDATE, and DELETE boundaries before body-level walkers inspect clause slices
+- **Read/write parameter nullability split**: read parameters are required, even when the referenced column is nullable. Write parameters follow the target column's write nullability.
 - **No external tools**: no `sqlc`, no `sqlite3` CLI, just `sqlight` (Gleam NIF)
 - **Convention over configuration**: follows Squirrel's conventions (one query per file, `sql/` dirs, filename = function name). `output` and `query_function` are opt-in knobs for larger projects.
 - **Generated code calls sqlight directly** (or a user-supplied wrapper via `query_function`): no tuples, no intermediate types
@@ -119,16 +121,35 @@ pub fn get_org(db db: ..., id id: Int) -> Result(List(OrgRow), sqlight.Error) {
 | `DATE` | `calendar.Date` | `decode.string` -> `parse_date` | `date_to_string` -> `sqlight.text` |
 | nullable column | `Option(T)` | `decode.optional(...)` | -- |
 
+## Parameter nullability
+
+Marmot treats read parameters and write parameters differently:
+
+| SQL pattern | Generated parameter |
+|---|---|
+| `WHERE account_id = @account_id` against a nullable integer column | `account_id: Int` |
+| `WHERE season IS @season` against a nullable integer column | `season: Int` |
+| `WHERE @from_date IS NULL OR created_at >= @from_date` | Required parameter, with the type Marmot can infer from the predicate |
+| `INSERT INTO tasks (deleted_at) VALUES (@deleted_at)` where `deleted_at` is nullable | `deleted_at: Option(Int)` |
+| `UPDATE tasks SET deleted_at = @deleted_at` where `deleted_at` is nullable | `deleted_at: Option(Int)` |
+
+This mirrors Squirrel for reads: read predicate parameters are required unless
+Marmot adds an explicit override syntax in a future release. Writes follow the
+schema because SQLite accepts or rejects NULL at that position. `INTEGER
+PRIMARY KEY` rowid aliases are nullable on INSERT writes because binding NULL
+asks SQLite to assign the rowid.
+
 ## Known limitations
 
 **Fixable (contributions welcome):**
-- Table names containing SQL keywords (`RETURNING`, `INTO`) confuse the string-based SQL parser. A real tokenizer would fix this.
-- `INSERT INTO t VALUES (?, ?)` without explicit column list degrades parameter inference. Could match positionally against schema.
-- Complex expressions (subqueries, CTEs, `COALESCE`) may not infer types. Use `CAST` for now; improvable per-kind.
+- Complex result expressions and CTE result columns may resolve to `StringType`. `COALESCE`, `CASE`, and values selected out of CTEs are the common cases. Use `CAST(... AS TYPE)` or a Marmot alias suffix (`!` / `?`) when needed.
+- Parameters inside `CASE` expressions can preserve the parameter name but miss column type evidence. Example: `CASE WHEN @rank = 0 THEN status_rank ELSE @rank END = status_rank` may infer `rank: String`. Prefer a simpler predicate shape or `CAST(@rank AS INTEGER)`.
+- Subquery parameter inference uses a fallback path that does not fully model nested scopes. Common SELECT-list subqueries, derived tables, and `EXISTS` subqueries are covered, but deeply nested or ambiguous subqueries may need explicit qualification or `CAST`.
+- `JOIN x USING (col)` is supported, but bare `col` references in `WHERE` may be reported as ambiguous. Workaround: use `ON` syntax or qualify the column.
 
 **Design decisions:**
 - `TIMESTAMP`/`DATETIME` stored as integer Unix seconds. Sub-second precision not preserved.
-- `BOOLEAN`/`BOOL` types require non-STRICT tables. SQLite STRICT mode only allows `INTEGER`, `REAL`, `TEXT`, `BLOB`, and `ANY` as column types, rejecting `BOOLEAN` at CREATE TABLE time. If you want marmot to generate `Bool` fields, declare columns as `BOOLEAN` in your DDL and do not use `STRICT` on that table. SQLite stores booleans as 0/1 integers regardless; the declared type is what marmot reads from `PRAGMA table_info` to decide the Gleam type.
+- `BOOLEAN`/`BOOL` types require non-STRICT tables. SQLite STRICT mode only allows `INTEGER`, `REAL`, `TEXT`, `BLOB`, and `ANY` as column types, rejecting `BOOLEAN` at CREATE TABLE time. If you want marmot to generate `Bool` fields, declare columns as `BOOLEAN` in your DDL and do not use `STRICT` on that table. SQLite stores booleans as 0/1 integers regardless; the declared type is what marmot reads from schema metadata to decide the Gleam type.
 
 **Hard limits (SQLite protocol):**
 - Repeated anonymous `?` produce distinct function args. Use named parameters (`@name`). SQLite deduplicates them natively.

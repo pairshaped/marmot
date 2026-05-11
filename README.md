@@ -79,7 +79,7 @@ self-documenting.
 
 - Marmot keeps encoders and decoders in sync with the query output for you.
 - Type safety is preserved: Marmot connects to your SQLite database and uses
-  `PRAGMA table_info` and `EXPLAIN` to understand query types.
+  SQLite schema metadata plus `EXPLAIN` to understand query types.
 - Each query is a standalone `*.sql` file, so you can `explain` or lint it
   independently.
 - No external tools required. No `sqlc` binary, no `sqlite3` CLI. Marmot uses
@@ -308,7 +308,7 @@ Marmot treats read parameters and write parameters differently.
 | SQL pattern | Meaning | Generated parameter |
 | ----------- | ------- | ------------------- |
 | `WHERE account_id = @account_id` against a nullable column | Read filter. Callers pass a concrete value. | `account_id: Int` |
-| `WHERE season IS @season` against a nullable column | Read filter using SQL's NULL-aware comparison. Marmot still follows the read rule. | `season: String` |
+| `WHERE season IS @season` against a nullable integer column | Read filter using SQL's NULL-aware comparison. Marmot still follows the read rule. | `season: Int` |
 | `WHERE @from_date IS NULL OR created_at >= @from_date` | Optional-filter idiom in SQL. Marmot does not infer optional read parameters from this shape. | Required parameter, with the type Marmot can infer from the predicate |
 | `INSERT INTO tasks (deleted_at) VALUES (@deleted_at)` where `deleted_at` is nullable | Write position. SQLite accepts NULL for this column. | `deleted_at: Option(Int)` |
 | `UPDATE tasks SET deleted_at = @deleted_at` where `deleted_at` is nullable | Write position. SQLite accepts NULL for this column. | `deleted_at: Option(Int)` |
@@ -326,19 +326,25 @@ on INSERT writes because binding NULL asks SQLite to assign the rowid.
 Marmot's type inference for expressions is incremental. Some shapes resolve
 to `StringType` when Marmot can't trace the underlying column.
 
-- **Complex SELECT expressions and CTE result columns.** Subqueries in the
-  SELECT list, deeply nested `COALESCE`/`CASE`, and columns coming out of
-  CTEs may resolve to `StringType` rather than the underlying column's type.
-  Use `CAST(... AS TYPE)` in the SQL or alias with `!`/`?` for nullability.
+- **Complex result expressions and CTE result columns.** `COALESCE`, `CASE`,
+  and columns coming out of CTEs may resolve to `StringType` rather than the
+  underlying column's type. Use `CAST(... AS TYPE)` in the SQL or alias with
+  `!`/`?` for nullability.
+- **Parameters inside `CASE` expressions.** Marmot can preserve the parameter
+  name but may miss the column type evidence. For example, a parameter used
+  inside `CASE WHEN @rank = 0 THEN status_rank ELSE @rank END = status_rank`
+  may fall back to `StringType`. Prefer a simpler predicate shape or an
+  explicit `CAST(@rank AS INTEGER)`.
 
 ### Limited scope of alias resolution
 
 Alias-aware column resolution applies to the current parsed statement scope.
 
 - **Subquery scoping.** Parameters inside subqueries use a fallback
-  inference path that doesn't model nested scopes. Bare references inside
-  a subquery may need explicit qualification or `CAST` to get the right
-  type. Correlated columns referencing an outer scope are not handled.
+  inference path that doesn't fully model nested scopes. Many common shapes
+  are supported, including SELECT-list subqueries and derived tables, but
+  deeply nested or ambiguous subqueries may need explicit qualification or
+  `CAST` to get the right type.
 - **`USING` joins.** `JOIN x USING (col)` is supported, but bare `col`
   references in `WHERE` may be reported as ambiguous. Workaround: use
   `ON` syntax or qualify the column.
@@ -405,7 +411,7 @@ information in fundamentally incompatible ways.
   `INTEGER`, and the engine never commits to a type for a result slot.
 - Result columns have to be traced through `EXPLAIN` opcodes
   (`OpenRead` / `Column` / `Rowid` / `ResultRow`) back to physical table columns,
-  then joined against `PRAGMA table_info` for the declared type.
+  then joined against SQLite schema metadata for the declared type.
 - Nullability has to be derived from joins, subqueries, and `COALESCE` usage
   instead of reported by the engine. Marmot tracks nullable-cursor sets
   through the opcode trace.
