@@ -103,9 +103,10 @@ pub fn extract_parameters(
           case stmt.source {
             statement_parser.ValuesSource(_, _)
             | statement_parser.DefaultValuesSource -> {
-              use parsed <- result.try(
-                extract_insert_parameters_v2(stmt, table_metadata),
-              )
+              use parsed <- result.try(extract_insert_parameters_v2(
+                stmt,
+                table_metadata,
+              ))
               // If the extracted param count doesn't match (e.g. upsert with
               // ON CONFLICT DO UPDATE SET adds more `?` parameters beyond the
               // VALUES row), fall back to opcode inference so those extra
@@ -162,6 +163,7 @@ fn extract_select_parameters_resolved(
       // the original named-parameter name.
       let body_tokens =
         list.flatten([
+          stmt.body.select_list,
           option.unwrap(stmt.body.where, []),
           option.unwrap(stmt.body.group_by, []),
           option.unwrap(stmt.body.having, []),
@@ -191,8 +193,7 @@ fn extract_select_parameters_resolved(
         Error(e) -> Error(e)
       }
     Error(_) -> {
-      let parsed =
-        extract_select_parameters(table_schemas, tokens, stmt_type)
+      let parsed = extract_select_parameters(table_schemas, tokens, stmt_type)
       case list.length(parsed) == param_count {
         True -> Ok(parsed)
         False -> Ok(opcode_fallback())
@@ -211,11 +212,20 @@ fn extract_update_parameters_resolved(
     Ok(statement_parser.Update(stmt)) -> {
       let from_bindings = list.map(stmt.from, fn(item) { item.binding })
       let bindings = [stmt.target, ..from_bindings]
-      // SET also has parameters. Combine the SET and WHERE slices for binder
-      // discovery so `find_param_binders` walks both regions.
+      let set_params =
+        extract_update_set_parameters_resolved(
+          table_schemas,
+          stmt.target.table.name.text,
+          stmt.set,
+        )
       let where_tokens = option.unwrap(stmt.where, [])
-      let body_tokens = list.append(stmt.set, where_tokens)
-      Ok(extract_via_resolver(table_schemas, bindings, body_tokens))
+      let where_result =
+        extract_via_resolver(table_schemas, bindings, where_tokens)
+      Ok(
+        result.map(where_result, fn(where_params) {
+          list.append(set_params, where_params)
+        }),
+      )
     }
     _ -> Error(Nil)
   }
@@ -236,6 +246,39 @@ fn extract_update_parameters_resolved(
         False -> Ok(opcode_fallback())
       }
     }
+  }
+}
+
+fn extract_update_set_parameters_resolved(
+  table_schemas: Dict(String, List(Column)),
+  table_name: String,
+  set_tokens: List(tokenize.Token),
+) -> List(Parameter) {
+  let set_params = parse_params.parse_update_set_body(set_tokens)
+  case dict.get(table_schemas, table_name) {
+    Ok(table_cols) ->
+      list.map(set_params, fn(param) {
+        let #(param_name, lookup_col) = param
+        case list.find(table_cols, fn(c) { c.name == lookup_col }) {
+          Ok(col) ->
+            Parameter(
+              name: param_name,
+              column_type: col.column_type,
+              nullable: col.nullable,
+            )
+          Error(_) ->
+            Parameter(
+              name: param_name,
+              column_type: StringType,
+              nullable: False,
+            )
+        }
+      })
+    Error(_) ->
+      list.map(set_params, fn(param) {
+        let #(param_name, _) = param
+        Parameter(name: param_name, column_type: StringType, nullable: False)
+      })
   }
 }
 
@@ -271,8 +314,7 @@ fn extract_via_resolver(
   list.try_map(depth_binders, fn(pair) {
     let #(b, depth) = pair
     case depth > 0 {
-      True ->
-        Ok(legacy_resolve_binder(b, legacy_tables, table_schemas))
+      True -> Ok(legacy_resolve_binder(b, legacy_tables, table_schemas))
       False -> resolve_one_binder(b, map, table_schemas)
     }
   })
@@ -300,10 +342,8 @@ fn collect_param_depths(
 ) -> List(#(String, Int)) {
   case tokens {
     [] -> list.reverse(acc)
-    [tokenize.OpenParen, ..rest] ->
-      collect_param_depths(rest, depth + 1, acc)
-    [tokenize.CloseParen, ..rest] ->
-      collect_param_depths(rest, depth - 1, acc)
+    [tokenize.OpenParen, ..rest] -> collect_param_depths(rest, depth + 1, acc)
+    [tokenize.CloseParen, ..rest] -> collect_param_depths(rest, depth - 1, acc)
     [tokenize.ParamAnon, ..rest] ->
       collect_param_depths(rest, depth, [#("?", depth), ..acc])
     [tokenize.ParamNamed(name), ..rest] ->
@@ -374,11 +414,7 @@ fn legacy_resolve_binder(
     })
   case local {
     Ok(col) ->
-      Parameter(
-        name: b.name,
-        column_type: col.column_type,
-        nullable: col.nullable,
-      )
+      Parameter(name: b.name, column_type: col.column_type, nullable: False)
     Error(_) ->
       Parameter(name: b.name, column_type: StringType, nullable: False)
   }
@@ -421,7 +457,7 @@ fn resolve_one_binder_with_column(
       Ok(Parameter(
         name: b.name,
         column_type: rc.column.column_type,
-        nullable: rc.column.nullable,
+        nullable: False,
       ))
     resolver.UnknownTableRef ->
       Ok(Parameter(name: b.name, column_type: StringType, nullable: False))
@@ -434,10 +470,7 @@ fn resolve_one_binder_with_column(
           }
         option.None -> b.name
       }
-      Error(AmbiguousColumn(
-        column: column_name,
-        candidates: dict.keys(map),
-      ))
+      Error(AmbiguousColumn(column: column_name, candidates: dict.keys(map)))
     }
     resolver.UnknownQualifiedAlias -> {
       let alias = case b.binder_column {
@@ -769,7 +802,7 @@ fn extract_insert_select_parameters(
               Parameter(
                 name: binder.name,
                 column_type: col.column_type,
-                nullable: col.nullable,
+                nullable: False,
               )
             Error(_) ->
               Parameter(
@@ -807,7 +840,7 @@ fn extract_select_parameters(
             Parameter(
               name: binder.name,
               column_type: col.column_type,
-              nullable: col.nullable,
+              nullable: False,
             )
           Error(_) ->
             Parameter(
@@ -911,7 +944,7 @@ fn extract_update_parameters(
               Parameter(
                 name: param_name,
                 column_type: col.column_type,
-                nullable: col.nullable,
+                nullable: False,
               )
             Error(_) ->
               Parameter(

@@ -301,6 +301,24 @@ supported are:
 | `DATE`                     | [`calendar.Date`](https://hexdocs.pm/gleam_time/gleam/time/calendar.html#Date)                                    | Stored as ISO 8601 text     |
 | nullable column            | `Option(T)`                                                                                                       |                             |
 
+### Parameter nullability
+
+Marmot treats read parameters and write parameters differently.
+
+| SQL pattern | Meaning | Generated parameter |
+| ----------- | ------- | ------------------- |
+| `WHERE account_id = @account_id` against a nullable column | Read filter. Callers pass a concrete value. | `account_id: Int` |
+| `WHERE season IS @season` against a nullable column | Read filter using SQL's NULL-aware comparison. Marmot still follows the read rule. | `season: String` |
+| `WHERE @from_date IS NULL OR created_at >= @from_date` | Optional-filter idiom in SQL. Marmot does not infer optional read parameters from this shape. | Required parameter, with the type Marmot can infer from the predicate |
+| `INSERT INTO tasks (deleted_at) VALUES (@deleted_at)` where `deleted_at` is nullable | Write position. SQLite accepts NULL for this column. | `deleted_at: Option(Int)` |
+| `UPDATE tasks SET deleted_at = @deleted_at` where `deleted_at` is nullable | Write position. SQLite accepts NULL for this column. | `deleted_at: Option(Int)` |
+
+This mirrors Squirrel's surface for reads: a parameter in a read predicate is
+required unless Marmot adds an explicit override syntax in a future release.
+For writes, Marmot follows the schema because the database really accepts or
+rejects NULL at that position. `INTEGER PRIMARY KEY` rowid aliases are nullable
+on INSERT writes because binding NULL asks SQLite to assign the rowid.
+
 ## Known Limitations
 
 ### Expression inference gaps

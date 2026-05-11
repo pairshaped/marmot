@@ -1049,6 +1049,308 @@ pub fn introspect_cte_bare_column_falls_back_test() {
     query.parameters
 }
 
+pub fn read_param_against_nullable_column_is_non_nullable_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE tasks (
+        id INTEGER PRIMARY KEY,
+        account_id INTEGER
+      );",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/read_nullable_column.sql",
+      "SELECT id FROM tasks WHERE account_id = @account_id",
+    )
+  let assert [
+    Parameter(name: "account_id", column_type: IntType, nullable: False),
+  ] = query.parameters
+}
+
+pub fn read_param_with_is_operator_is_non_nullable_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE standings (
+        id INTEGER PRIMARY KEY,
+        season TEXT
+      );",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/read_is_nullable.sql",
+      "SELECT id FROM standings WHERE season IS @season",
+    )
+  let assert [
+    Parameter(name: "season", column_type: StringType, nullable: False),
+  ] = query.parameters
+}
+
+pub fn read_param_with_is_operator_on_not_null_column_is_non_nullable_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL
+      );",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/read_is_not_null_column.sql",
+      "SELECT id FROM users WHERE name IS @name",
+    )
+  let assert [Parameter(name: "name", column_type: StringType, nullable: False)] =
+    query.parameters
+}
+
+pub fn read_param_with_is_not_operator_is_non_nullable_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE standings (
+        id INTEGER PRIMARY KEY,
+        season TEXT
+      );",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/read_is_not_nullable.sql",
+      "SELECT id FROM standings WHERE season IS NOT @season",
+    )
+  let assert [
+    Parameter(name: "season", column_type: StringType, nullable: False),
+  ] = query.parameters
+}
+
+pub fn read_param_with_null_guard_is_non_nullable_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE tasks (
+        id INTEGER PRIMARY KEY,
+        account_id INTEGER NOT NULL
+      );",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/read_null_guard.sql",
+      "SELECT id FROM tasks
+       WHERE (@account_id IS NULL OR account_id = @account_id)",
+    )
+  let assert [
+    Parameter(name: "account_id", column_type: IntType, nullable: False),
+  ] = query.parameters
+}
+
+pub fn read_param_with_suffix_null_guard_is_non_nullable_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE tasks (
+        id INTEGER PRIMARY KEY,
+        account_id INTEGER NOT NULL
+      );",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/read_suffix_null_guard.sql",
+      "SELECT id FROM tasks
+       WHERE account_id = @account_id OR @account_id IS NULL",
+    )
+  let assert [
+    Parameter(name: "account_id", column_type: IntType, nullable: False),
+  ] = query.parameters
+}
+
+pub fn read_param_with_not_null_guard_is_non_nullable_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE tasks (
+        id INTEGER PRIMARY KEY,
+        account_id INTEGER NOT NULL
+      );",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/read_not_null_guard.sql",
+      "SELECT id FROM tasks
+       WHERE @account_id IS NOT NULL AND account_id = @account_id",
+    )
+  let assert [
+    Parameter(name: "account_id", nullable: False, ..),
+  ] = query.parameters
+}
+
+pub fn read_param_with_range_null_guard_is_non_nullable_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE tasks (
+        id INTEGER PRIMARY KEY,
+        created_at INTEGER NOT NULL
+      );",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/read_range_null_guard.sql",
+      "SELECT id FROM tasks
+       WHERE @from_date IS NULL OR created_at >= @from_date",
+    )
+  let assert [
+    Parameter(name: "from_date", nullable: False, ..),
+  ] = query.parameters
+}
+
+pub fn delete_where_read_param_against_nullable_column_is_non_nullable_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE tasks (
+        id INTEGER PRIMARY KEY,
+        account_id INTEGER
+      );",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/delete_read_nullable_column.sql",
+      "DELETE FROM tasks WHERE account_id = @account_id",
+    )
+  let assert [
+    Parameter(name: "account_id", column_type: IntType, nullable: False),
+  ] = query.parameters
+}
+
+pub fn read_param_inside_select_subquery_resolves_column_type_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE memberships (
+        id INTEGER PRIMARY KEY,
+        org_id INTEGER NOT NULL
+      );",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/select_subquery_param.sql",
+      "SELECT CAST((SELECT count(*) FROM memberships WHERE org_id = @org_id) AS INTEGER) AS member_count",
+    )
+  let assert [Parameter(name: "org_id", column_type: IntType, nullable: False)] =
+    query.parameters
+}
+
+pub fn read_param_inside_correlated_select_subquery_resolves_column_type_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE feature_requests (
+        id INTEGER PRIMARY KEY
+      );
+      CREATE TABLE feature_request_votes (
+        id INTEGER PRIMARY KEY,
+        feature_request_id INTEGER NOT NULL,
+        org_id INTEGER NOT NULL
+      );",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/correlated_select_subquery_param.sql",
+      "SELECT
+         fr.id,
+         CAST((
+           SELECT count(*)
+           FROM feature_request_votes frv
+           WHERE frv.feature_request_id = fr.id
+             AND frv.org_id = @org_id
+         ) AS INTEGER) AS has_voted
+       FROM feature_requests fr
+       WHERE fr.id = @id",
+    )
+  let assert [
+    Parameter(name: "org_id", column_type: IntType, nullable: False),
+    Parameter(name: "id", column_type: IntType, nullable: False),
+  ] = query.parameters
+}
+
+pub fn read_param_inside_select_list_subquery_without_outer_where_resolves_column_type_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE feature_requests (
+        id INTEGER PRIMARY KEY
+      );
+      CREATE TABLE feature_request_votes (
+        id INTEGER PRIMARY KEY,
+        feature_request_id INTEGER NOT NULL,
+        org_id INTEGER
+      );",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/select_list_subquery_param.sql",
+      "SELECT (
+         SELECT count(*)
+         FROM feature_request_votes frv
+         WHERE frv.org_id = @org_id
+       ) AS c
+       FROM feature_requests",
+    )
+  let assert [
+    Parameter(name: "org_id", column_type: IntType, nullable: False),
+  ] = query.parameters
+}
+
+pub fn update_set_write_nullable_but_where_read_non_nullable_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE tasks (
+        id INTEGER PRIMARY KEY,
+        account_id INTEGER,
+        deleted_at INTEGER
+      );",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/update_read_write_nullability.sql",
+      "UPDATE tasks
+       SET deleted_at = @deleted_at
+       WHERE account_id = @account_id",
+    )
+  let assert [
+    Parameter(name: "deleted_at", column_type: IntType, nullable: True),
+    Parameter(name: "account_id", column_type: IntType, nullable: False),
+  ] = query.parameters
+}
+
 // ---- T16: sqlite.gleam derives Statement structure from parser ----
 
 pub fn introspect_insert_returning_via_typed_statement_test() {
@@ -1408,12 +1710,8 @@ pub fn introspect_update_with_column_arithmetic_param_test() {
   // Named params live inside arithmetic expressions in both SET and WHERE:
   //   SET balance = balance + @delta
   //   WHERE balance + @min_delta >= 0
-  // Pinning current behavior: only `id = @id` (bare column equality)
-  // resolves to IntType. @delta and @min_delta fall back to StringType
-  // because the binder walker matches `col OP @p` patterns and does not
-  // recognize the arithmetic expression as a column-typed context. If the
-  // binder is taught to look through `+`/`-`/etc. arithmetic for the
-  // dominant column type, this test should be updated.
+  // SET uses write-position inference, so @delta resolves from balance.
+  // WHERE still cannot infer @min_delta through arithmetic expression context.
   use db <- sqlight.with_connection(":memory:")
   let assert Ok(_) =
     sqlight.exec(
@@ -1433,7 +1731,7 @@ pub fn introspect_update_with_column_arithmetic_param_test() {
        RETURNING id, balance",
     )
   let assert [
-    Parameter(name: "delta", column_type: StringType, nullable: False),
+    Parameter(name: "delta", column_type: IntType, nullable: False),
     Parameter(name: "id", column_type: IntType, nullable: False),
     Parameter(name: "min_delta", column_type: StringType, nullable: False),
   ] = result.parameters
