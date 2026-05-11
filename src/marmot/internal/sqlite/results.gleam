@@ -42,85 +42,116 @@ pub fn extract_result_columns(
       let base_reg = rr.p1
       let count = rr.p2
       let result_regs = util.make_range(base_reg, count)
-      let #(select_list_tokens, from_tables) = case
-        statement_parser.parse(tokens)
-      {
-        Ok(statement_parser.Select(stmt)) -> {
-          let from_names =
-            stmt.body.from
-            |> list.map(fn(item) { item.binding.table.name.text })
-          #(stmt.body.select_list, from_names)
-        }
-        _ -> #([], [])
-      }
+      let #(select_list_tokens, from_tables) = parse_select_details(tokens)
       let select_items = select.parse_select_item_list(select_list_tokens)
 
       list.index_map(result_regs, fn(reg, idx) {
-        let opcode_column =
-          opcode.find_column_for_register(
-            reg,
-            opcodes,
-            cursor_table,
-            table_schemas,
-            pk_columns,
-          )
-          |> opcode.apply_cursor_nullability(reg, opcodes, join_nullability)
-        let text_column =
-          resolve_select_item(
-            idx,
-            select_items,
-            from_tables,
-            table_schemas,
-            join_nullability,
-          )
-        let select_item = util.list_at(select_items, idx)
-        case select_item {
-          Error(_) -> result.unwrap(opcode_column, default_column())
-          Ok(item) -> {
-            let resolved_col = case item.bare_column, opcode_column {
-              option.Some(_), Ok(op) ->
-                case text_column {
-                  Ok(tc) -> Column(..tc, nullable: tc.nullable || op.nullable)
-                  Error(_) -> Column(..op, name: item.alias)
-                }
-              option.Some(_), Error(_) ->
-                case text_column {
-                  Ok(tc) -> tc
-                  Error(_) ->
-                    Column(
-                      name: item.alias,
-                      column_type: StringType,
-                      nullable: True,
-                    )
-                }
-              option.None, Ok(op) -> {
-                let base_type = case text_column {
-                  Ok(tc) -> tc.column_type
-                  Error(_) -> op.column_type
-                }
-                Column(
-                  name: item.alias,
-                  column_type: base_type,
-                  nullable: op.nullable,
-                )
-              }
-              option.None, Error(_) ->
-                case text_column {
-                  Ok(tc) -> tc
-                  Error(_) ->
-                    Column(
-                      name: item.alias,
-                      column_type: StringType,
-                      nullable: True,
-                    )
-                }
-            }
-            expression.apply_override(resolved_col, item.override)
-          }
-        }
+        extract_result_register_column(
+          reg,
+          idx,
+          opcodes,
+          cursor_table,
+          table_schemas,
+          pk_columns,
+          join_nullability,
+          select_items,
+          from_tables,
+        )
       })
     }
   }
+}
+
+fn parse_select_details(tokens: List(Token)) -> #(List(Token), List(String)) {
+  case statement_parser.parse(tokens) {
+    Ok(statement_parser.Select(stmt)) -> {
+      let from_names =
+        stmt.body.from
+        |> list.map(fn(item) { item.binding.table.name.text })
+      #(stmt.body.select_list, from_names)
+    }
+    _ -> #([], [])
+  }
+}
+
+fn extract_result_register_column(
+  reg: Int,
+  idx: Int,
+  opcodes: List(Opcode),
+  cursor_table: Dict(Int, String),
+  table_schemas: Dict(String, List(Column)),
+  pk_columns: Dict(String, String),
+  join_nullability: JoinNullability,
+  select_items: List(select.SelectItem),
+  from_tables: List(String),
+) -> Column {
+  let opcode_column =
+    opcode.find_column_for_register(
+      reg,
+      opcodes,
+      cursor_table,
+      table_schemas,
+      pk_columns,
+    )
+    |> opcode.apply_cursor_nullability(reg, opcodes, join_nullability)
+  let text_column =
+    resolve_select_item(
+      idx,
+      select_items,
+      from_tables,
+      table_schemas,
+      join_nullability,
+    )
+
+  case util.list_at(select_items, idx) {
+    Error(_) -> result.unwrap(opcode_column, default_column())
+    Ok(item) -> resolve_result_select_item(item, opcode_column, text_column)
+  }
+}
+
+fn resolve_result_select_item(
+  item: select.SelectItem,
+  opcode_column: Result(Column, Nil),
+  text_column: Result(Column, Nil),
+) -> Column {
+  let resolved_col = case item.bare_column, opcode_column {
+    option.Some(_), Ok(op) -> resolve_bare_result_column(item, op, text_column)
+    option.Some(_), Error(_) ->
+      result.unwrap(text_column, alias_string_column(item.alias))
+    option.None, Ok(op) -> resolve_non_bare_opcode_column(item, op, text_column)
+    option.None, Error(_) ->
+      result.unwrap(text_column, alias_string_column(item.alias))
+  }
+
+  expression.apply_override(resolved_col, item.override)
+}
+
+fn resolve_bare_result_column(
+  item: select.SelectItem,
+  op: Column,
+  text_column: Result(Column, Nil),
+) -> Column {
+  case text_column {
+    Ok(tc) -> Column(..tc, nullable: tc.nullable || op.nullable)
+    Error(_) -> Column(..op, name: item.alias)
+  }
+}
+
+fn resolve_non_bare_opcode_column(
+  item: select.SelectItem,
+  op: Column,
+  text_column: Result(Column, Nil),
+) -> Column {
+  let base_type = case text_column {
+    Ok(tc) -> tc.column_type
+    Error(_) -> op.column_type
+  }
+
+  Column(name: item.alias, column_type: base_type, nullable: op.nullable)
+}
+
+fn alias_string_column(alias: String) -> Column {
+  Column(name: alias, column_type: StringType, nullable: True)
 }
 
 fn default_column() -> Column {
@@ -140,22 +171,12 @@ fn resolve_select_item(
     Ok(item) -> {
       let resolved =
         list.find_map(from_tables, fn(table) {
-          case item.bare_column {
-            option.Some(col_name) ->
-              case query.find_column_ci(table_schemas, table, col_name) {
-                Ok(col) -> {
-                  let nullable = case
-                    dict.has_key(join_nullability.nullable_tables, table)
-                  {
-                    True -> True
-                    False -> col.nullable
-                  }
-                  Ok(Column(..col, name: item.alias, nullable: nullable))
-                }
-                Error(_) -> Error(Nil)
-              }
-            option.None -> Error(Nil)
-          }
+          resolve_select_item_from_table(
+            item,
+            table,
+            table_schemas,
+            join_nullability,
+          )
         })
       let col = case resolved {
         Ok(c) -> c
@@ -163,6 +184,42 @@ fn resolve_select_item(
       }
       Ok(expression.apply_override(col, item.override))
     }
+  }
+}
+
+fn resolve_select_item_from_table(
+  item: select.SelectItem,
+  table: String,
+  table_schemas: Dict(String, List(Column)),
+  join_nullability: JoinNullability,
+) -> Result(Column, Nil) {
+  case item.bare_column {
+    option.Some(col_name) ->
+      resolve_select_item_column(
+        item,
+        table,
+        col_name,
+        table_schemas,
+        join_nullability,
+      )
+    option.None -> Error(Nil)
+  }
+}
+
+fn resolve_select_item_column(
+  item: select.SelectItem,
+  table: String,
+  col_name: String,
+  table_schemas: Dict(String, List(Column)),
+  join_nullability: JoinNullability,
+) -> Result(Column, Nil) {
+  case query.find_column_ci(table_schemas, table, col_name) {
+    Ok(col) -> {
+      let nullable =
+        dict.has_key(join_nullability.nullable_tables, table) || col.nullable
+      Ok(Column(..col, name: item.alias, nullable: nullable))
+    }
+    Error(_) -> Error(Nil)
   }
 }
 
