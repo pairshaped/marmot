@@ -1,3 +1,4 @@
+import gleam/bool
 import gleam/list
 import gleam/option.{type Option}
 import gleam/string
@@ -44,6 +45,12 @@ pub type Token {
   BitOr
   // Unknown character (produced instead of silent drop)
   UnknownToken(char: String)
+}
+
+type CharacterKind {
+  Digit
+  WordStart
+  Other
 }
 
 // ---- Tokenizer ----
@@ -130,30 +137,35 @@ fn do_tokenize(chars: List(String), acc: List(Token)) -> List(Token) {
     ["!", ..rest] -> handle_exclamation(rest, acc)
 
     // Numbers (starts with digit)
-    [c, ..] -> {
-      case is_digit(c) {
-        True -> {
+    [_, ..] -> handle_word_number_or_unknown(chars, acc)
+  }
+}
+
+fn handle_word_number_or_unknown(
+  chars: List(String),
+  acc: List(Token),
+) -> List(Token) {
+  case chars {
+    [c, ..rest] ->
+      case classify_character(c) {
+        Digit -> {
           let #(num, remaining) = consume_number(chars, [])
           do_tokenize(remaining, [Number(num), ..acc])
         }
-        False ->
-          case is_alpha_or_underscore(c) {
-            True -> {
-              let #(word, remaining) = consume_word(chars, [])
-              do_tokenize(remaining, [Word(word), ..acc])
-            }
-            // Emit unknown characters as tokens so parsing can surface them
-            False -> {
-              let rest = case chars {
-                [_, ..r] -> r
-                _ -> []
-              }
-              do_tokenize(rest, [UnknownToken(c), ..acc])
-            }
-          }
+        WordStart -> {
+          let #(word, remaining) = consume_word(chars, [])
+          do_tokenize(remaining, [Word(word), ..acc])
+        }
+        Other -> do_tokenize(rest, [UnknownToken(c), ..acc])
       }
-    }
+    [] -> acc
   }
+}
+
+fn classify_character(c: String) -> CharacterKind {
+  use <- bool.guard(is_digit(c), Digit)
+  use <- bool.guard(is_alpha_or_underscore(c), WordStart)
+  Other
 }
 
 // ---- Comment skipping ----
@@ -269,19 +281,7 @@ fn try_hex_or_exp(
       }
     ["e", c, ..rest] | ["E", c, ..rest] ->
       case c {
-        "+" | "-" ->
-          case rest {
-            [d, ..rest2] ->
-              case is_digit(d) {
-                True -> {
-                  let #(exp_digits, after_exp) =
-                    consume_number_digits(rest2, [d])
-                  #(num_str <> "e" <> c <> exp_digits, after_exp)
-                }
-                False -> #(num_str, remaining)
-              }
-            _ -> #(num_str, remaining)
-          }
+        "+" | "-" -> try_signed_exp(num_str, c, rest, remaining)
         _ ->
           case is_digit(c) {
             True -> {
@@ -293,6 +293,31 @@ fn try_hex_or_exp(
       }
     _ -> #(num_str, remaining)
   }
+}
+
+fn try_signed_exp(
+  num_str: String,
+  sign: String,
+  rest: List(String),
+  remaining: List(String),
+) -> #(String, List(String)) {
+  case rest {
+    [digit, ..rest2] ->
+      consume_signed_exp(num_str, sign, digit, rest2, remaining)
+    _ -> #(num_str, remaining)
+  }
+}
+
+fn consume_signed_exp(
+  num_str: String,
+  sign: String,
+  digit: String,
+  rest: List(String),
+  remaining: List(String),
+) -> #(String, List(String)) {
+  use <- bool.guard(!is_digit(digit), #(num_str, remaining))
+  let #(exp_digits, after_exp) = consume_number_digits(rest, [digit])
+  #(num_str <> "e" <> sign <> exp_digits, after_exp)
 }
 
 fn is_hex_digit(c: String) -> Bool {
@@ -417,16 +442,20 @@ fn walk_tokens(
     [token, ..rest] -> {
       case step(state, token, depth) {
         Continue(next_state) -> {
-          let next_depth = case token {
-            OpenParen -> depth + 1
-            CloseParen -> depth - 1
-            _ -> depth
-          }
+          let next_depth = token_next_depth(token, depth)
           walk_tokens(rest, from: next_state, at_depth: next_depth, with: step)
         }
         Stop(next_state) -> #(next_state, rest)
       }
     }
+  }
+}
+
+fn token_next_depth(token: Token, depth: Int) -> Int {
+  case token {
+    OpenParen -> depth + 1
+    CloseParen -> depth - 1
+    _ -> depth
   }
 }
 
