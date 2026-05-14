@@ -1,3 +1,5 @@
+![Marmot](https://github.com/pairshaped/marmot/blob/master/marmot.png?raw=true)
+
 # Marmot - Type-Safe SQL for SQLite in Gleam
 
 [![Package Version](https://img.shields.io/hexpm/v/marmot)](https://hex.pm/packages/marmot)
