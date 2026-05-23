@@ -6,9 +6,10 @@ SELECT
     title,
     published_at,
     CASE
-    WHEN published_at IS NULL THEN 'draft'
-    WHEN published_at >
-@cutoff THEN 'recent'
-    ELSE 'archived'
-  END AS post_status
+        WHEN published_at IS NULL THEN 'draft'
+        WHEN
+            published_at
+            > @cutoff THEN 'recent'
+        ELSE 'archived'
+    END AS post_status
 FROM posts

@@ -5,7 +5,6 @@ SELECT
     COALESCE(
         CASE
             WHEN published_at IS NULL THEN 'unpublished'
-            ELSE NULL
         END,
         'unknown'
     ) AS status

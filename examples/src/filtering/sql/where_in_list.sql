@@ -1,6 +1,9 @@
 -- WHERE with IN (literal list).
 -- The parameter type is inferred from the column being compared.
-SELECT id, name, email
+SELECT
+    id,
+    name,
+    email
 FROM users
 WHERE id IN (@user_ids)
 

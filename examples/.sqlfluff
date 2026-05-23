@@ -1,2 +1,2 @@
-[sqruff]
+[sqlfluff]
 dialect = sqlite

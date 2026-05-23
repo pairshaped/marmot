@@ -3,6 +3,6 @@
 INSERT INTO users (id, name, email, created_at)
 VALUES (@id, @name, @email, @created_at)
 ON CONFLICT (id) DO UPDATE SET
-  name = @name,
-  email = @email
+    name = @name,
+    email = @email
 WHERE users.active = 1

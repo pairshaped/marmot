@@ -3,6 +3,9 @@
 SELECT
     p.id,
     p.title,
-    CAST((SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) AS INTEGER)
+    CAST((
+        SELECT COUNT(*) FROM comments AS c
+        WHERE c.post_id = p.id
+    ) AS INTEGER)
         AS comment_count
-FROM posts p
+FROM posts AS p

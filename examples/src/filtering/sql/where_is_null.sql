@@ -1,6 +1,8 @@
 -- WHERE with IS NULL and IS NOT NULL.
 -- Useful for finding rows with missing optional data.
-SELECT id, title
+SELECT
+    id,
+    title
 FROM posts
 WHERE published_at IS NULL
 
