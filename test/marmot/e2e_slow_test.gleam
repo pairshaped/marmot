@@ -1,3 +1,4 @@
+import gleam/dynamic/decode
 import gleam/int
 import gleam/io
 import gleam/list
@@ -554,4 +555,50 @@ pub fn e2e_cli_database_open_error_test() {
     Ok(Nil) -> Nil
     Error(msg) -> panic as msg
   }
+}
+
+pub fn e2e_cli_migrate_ignores_app_compile_errors_test() {
+  let base = "test_e2e_cli_migrate_broken_app"
+  let result =
+    rescue(fn() {
+      write_cli_project("cli_migrate_broken_app", base)
+      let assert Ok(_) =
+        simplifile.write(base <> "/src/broken.gleam", "pub fn broken( {\n")
+      let assert Ok(_) =
+        simplifile.create_directory_all(base <> "/db/migrations")
+      let assert Ok(_) =
+        simplifile.write(
+          base <> "/db/migrations/001_create_users.sql",
+          "CREATE TABLE users (id INTEGER PRIMARY KEY)",
+        )
+
+      let exit_code =
+        marmot.run_executable_in_timeout(
+          "gleam",
+          ["run", "-m", "marmot", "migrate", "--database", "test.db"],
+          base,
+          120_000,
+        )
+      let assert 0 = exit_code
+
+      use db <- sqlight.with_connection(base <> "/test.db")
+      let assert Ok(["001_create_users"]) =
+        sqlight.query(
+          "SELECT version FROM schema_migrations",
+          on: db,
+          with: [],
+          expecting: migration_version_decoder(),
+        )
+      Nil
+    })
+  let _ = simplifile.delete(base)
+  case result {
+    Ok(Nil) -> Nil
+    Error(msg) -> panic as msg
+  }
+}
+
+fn migration_version_decoder() -> decode.Decoder(String) {
+  use version <- decode.field(0, decode.string)
+  decode.success(version)
 }

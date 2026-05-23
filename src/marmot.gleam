@@ -24,12 +24,16 @@ import marmot/internal/project
 import marmot/internal/query
 import marmot/internal/sqlite
 import marmot/internal/sqlite/tokenize
+import marmot/migrations
 import simplifile
 import sqlight
 
 pub fn main() -> Nil {
   let args = argv.load().arguments
-  run_generate(args)
+  case args {
+    ["migrate", ..rest] -> run_migrate(rest)
+    _ -> run_generate(args)
+  }
 }
 
 fn with_database(
@@ -78,6 +82,46 @@ fn with_database(
 
 fn run_generate(args: List(String)) -> Nil {
   with_database(args, fn(db, config) { generate_all(db, config) })
+}
+
+pub fn migrate(
+  database_path: String,
+) -> Result(List(String), migrations.MigrationError) {
+  migrations.migrate(database_path)
+}
+
+fn run_migrate(args: List(String)) -> Nil {
+  let env_database = get_env("DATABASE_URL")
+  let toml_content =
+    simplifile.read("gleam.toml")
+    |> result.unwrap("")
+  let config = project.parse_config(toml_content, args, env_database)
+
+  case config.database {
+    option.None -> {
+      io.println_error(error.to_string(error.DatabaseNotConfigured))
+      halt(1)
+    }
+    option.Some(db_path) ->
+      case migrations.migrate(db_path) {
+        Error(err) -> {
+          io.println_error(migrations.to_string(err))
+          halt(1)
+        }
+        Ok(applied) -> {
+          list.each(applied, fn(version) { io.println("Applied " <> version) })
+          case applied {
+            [] -> io.println("No migrations to apply")
+            _ ->
+              io.println(
+                "Applied "
+                <> int.to_string(list.length(applied))
+                <> " migration(s)",
+              )
+          }
+        }
+      }
+  }
 }
 
 fn generate_all(db: sqlight.Connection, config: project.Config) -> Nil {

@@ -167,6 +167,59 @@ gleam run -m marmot -- --database dev.sqlite
 If no database is configured, Marmot shows an error message listing all three
 options.
 
+### Migrations
+
+Marmot includes an opinionated, forward-only take on SQLite migrations. It is
+generic Marmot functionality, separate from code generation and any web
+framework. Use it if you want a small migration runner with fixed conventions.
+If you want down migrations, configurable paths, branching workflows, checksums,
+or a larger migration system, bring your own migration library.
+
+Migration files live in a fixed directory:
+
+```txt
+db/migrations/
+```
+
+Files must use this naming shape:
+
+```txt
+NNN_description.sql
+```
+
+For example:
+
+```txt
+001_create_users.sql
+002_add_email_to_users.sql
+003_create_sessions.sql
+```
+
+Run migrations with:
+
+```sh
+gleam run -m marmot migrate --database dev.sqlite
+```
+
+You can also pass the database path through `DATABASE_URL` or
+`[tools.marmot].database`, using the same precedence as code generation.
+
+The runner:
+
+- Reads `db/migrations/` in filename sort order.
+- Uses the filename stem as the version, such as `001_create_users`.
+- Creates `schema_migrations(version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)`
+  if needed.
+- Applies only versions that are missing from `schema_migrations`.
+- Runs each file in a transaction and records the version after the SQL succeeds.
+- Stops on the first failure.
+
+Running the command twice is safe. The second run skips migrations already
+recorded in `schema_migrations`.
+
+The migration directory and filename shape are fixed. Marmot does not support
+down migrations, branching migration graphs, or migration directory config.
+
 ### Configuring the output directory
 
 By default, generated modules are placed in `src/generated/sql/`. If you
