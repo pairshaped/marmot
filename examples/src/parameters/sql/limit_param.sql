@@ -3,4 +3,5 @@
 SELECT id, name, email
 FROM users
 ORDER BY created_at DESC
-LIMIT @limit
+LIMIT
+@limit

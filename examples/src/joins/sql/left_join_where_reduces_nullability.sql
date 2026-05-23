@@ -4,4 +4,5 @@
 SELECT p.id, p.title, c.body
 FROM posts p
 LEFT JOIN comments c ON p.id = c.post_id
-WHERE c.id = @comment_id
+WHERE c.id =
+@comment_id

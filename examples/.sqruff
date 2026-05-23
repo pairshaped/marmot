@@ -1,0 +1,2 @@
+[sqruff]
+dialect = sqlite

@@ -3,7 +3,8 @@
 -- This is preferred over anonymous ? which would generate separate _2 arguments.
 SELECT id, name
 FROM users
-WHERE name LIKE @pattern
+WHERE name LIKE
+@pattern
 UNION
 SELECT id, name
 FROM users

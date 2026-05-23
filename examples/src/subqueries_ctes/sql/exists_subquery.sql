@@ -3,5 +3,5 @@
 SELECT id, name
 FROM users u
 WHERE EXISTS (
-  SELECT 1 FROM posts p WHERE p.user_id = u.id AND p.published_at IS NOT NULL
+    SELECT 1 FROM posts p WHERE p.user_id = u.id AND p.published_at IS NOT NULL
 )

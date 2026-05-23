@@ -6,4 +6,5 @@ WHERE published_at IS NOT NULL
 UNION ALL
 SELECT id, title, published_at
 FROM posts
-WHERE user_id = @user_id
+WHERE user_id =
+@user_id

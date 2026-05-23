@@ -4,5 +4,6 @@
 SELECT id, title, published_at
 FROM posts
 ORDER BY published_at DESC
-LIMIT @limit
+LIMIT
+@limit
 OFFSET @offset

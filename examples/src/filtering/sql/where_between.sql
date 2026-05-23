@@ -2,4 +2,5 @@
 -- Both bounds become Int-typed parameters.
 SELECT id, title, published_at
 FROM posts
-WHERE published_at BETWEEN @from AND @to
+WHERE published_at BETWEEN
+@from AND @to
