@@ -1,0 +1,8 @@
+---
+version: 2.0.0
+title: migration sql error
+---
+error: Migration SQL failed
+  ┌─ db/migrations/001_create_users.sql
+  │
+  │ near "CREAT": syntax error

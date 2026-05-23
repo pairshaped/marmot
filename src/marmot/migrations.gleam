@@ -11,6 +11,9 @@ const migration_dir = "db/migrations"
 
 pub type MigrationError {
   DatabaseOpenError(path: String, message: String)
+  MissingMigrationDirectory(path: String)
+  MigrationPathIsNotDirectory(path: String)
+  NoMigrationFiles(path: String)
   MigrationDirectoryReadError(path: String, message: String)
   MigrationFileReadError(path: String, message: String)
   InvalidMigrationFilename(path: String)
@@ -58,6 +61,8 @@ fn migrate_connection(
 fn read_migrations(
   migrations_dir: String,
 ) -> Result(List(Migration), MigrationError) {
+  use _ <- result.try(validate_migration_directory(migrations_dir))
+
   case simplifile.read_directory(migrations_dir) {
     Error(err) ->
       Error(MigrationDirectoryReadError(
@@ -65,12 +70,43 @@ fn read_migrations(
         message: string.inspect(err),
       ))
 
-    Ok(entries) ->
+    Ok([]) -> Error(NoMigrationFiles(path: migrations_dir))
+
+    Ok(entries) -> {
       entries
       |> list.sort(string.compare)
       |> list.try_map(fn(filename) {
         migration_from_filename(migrations_dir, filename)
       })
+    }
+  }
+}
+
+fn validate_migration_directory(
+  migrations_dir: String,
+) -> Result(Nil, MigrationError) {
+  case simplifile.is_directory(migrations_dir) {
+    Ok(True) -> Ok(Nil)
+    Ok(False) -> migration_path_not_directory_error(migrations_dir)
+    Error(err) ->
+      Error(MigrationDirectoryReadError(
+        path: migrations_dir,
+        message: string.inspect(err),
+      ))
+  }
+}
+
+fn migration_path_not_directory_error(
+  migrations_dir: String,
+) -> Result(Nil, MigrationError) {
+  case simplifile.is_file(migrations_dir) {
+    Ok(True) -> Error(MigrationPathIsNotDirectory(path: migrations_dir))
+    Ok(False) -> Error(MissingMigrationDirectory(path: migrations_dir))
+    Error(err) ->
+      Error(MigrationDirectoryReadError(
+        path: migrations_dir,
+        message: string.inspect(err),
+      ))
   }
 }
 
@@ -257,25 +293,55 @@ fn record_migration(
 pub fn to_string(error: MigrationError) -> String {
   case error {
     DatabaseOpenError(path:, message:) -> "error: Could not open SQLite database
-  Path: " <> path <> "
-  " <> message
+  \u{250c}\u{2500} " <> path <> "
+  \u{2502}
+  \u{2502} " <> message
+
+    MissingMigrationDirectory(path:) -> "error: Missing migration directory
+  \u{250c}\u{2500} " <> path <> "
+  \u{2502}
+  \u{2502} Marmot looks for migration files in this directory.
+  \u{2502}
+  hint: Create db/migrations and add a file named like 001_create_users.sql"
+
+    MigrationPathIsNotDirectory(path:) ->
+      "error: Migration path is not a directory
+  \u{250c}\u{2500} " <> path <> "
+  \u{2502}
+  \u{2502} Expected a directory containing migration files.
+  \u{2502}
+  hint: Replace this file with a directory and add files named like 001_create_users.sql"
+
+    NoMigrationFiles(path:) -> "error: No migration files found
+  \u{250c}\u{2500} " <> path <> "
+  \u{2502}
+  \u{2502} This directory exists, but it does not contain any migration files.
+  \u{2502}
+  hint: Add at least one file named like 001_create_users.sql"
 
     MigrationDirectoryReadError(path:, message:) ->
       "error: Could not read migration directory
-  Path: " <> path <> "
-  " <> message
+  \u{250c}\u{2500} " <> path <> "
+  \u{2502}
+  \u{2502} " <> message
 
     MigrationFileReadError(path:, message:) ->
       "error: Could not read migration file
-  Path: " <> path <> "
-  " <> message
+  \u{250c}\u{2500} " <> path <> "
+  \u{2502}
+  \u{2502} " <> message
 
     InvalidMigrationFilename(path:) -> "error: Invalid migration filename
-  Path: " <> path <> "
-  Expected db/migrations/NNN_description.sql, for example 001_create_users.sql"
+  \u{250c}\u{2500} " <> path <> "
+  \u{2502}
+  \u{2502} Migration files must match NNN_description.sql.
+  \u{2502} NNN must be three digits. The description must use lowercase letters, digits, or underscores.
+  \u{2502}
+  hint: Rename this file to something like 001_create_users.sql"
 
     MigrationSqlError(path:, message:) -> "error: Migration SQL failed
-  Path: " <> path <> "
-  " <> message
+  \u{250c}\u{2500} " <> path <> "
+  \u{2502}
+  \u{2502} " <> message
   }
 }

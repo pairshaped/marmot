@@ -1,0 +1,10 @@
+---
+version: 2.0.0
+title: missing migration directory error
+---
+error: Missing migration directory
+  ┌─ db/migrations
+  │
+  │ Marmot looks for migration files in this directory.
+  │
+  hint: Create db/migrations and add a file named like 001_create_users.sql

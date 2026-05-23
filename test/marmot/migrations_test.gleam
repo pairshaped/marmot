@@ -1,3 +1,4 @@
+import birdie
 import gleam/dynamic/decode
 import marmot/migrations
 import simplifile
@@ -90,8 +91,109 @@ pub fn rejects_invalid_migration_filenames_test() {
   assert invalid_path == migrations_dir <> "/002-add-email.sql"
 }
 
-fn prepare(base: String) -> String {
+pub fn rejects_missing_migration_directory_test() {
+  let base = prepare_base("test_tmp/migrations_missing_dir")
+  let migrations_dir = base <> "/db/migrations"
+  let db_path = base <> "/app.db"
+
+  let assert Error(migrations.MissingMigrationDirectory(path: missing_path)) =
+    migrations.migrate_from(db_path, migrations_dir)
+  assert missing_path == migrations_dir
+}
+
+pub fn rejects_migration_path_that_is_a_file_test() {
+  let base = prepare_base("test_tmp/migrations_path_file")
+  let migrations_dir = base <> "/db/migrations"
+  let db_path = base <> "/app.db"
+
+  let assert Ok(_) = simplifile.create_directory_all(base <> "/db")
+  let assert Ok(_) = simplifile.write(migrations_dir, "not a directory")
+
+  let assert Error(migrations.MigrationPathIsNotDirectory(path: file_path)) =
+    migrations.migrate_from(db_path, migrations_dir)
+  assert file_path == migrations_dir
+}
+
+pub fn rejects_empty_migration_directory_test() {
+  let base = prepare("test_tmp/migrations_empty_dir")
+  let migrations_dir = base <> "/db/migrations"
+  let db_path = base <> "/app.db"
+
+  let assert Error(migrations.NoMigrationFiles(path: empty_path)) =
+    migrations.migrate_from(db_path, migrations_dir)
+  assert empty_path == migrations_dir
+}
+
+pub fn missing_migration_directory_error_message_test() {
+  migrations.MissingMigrationDirectory(path: "db/migrations")
+  |> migrations.to_string
+  |> birdie.snap(title: "missing migration directory error")
+}
+
+pub fn migration_database_open_error_message_test() {
+  migrations.DatabaseOpenError(
+    path: "/tmp/missing/app.db",
+    message: "unable to open database file",
+  )
+  |> migrations.to_string
+  |> birdie.snap(title: "migration database open error")
+}
+
+pub fn migration_path_is_not_directory_error_message_test() {
+  migrations.MigrationPathIsNotDirectory(path: "db/migrations")
+  |> migrations.to_string
+  |> birdie.snap(title: "migration path is not directory error")
+}
+
+pub fn no_migration_files_error_message_test() {
+  migrations.NoMigrationFiles(path: "db/migrations")
+  |> migrations.to_string
+  |> birdie.snap(title: "no migration files error")
+}
+
+pub fn invalid_migration_filename_error_message_test() {
+  migrations.InvalidMigrationFilename(
+    path: "db/migrations/001-create-users.sql",
+  )
+  |> migrations.to_string
+  |> birdie.snap(title: "invalid migration filename error")
+}
+
+pub fn migration_directory_read_error_message_test() {
+  migrations.MigrationDirectoryReadError(
+    path: "db/migrations",
+    message: "Eacces",
+  )
+  |> migrations.to_string
+  |> birdie.snap(title: "migration directory read error")
+}
+
+pub fn migration_file_read_error_message_test() {
+  migrations.MigrationFileReadError(
+    path: "db/migrations/001_create_users.sql",
+    message: "Eacces",
+  )
+  |> migrations.to_string
+  |> birdie.snap(title: "migration file read error")
+}
+
+pub fn migration_sql_error_message_test() {
+  migrations.MigrationSqlError(
+    path: "db/migrations/001_create_users.sql",
+    message: "near \"CREAT\": syntax error",
+  )
+  |> migrations.to_string
+  |> birdie.snap(title: "migration sql error")
+}
+
+fn prepare_base(base: String) -> String {
   let _ = simplifile.delete_all([base])
+  let assert Ok(_) = simplifile.create_directory_all(base)
+  base
+}
+
+fn prepare(base: String) -> String {
+  let _ = prepare_base(base)
   let assert Ok(_) = simplifile.create_directory_all(base <> "/db/migrations")
   base
 }

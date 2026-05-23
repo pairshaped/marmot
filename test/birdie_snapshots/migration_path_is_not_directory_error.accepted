@@ -1,0 +1,10 @@
+---
+version: 2.0.0
+title: migration path is not directory error
+---
+error: Migration path is not a directory
+  ┌─ db/migrations
+  │
+  │ Expected a directory containing migration files.
+  │
+  hint: Replace this file with a directory and add files named like 001_create_users.sql

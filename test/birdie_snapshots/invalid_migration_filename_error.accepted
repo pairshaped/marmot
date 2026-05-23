@@ -1,0 +1,11 @@
+---
+version: 2.0.0
+title: invalid migration filename error
+---
+error: Invalid migration filename
+  ┌─ db/migrations/001-create-users.sql
+  │
+  │ Migration files must match NNN_description.sql.
+  │ NNN must be three digits. The description must use lowercase letters, digits, or underscores.
+  │
+  hint: Rename this file to something like 001_create_users.sql

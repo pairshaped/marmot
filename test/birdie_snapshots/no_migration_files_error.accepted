@@ -1,0 +1,10 @@
+---
+version: 2.0.0
+title: no migration files error
+---
+error: No migration files found
+  ┌─ db/migrations
+  │
+  │ This directory exists, but it does not contain any migration files.
+  │
+  hint: Add at least one file named like 001_create_users.sql

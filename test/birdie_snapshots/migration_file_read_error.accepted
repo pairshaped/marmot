@@ -1,0 +1,8 @@
+---
+version: 2.0.0
+title: migration file read error
+---
+error: Could not read migration file
+  ┌─ db/migrations/001_create_users.sql
+  │
+  │ Eacces
