@@ -598,6 +598,119 @@ pub fn e2e_cli_migrate_ignores_app_compile_errors_test() {
   }
 }
 
+pub fn e2e_cli_seed_ignores_app_compile_errors_test() {
+  let base = "test_e2e_cli_seed_broken_app"
+  let result =
+    rescue(fn() {
+      write_cli_project("cli_seed_broken_app", base)
+      let assert Ok(_) =
+        simplifile.write(base <> "/src/broken.gleam", "pub fn broken( {\n")
+      let assert Ok(_) = simplifile.create_directory_all(base <> "/db/seeds")
+      let assert Ok(_) =
+        simplifile.write(
+          base <> "/db/seeds/001_create_users.sql",
+          "CREATE TABLE users (id INTEGER PRIMARY KEY)",
+        )
+      let assert Ok(_) =
+        simplifile.write(
+          base <> "/db/seeds/002_add_lucy.sql",
+          "INSERT INTO users (id) VALUES (1)",
+        )
+
+      let exit_code =
+        marmot.run_executable_in_timeout(
+          "gleam",
+          ["run", "-m", "marmot", "seed", "--database", "test.db"],
+          base,
+          120_000,
+        )
+      let assert 0 = exit_code
+
+      use db <- sqlight.with_connection(base <> "/test.db")
+      let assert Ok(["users"]) =
+        sqlight.query(
+          "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
+          on: db,
+          with: [],
+          expecting: migration_version_decoder(),
+        )
+      Nil
+    })
+  let _ = simplifile.delete(base)
+  case result {
+    Ok(Nil) -> Nil
+    Error(msg) -> panic as msg
+  }
+}
+
+pub fn e2e_cli_reset_drops_database_then_runs_migrations_and_seeds_test() {
+  let base = "test_e2e_cli_reset"
+  let result =
+    rescue(fn() {
+      write_cli_project("cli_reset", base)
+      let assert Ok(_) =
+        simplifile.write(base <> "/src/broken.gleam", "pub fn broken( {\n")
+      let assert Ok(_) =
+        simplifile.create_directory_all(base <> "/db/migrations")
+      let assert Ok(_) = simplifile.create_directory_all(base <> "/db/seeds")
+      let assert Ok(_) =
+        simplifile.write(
+          base <> "/db/migrations/001_create_users.sql",
+          "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL)",
+        )
+      let assert Ok(_) =
+        simplifile.write(
+          base <> "/db/seeds/001_add_lucy.sql",
+          "INSERT INTO users (id, name) VALUES (1, 'Lucy')",
+        )
+
+      use stale_db <- sqlight.with_connection(base <> "/test.db")
+      let assert Ok(_) =
+        sqlight.exec(
+          "CREATE TABLE stale (id INTEGER PRIMARY KEY)",
+          on: stale_db,
+        )
+
+      let exit_code =
+        marmot.run_executable_in_timeout(
+          "gleam",
+          ["run", "-m", "marmot", "reset", "--database", "test.db"],
+          base,
+          120_000,
+        )
+      let assert 0 = exit_code
+
+      use db <- sqlight.with_connection(base <> "/test.db")
+      let assert Ok(["schema_migrations", "users"]) =
+        sqlight.query(
+          "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
+          on: db,
+          with: [],
+          expecting: migration_version_decoder(),
+        )
+      let assert Ok(["001_create_users"]) =
+        sqlight.query(
+          "SELECT version FROM schema_migrations",
+          on: db,
+          with: [],
+          expecting: migration_version_decoder(),
+        )
+      let assert Ok(["Lucy"]) =
+        sqlight.query(
+          "SELECT name FROM users",
+          on: db,
+          with: [],
+          expecting: migration_version_decoder(),
+        )
+      Nil
+    })
+  let _ = simplifile.delete(base)
+  case result {
+    Ok(Nil) -> Nil
+    Error(msg) -> panic as msg
+  }
+}
+
 fn migration_version_decoder() -> decode.Decoder(String) {
   use version <- decode.field(0, decode.string)
   decode.success(version)

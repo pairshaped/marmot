@@ -25,6 +25,7 @@ import marmot/internal/query
 import marmot/internal/sqlite
 import marmot/internal/sqlite/tokenize
 import marmot/migrations
+import marmot/seeds
 import simplifile
 import sqlight
 
@@ -32,6 +33,8 @@ pub fn main() -> Nil {
   let args = argv.load().arguments
   case args {
     ["migrate", ..rest] -> run_migrate(rest)
+    ["seed", ..rest] -> run_seed(rest)
+    ["reset", ..rest] -> run_reset(rest)
     _ -> run_generate(args)
   }
 }
@@ -90,7 +93,101 @@ pub fn migrate(
   migrations.migrate(database_path)
 }
 
+pub fn seed(database_path: String) -> Result(List(String), seeds.SeedError) {
+  seeds.seed(database_path)
+}
+
+pub type ResetError {
+  ResetDatabasePathIsDirectory(path: String)
+  ResetDatabaseDeleteError(path: String, message: String)
+  ResetMigrationError(error: migrations.MigrationError)
+  ResetSeedError(error: seeds.SeedError)
+}
+
+pub fn reset(
+  database_path: String,
+) -> Result(#(List(String), List(String)), ResetError) {
+  use _ <- result.try(drop_database(database_path))
+  use applied_migrations <- result.try(
+    migrations.migrate(database_path)
+    |> result.map_error(ResetMigrationError),
+  )
+  use applied_seeds <- result.try(
+    seeds.seed(database_path)
+    |> result.map_error(ResetSeedError),
+  )
+  Ok(#(applied_migrations, applied_seeds))
+}
+
 fn run_migrate(args: List(String)) -> Nil {
+  run_sql_files_command(
+    args,
+    migrations.migrate,
+    migrations.to_string,
+    "Applied",
+    "No migrations to apply",
+    "migration",
+  )
+}
+
+fn run_seed(args: List(String)) -> Nil {
+  run_sql_files_command(
+    args,
+    seeds.seed,
+    seeds.to_string,
+    "Ran",
+    "No seed files to run",
+    "seed file",
+  )
+}
+
+fn run_reset(args: List(String)) -> Nil {
+  with_database_path(args, fn(db_path) {
+    case reset(db_path) {
+      Error(err) -> {
+        io.println_error(reset_error_to_string(err))
+        halt(1)
+      }
+      Ok(#(applied_migrations, applied_seeds)) -> {
+        io.println("Dropped " <> db_path)
+        print_sql_files_summary(
+          applied_migrations,
+          "Applied",
+          "No migrations to apply",
+          "migration",
+        )
+        print_sql_files_summary(
+          applied_seeds,
+          "Ran",
+          "No seed files to run",
+          "seed file",
+        )
+      }
+    }
+  })
+}
+
+fn run_sql_files_command(
+  args: List(String),
+  run: fn(String) -> Result(List(String), error_type),
+  error_to_string: fn(error_type) -> String,
+  action: String,
+  empty_message: String,
+  summary_noun: String,
+) -> Nil {
+  with_database_path(args, fn(db_path) {
+    case run(db_path) {
+      Error(err) -> {
+        io.println_error(error_to_string(err))
+        halt(1)
+      }
+      Ok(applied) ->
+        print_sql_files_summary(applied, action, empty_message, summary_noun)
+    }
+  })
+}
+
+fn with_database_path(args: List(String), callback: fn(String) -> Nil) -> Nil {
   let env_database = get_env("DATABASE_URL")
   let toml_content =
     simplifile.read("gleam.toml")
@@ -102,25 +199,83 @@ fn run_migrate(args: List(String)) -> Nil {
       io.println_error(error.to_string(error.DatabaseNotConfigured))
       halt(1)
     }
-    option.Some(db_path) ->
-      case migrations.migrate(db_path) {
-        Error(err) -> {
-          io.println_error(migrations.to_string(err))
-          halt(1)
-        }
-        Ok(applied) -> {
-          list.each(applied, fn(version) { io.println("Applied " <> version) })
-          case applied {
-            [] -> io.println("No migrations to apply")
-            _ ->
-              io.println(
-                "Applied "
-                <> int.to_string(list.length(applied))
-                <> " migration(s)",
-              )
-          }
-        }
-      }
+    option.Some(db_path) -> callback(db_path)
+  }
+}
+
+fn print_sql_files_summary(
+  applied: List(String),
+  action: String,
+  empty_message: String,
+  summary_noun: String,
+) -> Nil {
+  list.each(applied, fn(version) { io.println(action <> " " <> version) })
+  case applied {
+    [] -> io.println(empty_message)
+    _ ->
+      io.println(
+        action
+        <> " "
+        <> int.to_string(list.length(applied))
+        <> " "
+        <> summary_noun
+        <> "(s)",
+      )
+  }
+}
+
+fn drop_database(database_path: String) -> Result(Nil, ResetError) {
+  case simplifile.is_directory(database_path) {
+    Ok(True) -> Error(ResetDatabasePathIsDirectory(path: database_path))
+    Ok(False) -> drop_database_files(database_path)
+    Error(err) ->
+      Error(ResetDatabaseDeleteError(
+        path: database_path,
+        message: string.inspect(err),
+      ))
+  }
+}
+
+fn drop_database_files(database_path: String) -> Result(Nil, ResetError) {
+  [
+    database_path,
+    database_path <> "-wal",
+    database_path <> "-shm",
+    database_path <> "-journal",
+  ]
+  |> list.try_each(delete_file_if_present)
+}
+
+fn delete_file_if_present(path: String) -> Result(Nil, ResetError) {
+  case simplifile.is_file(path) {
+    Ok(False) -> Ok(Nil)
+    Ok(True) ->
+      simplifile.delete(path)
+      |> result.map_error(fn(err) {
+        ResetDatabaseDeleteError(path: path, message: string.inspect(err))
+      })
+    Error(err) ->
+      Error(ResetDatabaseDeleteError(path: path, message: string.inspect(err)))
+  }
+}
+
+fn reset_error_to_string(error: ResetError) -> String {
+  case error {
+    ResetDatabasePathIsDirectory(path:) -> "error: Database path is a directory
+  \u{250c}\u{2500} " <> path <> "
+  \u{2502}
+  \u{2502} Reset deletes the configured SQLite database file before rebuilding it.
+  \u{2502}
+  hint: Set --database to a SQLite file path."
+
+    ResetDatabaseDeleteError(path:, message:) ->
+      "error: Could not delete SQLite database
+  \u{250c}\u{2500} " <> path <> "
+  \u{2502}
+  \u{2502} " <> message
+
+    ResetMigrationError(error:) -> migrations.to_string(error)
+    ResetSeedError(error:) -> seeds.to_string(error)
   }
 }
 

@@ -220,6 +220,50 @@ recorded in `schema_migrations`.
 The migration directory and filename shape are fixed. Marmot does not support
 down migrations, branching migration graphs, or migration directory config.
 
+### Seeds
+
+Seed files live next to migrations:
+
+```txt
+db/seeds/
+```
+
+They use the same filename shape:
+
+```txt
+NNN_description.sql
+```
+
+Run seeds with:
+
+```sh
+gleam run -m marmot seed --database dev.sqlite
+```
+
+The seed runner:
+
+- Reads `db/seeds/` in filename sort order.
+- Runs every seed file it finds.
+- Runs each file in a transaction.
+- Stops on the first failure.
+
+Marmot does not track seed files. Running `seed` twice runs the same files
+twice. Seed SQL should be written with that in mind if repeat runs matter for
+your project.
+
+### Reset
+
+Reset deletes the configured SQLite database file, then runs migrations and
+seeds:
+
+```sh
+gleam run -m marmot reset --database dev.sqlite
+```
+
+It also removes SQLite sidecar files for that path (`-wal`, `-shm`, and
+`-journal`) when they exist. Reset does not compile or inspect your application
+code.
+
 ### Configuring the output directory
 
 By default, generated modules are placed in `src/generated/sql/`. If you

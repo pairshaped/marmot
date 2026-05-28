@@ -35,7 +35,14 @@ flowchart TD
 
 ### 1. Entry point (`marmot.gleam`)
 
-`main()` parses argv, then `run_generate()`:
+`main()` parses argv and routes database commands before generation:
+- `migrate` applies `db/migrations/NNN_description.sql` files and tracks
+  applied versions in `schema_migrations`
+- `seed` runs every `db/seeds/NNN_description.sql` file in filename order
+- `reset` deletes the configured SQLite database file, removes SQLite sidecar
+  files, then runs migrations and seeds
+
+Without one of those commands, `run_generate()`:
 - Reads `gleam.toml` for `[tools.marmot]` config
 - Applies precedence: `DATABASE_URL` env > `--database` CLI > `gleam.toml`
 - Opens the SQLite database via `sqlight`

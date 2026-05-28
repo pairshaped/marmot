@@ -12,22 +12,23 @@ gleam run -m marmot
 
 Write SQL in `src/**/sql/*.sql`, one query per file. Filename becomes the function name.
 
-## Migrations
+## Database commands
 
-Marmot also has an opinionated, forward-only SQLite migration runner. It is
-generic runtime functionality, separate from code generation and web frameworks.
-Users can bring their own migration library if they want down migrations,
-configurable paths, branching workflows, checksums, or a larger migration
-system.
+Marmot also has opinionated SQLite database commands. They are generic runtime
+functionality, separate from code generation and web frameworks.
 
 ```sh
 gleam run -m marmot migrate --database dev.sqlite
+gleam run -m marmot seed --database dev.sqlite
+gleam run -m marmot reset --database dev.sqlite
 ```
 
 Public API:
 
 ```gleam
 marmot.migrate("dev.sqlite")
+marmot.seed("dev.sqlite")
+marmot.reset("dev.sqlite")
 ```
 
 Migration files live in `db/migrations/` and must be named
@@ -39,8 +40,18 @@ The runner sorts filenames, uses the filename stem as the version, creates
 needed, skips recorded versions, runs each migration in a transaction, records
 the version only after the SQL succeeds, and stops on the first failure.
 
-No down migrations. No branching graph. No generated-code dependency. No app
-compile dependency.
+Seed files live in `db/seeds/` and use the same filename shape. The seed runner
+sorts filenames, runs every seed file in a transaction, and stops on the first
+failure. Marmot does not track seed files. Running `seed` twice runs the same
+files twice.
+
+Reset deletes the configured SQLite database file, removes sidecar files
+(`-wal`, `-shm`, and `-journal`) when present, then runs migrations and seeds.
+
+Marmot's database commands do not depend on generated code or app compilation.
+Projects can bring their own migration library if they want down migrations,
+configurable paths, branching workflows, checksums, or a larger migration
+system.
 
 ## How it works
 
@@ -62,15 +73,17 @@ compile dependency.
 
 ```
 src/
-  marmot.gleam                    -- CLI entry point (main, run_generate)
+  marmot.gleam                    -- CLI entry point (generate, migrate, seed, reset)
   marmot/
     internal/
       error.gleam                 -- MarmotError type + to_string (pretty-printed errors)
+      sql_files.gleam             -- Ordered SQL file runner shared by migrations and seeds
       query.gleam                 -- ColumnType, Column, Parameter, Query types + helpers
       project.gleam               -- Config parsing, sql/ directory scanning, output paths
       sqlite.gleam                -- PRAGMA + EXPLAIN introspection (QueryInfo)
       codegen.gleam               -- Gleam source generation (functions, row types, decoders)
     migrations.gleam              -- Forward-only SQLite migration runner
+    seeds.gleam                   -- Ordered SQLite seed runner
 ```
 
 ## Design decisions
@@ -82,7 +95,7 @@ src/
 - **No external tools**: no `sqlc`, no `sqlite3` CLI, just `sqlight` (Gleam NIF)
 - **Convention over configuration**: follows Squirrel's conventions (one query per file, `sql/` dirs, filename = function name). `output` and `query_function` are opt-in knobs for larger projects.
 - **Generated code calls sqlight directly** (or a user-supplied wrapper via `query_function`): no tuples, no intermediate types
-- **Optional migrations**: Marmot can apply `db/migrations/NNN_description.sql` files, but projects can use any migration tool.
+- **Optional database commands**: Marmot can apply `db/migrations/NNN_description.sql`, run `db/seeds/NNN_description.sql`, and reset a SQLite database. Projects can use another migration or seed tool.
 
 ## Generated code patterns
 
