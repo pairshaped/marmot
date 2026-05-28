@@ -557,6 +557,52 @@ pub fn e2e_cli_database_open_error_test() {
   }
 }
 
+pub fn e2e_cli_help_does_not_require_database_test() {
+  let base = "test_e2e_cli_help"
+  let result =
+    rescue(fn() {
+      write_cli_project("cli_help", base)
+
+      let exit_code =
+        marmot.run_executable_in_timeout(
+          "gleam",
+          ["run", "-m", "marmot", "help"],
+          base,
+          120_000,
+        )
+      let assert 0 = exit_code
+      Nil
+    })
+  let _ = simplifile.delete(base)
+  case result {
+    Ok(Nil) -> Nil
+    Error(msg) -> panic as msg
+  }
+}
+
+pub fn e2e_cli_unknown_command_shows_help_and_fails_test() {
+  let base = "test_e2e_cli_unknown_command"
+  let result =
+    rescue(fn() {
+      write_cli_project("cli_unknown_command", base)
+
+      let exit_code =
+        marmot.run_executable_in_timeout(
+          "gleam",
+          ["run", "-m", "marmot", "wat"],
+          base,
+          120_000,
+        )
+      let assert 1 = exit_code
+      Nil
+    })
+  let _ = simplifile.delete(base)
+  case result {
+    Ok(Nil) -> Nil
+    Error(msg) -> panic as msg
+  }
+}
+
 pub fn e2e_cli_migrate_ignores_app_compile_errors_test() {
   let base = "test_e2e_cli_migrate_broken_app"
   let result =

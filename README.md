@@ -167,6 +167,12 @@ gleam run -m marmot -- --database dev.sqlite
 If no database is configured, Marmot shows an error message listing all three
 options.
 
+To print CLI usage:
+
+```sh
+gleam run -m marmot help
+```
+
 ### Migrations
 
 Marmot includes an opinionated, forward-only take on SQLite migrations. It is

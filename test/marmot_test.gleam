@@ -50,6 +50,14 @@ type Suite {
 
 const slow_test_file = "marmot/e2e_slow_test.gleam"
 
+pub fn help_text_lists_database_commands_test() {
+  let help = marmot.help_text()
+  let assert True = string.contains(help, "gleam run -m marmot help")
+  let assert True = string.contains(help, "migrate")
+  let assert True = string.contains(help, "seed")
+  let assert True = string.contains(help, "reset")
+}
+
 fn parse_suite(args: List(String)) -> Suite {
   case args {
     ["--suite", "fast", ..] -> Fast

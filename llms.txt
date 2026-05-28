@@ -21,6 +21,7 @@ functionality, separate from code generation and web frameworks.
 gleam run -m marmot migrate --database dev.sqlite
 gleam run -m marmot seed --database dev.sqlite
 gleam run -m marmot reset --database dev.sqlite
+gleam run -m marmot help
 ```
 
 Public API:

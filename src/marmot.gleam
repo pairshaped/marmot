@@ -32,11 +32,50 @@ import sqlight
 pub fn main() -> Nil {
   let args = argv.load().arguments
   case args {
+    [] -> run_generate(args)
+    ["help", ..] | ["--help", ..] | ["-h", ..] -> run_help()
     ["migrate", ..rest] -> run_migrate(rest)
     ["seed", ..rest] -> run_seed(rest)
     ["reset", ..rest] -> run_reset(rest)
-    _ -> run_generate(args)
+    [command, ..] ->
+      case string.starts_with(command, "-") {
+        True -> run_generate(args)
+        False -> run_unknown_command(command)
+      }
   }
+}
+
+pub fn help_text() -> String {
+  "Marmot
+
+Usage:
+  gleam run -m marmot [-- --database PATH]
+  gleam run -m marmot migrate --database PATH
+  gleam run -m marmot seed --database PATH
+  gleam run -m marmot reset --database PATH
+  gleam run -m marmot help
+
+Commands:
+  generate  Generate type-safe Gleam modules from src/**/sql/*.sql
+  migrate   Run db/migrations/NNN_description.sql files once
+  seed      Run every db/seeds/NNN_description.sql file
+  reset     Delete the SQLite database, then migrate and seed
+  help      Print this help text
+
+Database:
+  DATABASE_URL takes precedence over --database, which takes precedence over
+  [tools.marmot].database in gleam.toml."
+}
+
+fn run_help() -> Nil {
+  io.println(help_text())
+}
+
+fn run_unknown_command(command: String) -> Nil {
+  io.println_error(
+    "error: Unknown command " <> command <> "\n\n" <> help_text(),
+  )
+  halt(1)
 }
 
 fn with_database(
