@@ -56,7 +56,7 @@ system.
 
 ## How it works
 
-1. Reads config: `DATABASE_URL` env > `--database` CLI flag > `gleam.toml [tools.marmot]`
+1. Reads config: `--database` CLI flag > `DATABASE_URL` env > `gleam.toml [tools.marmot]`
 2. Opens the SQLite file, scans `src/` for `sql/` directories
 3. For each `.sql` file: reads SQL, tokenizes it, parses the statement shape, loads schema metadata with `PRAGMA table_xinfo`/`PRAGMA table_list`, and runs `EXPLAIN`
 4. Generates a `sql.gleam` module per `sql/` directory with typed functions + decoders

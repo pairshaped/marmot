@@ -44,7 +44,7 @@ flowchart TD
 
 Without one of those commands, `run_generate()`:
 - Reads `gleam.toml` for `[tools.marmot]` config
-- Applies precedence: `DATABASE_URL` env > `--database` CLI > `gleam.toml`
+- Applies precedence: `--database` CLI > `DATABASE_URL` env > `gleam.toml`
 - Opens the SQLite database via `sqlight`
 - Calls `generate_all()`
 
@@ -65,7 +65,7 @@ Without one of those commands, `run_generate()`:
 
 | Field | Source | Purpose |
 |---|---|---|
-| `database` | env / CLI / toml | Path to SQLite file for introspection |
+| `database` | CLI / env / toml | Path to SQLite file for introspection |
 | `output` | CLI / toml | Output directory for generated modules |
 | `query_function` | toml only | Custom wrapper replacing `sqlight.query` |
 | `sql_dir` | toml only | Override sql/ directory discovery |

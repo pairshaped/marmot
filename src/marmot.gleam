@@ -63,7 +63,7 @@ Commands:
   help      Print this help text
 
 Database:
-  DATABASE_URL takes precedence over --database, which takes precedence over
+  --database takes precedence over DATABASE_URL, which takes precedence over
   [tools.marmot].database in gleam.toml."
 }
 

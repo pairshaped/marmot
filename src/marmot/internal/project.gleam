@@ -21,7 +21,7 @@ import tom
 /// Marmot configuration from gleam.toml [tools.marmot], CLI flags, and env vars.
 ///
 /// All fields are optional. Precedence is resolved in `parse_config`:
-/// database: env > CLI > toml; output: CLI > toml; the rest are toml-only.
+/// database: CLI > env > toml; output: CLI > toml; the rest are toml-only.
 pub type Config {
   Config(
     /// Path to the SQLite database file used for introspection.
@@ -36,7 +36,7 @@ pub type Config {
 }
 
 /// Parse configuration from gleam.toml content, CLI args, and env var.
-/// Database precedence: env_database > CLI flags > gleam.toml > None
+/// Database precedence: CLI flags > env_database > gleam.toml > None
 /// Output precedence: CLI flags > gleam.toml > None
 /// Query function: gleam.toml only (no CLI flag)
 pub fn parse_config(
@@ -69,11 +69,11 @@ pub fn parse_config(
 
   let cli = parse_cli_args(args)
 
-  let database = case env_database {
-    option.Some(_) -> env_database
+  let database = case cli.database {
+    option.Some(_) -> cli.database
     option.None ->
-      case cli.database {
-        option.Some(_) -> cli.database
+      case env_database {
+        option.Some(_) -> env_database
         option.None -> toml_database
       }
   }

@@ -86,7 +86,7 @@ output = \"src/app/generated\"
   ) = config
 }
 
-pub fn parse_config_env_overrides_all_test() {
+pub fn parse_config_cli_overrides_env_test() {
   let toml =
     "[tools.marmot]
 database = \"dev.sqlite\"
@@ -97,6 +97,15 @@ database = \"dev.sqlite\"
       ["--database", "test.sqlite"],
       option.Some("env.sqlite"),
     )
+  let assert Config(database: option.Some("test.sqlite"), ..) = config
+}
+
+pub fn parse_config_env_overrides_toml_test() {
+  let toml =
+    "[tools.marmot]
+database = \"dev.sqlite\"
+"
+  let config = project.parse_config(toml, [], option.Some("env.sqlite"))
   let assert Config(database: option.Some("env.sqlite"), ..) = config
 }
 

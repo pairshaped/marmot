@@ -148,20 +148,33 @@ In order to understand the types of your queries, Marmot needs to open the
 SQLite database file where your schema is defined. Marmot reads the database
 path with the following precedence:
 
-1. `DATABASE_URL` environment variable
-2. `--database` CLI flag
+1. `--database` CLI flag
+2. `DATABASE_URL` environment variable
 3. `database` field in `[tools.marmot]` section of `gleam.toml`
 
+Set `DATABASE_URL`:
+
 ```sh
-# Environment variable
-DATABASE_URL=dev.sqlite gleam run -m marmot
+export DATABASE_URL=dev.sqlite
+```
 
-# CLI flag
+Pass `--database` when you run Marmot:
+
+```sh
 gleam run -m marmot -- --database dev.sqlite
+```
 
-# gleam.toml
-# [tools.marmot]
-# database = "dev.sqlite"
+Or configure `gleam.toml`:
+
+```toml
+[tools.marmot]
+database = "dev.sqlite"
+```
+
+Then run Marmot:
+
+```sh
+gleam run -m marmot
 ```
 
 If no database is configured, Marmot shows an error message listing all three
