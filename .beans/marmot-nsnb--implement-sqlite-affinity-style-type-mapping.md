@@ -1,7 +1,7 @@
 ---
 # marmot-nsnb
 title: Implement SQLite affinity-style type mapping
-status: todo
+status: completed
 type: bug
 priority: high
 tags:
@@ -9,7 +9,7 @@ tags:
     - sqlite
     - codegen
 created_at: 2026-05-29T17:53:25Z
-updated_at: 2026-05-29T17:53:52Z
+updated_at: 2026-05-29T21:49:54Z
 parent: marmot-xhvm
 ---
 

@@ -41,6 +41,13 @@ pub fn sqlite_type_unknown_test() {
   let assert Error(Nil) = query.parse_sqlite_type("CUSTOM_TYPE")
 }
 
+pub fn sqlite_type_affinity_variants_test() {
+  // Multi-word types that only match via substring affinity
+  let assert Ok(IntType) = query.parse_sqlite_type("UNSIGNED BIG INT")
+  let assert Ok(StringType) = query.parse_sqlite_type("CHARACTER VARYING(255)")
+  let assert Ok(FloatType) = query.parse_sqlite_type("DOUBLE PRECISION")
+}
+
 pub fn sqlite_type_parameterized_test() {
   let assert Ok(StringType) = query.parse_sqlite_type("VARCHAR(255)")
   let assert Ok(FloatType) = query.parse_sqlite_type("DECIMAL(10,2)")

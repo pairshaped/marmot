@@ -67,17 +67,47 @@ pub fn parse_sqlite_type(raw: String) -> Result(ColumnType, Nil) {
     Ok(#(base, _)) -> string.trim(base)
     Error(_) -> raw
   }
-  case string.uppercase(base_type) {
-    "INTEGER" | "INT" | "BIGINT" | "SMALLINT" | "TINYINT" | "MEDIUMINT" ->
-      Ok(IntType)
-    "REAL" | "FLOAT" | "DOUBLE" | "DECIMAL" | "NUMERIC" -> Ok(FloatType)
-    "TEXT" | "VARCHAR" | "CHAR" | "NVARCHAR" | "NCHAR" | "CLOB" ->
-      Ok(StringType)
-    "BLOB" -> Ok(BitArrayType)
+  let upper = string.uppercase(base_type)
+
+  // Marmot-specific overrides (exact match, checked before generic affinity
+  // rules so they are not swallowed by substring matching)
+  case upper {
     "BOOLEAN" | "BOOL" -> Ok(BoolType)
     "TIMESTAMP" | "DATETIME" -> Ok(TimestampType)
     "DATE" -> Ok(DateType)
-    _ -> Error(Nil)
+    _ -> {
+      // SQLite affinity-style substring rules
+      // https://www.sqlite.org/datatype3.html
+      case string.contains(upper, "INT") {
+        True -> Ok(IntType)
+        False -> {
+          case
+            string.contains(upper, "CHAR")
+            || string.contains(upper, "CLOB")
+            || string.contains(upper, "TEXT")
+          {
+            True -> Ok(StringType)
+            False -> {
+              case string.contains(upper, "BLOB") {
+                True -> Ok(BitArrayType)
+                False -> {
+                  case
+                    string.contains(upper, "REAL")
+                    || string.contains(upper, "FLOA")
+                    || string.contains(upper, "DOUB")
+                    || string.contains(upper, "NUMERIC")
+                    || string.contains(upper, "DECIMAL")
+                  {
+                    True -> Ok(FloatType)
+                    False -> Error(Nil)
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }
 
