@@ -38,8 +38,8 @@ pub type QueryInfo {
 }
 
 /// Introspect columns of a table using PRAGMA table_info.
-/// Note: schema.get_table_metadata has similar PRAGMA decoding but also extracts
-/// primary key info and builds multiple dicts in a single pass.
+/// Note: schema.get_table_metadata_v2 uses PRAGMA table_xinfo (includes hidden/generated
+/// columns) and extracts metadata in a single pass.
 ///
 /// Safety: `table` must be a known table name (e.g. from sqlite_master),
 /// not arbitrary user input. The PRAGMA context does not support parameterized
