@@ -72,6 +72,40 @@ pub fn introspect_query_select_test() {
   |> birdie.snap(title: "select id, username with email param")
 }
 
+pub fn introspect_query_select_with_index_on_non_first_column_test() {
+  // Regression test: SeekGE/SeekGT/SeekLE/SeekLT on an index cursor
+  // should resolve to the indexed column, not the table's first column.
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE users (
+        id INTEGER NOT NULL PRIMARY KEY,
+        username TEXT NOT NULL,
+        email TEXT NOT NULL,
+        age INTEGER NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(_) =
+    sqlight.exec("CREATE INDEX users_email_idx ON users(email)", on: db)
+  // INSERT a row so the plan is not degenerate
+  let assert Ok(_) =
+    sqlight.exec(
+      "INSERT INTO users (id, username, email, age) VALUES (1, 'alice', 'alice@example.com', 30)",
+      on: db,
+    )
+  // WHERE email = ? with an index should use a SeekGE on the index cursor
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "test",
+      "SELECT id, username, email, age FROM users WHERE email = ?",
+    )
+  result
+  |> string.inspect
+  |> birdie.snap(title: "select with index on non-first column")
+}
+
 pub fn introspect_query_insert_returning_test() {
   use db <- sqlight.with_connection(":memory:")
   let assert Ok(_) =

@@ -333,12 +333,18 @@ fn resolve_column(
 /// Infer parameter type from comparison context.
 /// Key insight: when a register is reused, find the Column opcode closest
 /// to (but before) the comparison that uses it.
+/// Index columns keyed by cursor ID. For cursors that point to an index (not a
+/// table), this maps cursor -> List(Column) for the indexed key columns.
+pub type CursorIndexColumns =
+  Dict(Int, List(Column))
+
 pub fn infer_parameter_type(
   var_op: Opcode,
   opcodes: List(Opcode),
   cursor_table: Dict(Int, String),
   table_schemas: Dict(String, List(Column)),
   pk_columns: Dict(String, String),
+  cursor_index_columns: CursorIndexColumns,
 ) -> Result(Parameter, Nil) {
   let var_reg = var_op.p2
   // Eq/Ne/Lt/Le/Gt/Ge: p1 and p3 are both registers being compared.
@@ -363,13 +369,8 @@ pub fn infer_parameter_type(
       let other_reg = case list.contains(seek_ops, cmp.opcode) {
         // For Seek opcodes (SeekGE, SeekGT, SeekLT, SeekLE), the comparison
         // register holds the parameter value and the "other side" is the
-        // indexed column. resolve_seek_cursor_key resolves this by taking the
-        // FIRST column of the parent table's schema (not the index definition).
-        // This is only correct when the indexed column happens to be the table's
-        // first column. For indexes on any other column (including a
-        // single-column index on email when the table's first column is id),
-        // the parameter will be attributed to the wrong table column.
-        // See opcode_test "seek parameter resolution" tests.
+        // indexed column. resolve_seek_cursor_key prefers index-column metadata
+        // when available, then falls back to table-cursor behavior.
         True -> -1
         False ->
           case cmp.p1 == var_reg {
@@ -378,7 +379,13 @@ pub fn infer_parameter_type(
           }
       }
       case other_reg {
-        -1 -> resolve_seek_cursor_key(cmp, cursor_table, table_schemas)
+        -1 ->
+          resolve_seek_cursor_key(
+            cmp,
+            cursor_table,
+            table_schemas,
+            cursor_index_columns,
+          )
         _ ->
           find_nearest_column_source(
             other_reg,
@@ -465,32 +472,51 @@ fn find_nearest_column_source(
   }
 }
 
-/// Resolve a Seek parameter's target column by taking the first column of the
-/// cursor's underlying table. This is only correct when the indexed column
-/// happens to be the table's first column; otherwise the parameter is
-/// attributed to the wrong column.
+/// Resolve a Seek parameter's target column.
+///
+/// When the Seek cursor points to an index (detected via
+/// `cursor_index_columns`), resolves to the first key column of that index.
+/// Otherwise falls back to the first column of the cursor's underlying table,
+/// which is correct for table-cursor seeks but wrong for index-cursor seeks
+/// when the indexed column is not the table's first column.
 fn resolve_seek_cursor_key(
   seek_op: Opcode,
   cursor_table: Dict(Int, String),
   table_schemas: Dict(String, List(Column)),
+  cursor_index_columns: CursorIndexColumns,
 ) -> Result(Parameter, Nil) {
   let cursor = seek_op.p1
-  case dict.get(cursor_table, cursor) {
-    Ok(table_name) ->
-      case dict.get(table_schemas, table_name) {
-        Ok(table_cols) ->
-          case list.first(table_cols) {
-            Ok(col) ->
-              Ok(Parameter(
-                name: col.name,
-                column_type: col.column_type,
-                nullable: col.nullable,
-              ))
+  // Prefer index columns when the cursor points to an index
+  case dict.get(cursor_index_columns, cursor) {
+    Ok(index_cols) ->
+      case list.first(index_cols) {
+        Ok(col) ->
+          Ok(Parameter(
+            name: col.name,
+            column_type: col.column_type,
+            nullable: col.nullable,
+          ))
+        Error(_) -> Error(Nil)
+      }
+    Error(_) ->
+      // Fall back to first column of the cursor's table
+      case dict.get(cursor_table, cursor) {
+        Ok(table_name) ->
+          case dict.get(table_schemas, table_name) {
+            Ok(table_cols) ->
+              case list.first(table_cols) {
+                Ok(col) ->
+                  Ok(Parameter(
+                    name: col.name,
+                    column_type: col.column_type,
+                    nullable: col.nullable,
+                  ))
+                Error(_) -> Error(Nil)
+              }
             Error(_) -> Error(Nil)
           }
         Error(_) -> Error(Nil)
       }
-    Error(_) -> Error(Nil)
   }
 }
 

@@ -2,12 +2,15 @@
 
 import gleam/dict.{type Dict}
 import gleam/dynamic/decode
+import gleam/int
 import gleam/io
 import gleam/list
+import gleam/result
 import gleam/set.{type Set}
 import gleam/string
 import marmot/internal/query.{type Column, Column, StringType}
 import marmot/internal/sqlite/parse
+import marmot/internal/sqlite/parse/util
 import sqlight.{type Connection}
 
 pub type ColumnMetadata {
@@ -25,6 +28,9 @@ pub type TableMetadataV2 {
     columns: Dict(String, List(ColumnMetadata)),
     pks: Dict(String, String),
     rootpages: Dict(Int, String),
+    /// Index columns keyed by index rootpage. Each entry is the list of Columns
+    /// that form the index key (key=1 in PRAGMA index_xinfo), in index column order.
+    index_columns: Dict(Int, List(Column)),
   )
 }
 
@@ -51,17 +57,18 @@ pub fn get_table_metadata_v2(db: Connection) -> TableMetadataV2 {
     }
   }
 
-  let index_parent_decoder = {
-    use rootpage <- decode.field(0, decode.int)
-    use tbl_name <- decode.field(1, decode.string)
-    decode.success(#(rootpage, tbl_name))
+  let index_decoder = {
+    use name <- decode.field(0, decode.string)
+    use rootpage <- decode.field(1, decode.int)
+    use tbl_name <- decode.field(2, decode.string)
+    decode.success(#(name, rootpage, tbl_name))
   }
   let indexes = case
     sqlight.query(
-      "SELECT rootpage, tbl_name FROM sqlite_master WHERE type='index'",
+      "SELECT name, rootpage, tbl_name FROM sqlite_master WHERE type='index'",
       on: db,
       with: [],
-      expecting: index_parent_decoder,
+      expecting: index_decoder,
     )
   {
     Ok(rows) -> rows
@@ -96,12 +103,27 @@ pub fn get_table_metadata_v2(db: Connection) -> TableMetadataV2 {
     Error(_) -> set.new()
   }
 
-  list.fold(
-    tables,
-    TableMetadataV2(columns: dict.new(), pks: dict.new(), rootpages: dict.new()),
-    fn(acc, table) { add_table_metadata_v2(acc, table, db, without_rowid_set) },
+  let base =
+    list.fold(
+      tables,
+      TableMetadataV2(
+        columns: dict.new(),
+        pks: dict.new(),
+        rootpages: dict.new(),
+        index_columns: dict.new(),
+      ),
+      fn(acc, table) {
+        add_table_metadata_v2(acc, table, db, without_rowid_set)
+      },
+    )
+  let index_columns = build_index_columns_v2(db, indexes, base.columns)
+  let with_index_rp = add_index_rootpages_v2(base, indexes)
+  TableMetadataV2(
+    columns: with_index_rp.columns,
+    pks: with_index_rp.pks,
+    rootpages: with_index_rp.rootpages,
+    index_columns: index_columns,
   )
-  |> add_index_rootpages_v2(indexes)
 }
 
 fn add_table_metadata_v2(
@@ -123,7 +145,12 @@ fn add_table_metadata_v2(
         })
       let columns = dict.insert(acc.columns, table_name, metadatas)
       let pks = add_table_xinfo_pk(acc.pks, table_name, rows)
-      TableMetadataV2(columns: columns, pks: pks, rootpages: rootpages)
+      TableMetadataV2(
+        columns: columns,
+        pks: pks,
+        rootpages: rootpages,
+        index_columns: acc.index_columns,
+      )
     }
     Error(err) -> {
       io.println_error(
@@ -132,7 +159,12 @@ fn add_table_metadata_v2(
         <> ": "
         <> err.message,
       )
-      TableMetadataV2(columns: acc.columns, pks: acc.pks, rootpages: rootpages)
+      TableMetadataV2(
+        columns: acc.columns,
+        pks: acc.pks,
+        rootpages: rootpages,
+        index_columns: acc.index_columns,
+      )
     }
   }
 }
@@ -197,12 +229,58 @@ fn table_xinfo_row_has_pk(row: #(String, String, Int, Int, Int)) -> Bool {
 
 fn add_index_rootpages_v2(
   acc: TableMetadataV2,
-  indexes: List(#(Int, String)),
+  indexes: List(#(String, Int, String)),
 ) -> TableMetadataV2 {
   let rootpages =
     list.fold(indexes, acc.rootpages, fn(rp, entry) {
-      let #(rootpage, tbl_name) = entry
+      let #(_, rootpage, tbl_name) = entry
       dict.insert(rp, rootpage, tbl_name)
     })
-  TableMetadataV2(columns: acc.columns, pks: acc.pks, rootpages: rootpages)
+  TableMetadataV2(
+    columns: acc.columns,
+    pks: acc.pks,
+    rootpages: rootpages,
+    index_columns: acc.index_columns,
+  )
+}
+
+fn build_index_columns_v2(
+  db: Connection,
+  indexes: List(#(String, Int, String)),
+  table_columns: Dict(String, List(ColumnMetadata)),
+) -> Dict(Int, List(Column)) {
+  list.fold(indexes, dict.new(), fn(acc, entry) {
+    let #(index_name, rootpage, tbl_name) = entry
+    case dict.get(table_columns, tbl_name) {
+      Error(_) -> acc
+      Ok(cols) -> {
+        let pragma_sql =
+          "PRAGMA index_xinfo(\"" <> parse.quote_identifier(index_name) <> "\")"
+        let xinfo_decoder = {
+          use seqno <- decode.field(0, decode.int)
+          use cid <- decode.field(1, decode.int)
+          use key <- decode.field(5, decode.int)
+          decode.success(#(seqno, cid, key))
+        }
+        case
+          sqlight.query(pragma_sql, on: db, with: [], expecting: xinfo_decoder)
+        {
+          Error(_) -> acc
+          Ok(rows) -> {
+            let key_cols =
+              rows
+              |> list.filter(fn(row) { row.2 == 1 })
+              |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
+            let indexed_columns =
+              list.filter_map(key_cols, fn(row) {
+                let #(_, cid, _) = row
+                util.list_at(cols, cid)
+                |> result.map(fn(cm) { cm.column })
+              })
+            dict.insert(acc, rootpage, indexed_columns)
+          }
+        }
+      }
+    }
+  })
 }

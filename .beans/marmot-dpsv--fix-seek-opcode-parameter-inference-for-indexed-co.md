@@ -1,7 +1,7 @@
 ---
 # marmot-dpsv
 title: Fix Seek opcode parameter inference for indexed columns
-status: todo
+status: completed
 type: bug
 priority: critical
 tags:

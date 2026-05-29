@@ -3,8 +3,8 @@ import marmot/internal/query.{
   type Column, Column, IntType, Parameter, StringType,
 }
 import marmot/internal/sqlite/opcode.{
-  type Opcode, Opcode, debug_warning, find_column_for_register,
-  infer_parameter_type, marmot_debug_warnings_enabled,
+  type CursorIndexColumns, type Opcode, Opcode, debug_warning,
+  find_column_for_register, infer_parameter_type, marmot_debug_warnings_enabled,
 }
 
 // ---- Helpers ----
@@ -26,6 +26,10 @@ fn cursor_map(pairs: List(#(Int, String))) -> dict.Dict(Int, String) {
 }
 
 fn pk_map(pairs: List(#(String, String))) -> dict.Dict(String, String) {
+  dict.from_list(pairs)
+}
+
+fn index_col_map(pairs: List(#(Int, List(Column)))) -> CursorIndexColumns {
   dict.from_list(pairs)
 }
 
@@ -201,7 +205,8 @@ pub fn infer_parameter_eq_comparison_test() {
   let schemas = schema([col("id", IntType)])
   let pk = pk_map([#("t", "id")])
 
-  let result = infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk)
+  let result =
+    infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk, dict.new())
   let assert Ok(Parameter(name: "id", column_type: IntType, nullable: False)) =
     result
 }
@@ -221,7 +226,8 @@ pub fn infer_parameter_ne_comparison_test() {
   let schemas = schema([col("id", IntType), col("name", StringType)])
   let pk = pk_map([#("t", "id")])
 
-  let result = infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk)
+  let result =
+    infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk, dict.new())
   let assert Ok(Parameter(
     name: "name",
     column_type: StringType,
@@ -244,7 +250,8 @@ pub fn infer_parameter_variable_is_p3_test() {
   let schemas = schema([col("id", IntType)])
   let pk = pk_map([#("t", "id")])
 
-  let result = infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk)
+  let result =
+    infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk, dict.new())
   let assert Ok(Parameter(name: "id", column_type: IntType, nullable: False)) =
     result
 }
@@ -265,7 +272,8 @@ pub fn infer_parameter_seek_ge_test() {
   let schemas = schema([col("id", IntType), col("val", StringType)])
   let pk = pk_map([#("t", "id")])
 
-  let result = infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk)
+  let result =
+    infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk, dict.new())
   // SeekGE resolves via cursor -> table -> first column
   let assert Ok(Parameter(name: "id", column_type: IntType, nullable: False)) =
     result
@@ -283,7 +291,8 @@ pub fn infer_parameter_seek_lt_test() {
   let schemas = schema([col("name", StringType)])
   let pk = pk_map([#("t", "name")])
 
-  let result = infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk)
+  let result =
+    infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk, dict.new())
   let assert Ok(Parameter(
     name: "name",
     column_type: StringType,
@@ -306,7 +315,8 @@ pub fn infer_parameter_seek_rowid_test() {
   let schemas = schema([col("user_id", IntType)])
   let pk = pk_map([#("t", "user_id")])
 
-  let result = infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk)
+  let result =
+    infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk, dict.new())
   let assert Ok(Parameter(
     name: "user_id",
     column_type: IntType,
@@ -327,7 +337,8 @@ pub fn infer_parameter_no_comparison_test() {
   let schemas = schema([col("id", IntType)])
   let pk = pk_map([#("t", "id")])
 
-  let result = infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk)
+  let result =
+    infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk, dict.new())
   let assert Error(Nil) = result
 }
 
@@ -344,7 +355,8 @@ pub fn infer_parameter_seek_rowid_no_pk_test() {
   let schemas = schema([col("id", IntType)])
   let pk = pk_map([])
 
-  let result = infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk)
+  let result =
+    infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk, dict.new())
   let assert Ok(Parameter(name: "id", column_type: IntType, nullable: False)) =
     result
 }
@@ -362,7 +374,8 @@ pub fn infer_parameter_seek_rowid_unknown_cursor_test() {
   let schemas = schema([col("id", IntType)])
   let pk = pk_map([])
 
-  let result = infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk)
+  let result =
+    infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk, dict.new())
   let assert Ok(Parameter(name: "id", column_type: IntType, nullable: False)) =
     result
 }
@@ -380,7 +393,145 @@ pub fn infer_parameter_seek_ge_empty_schema_test() {
   let schemas = schema([])
   let pk = pk_map([])
 
-  let result = infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk)
+  let result =
+    infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk, dict.new())
+  let assert Error(Nil) = result
+}
+
+pub fn infer_parameter_seek_ge_index_cursor_first_column_test() {
+  // SeekGE on an index cursor where the indexed column IS the table's
+  // first column. Should resolve to the indexed column (same as before).
+  let opcodes = [
+    op(5, "OpenRead", 0, 1, 0),
+    // table root=1, cursor=0
+    op(6, "OpenRead", 1, 2, 0),
+    // index root=2, cursor=1
+    op(7, "Variable", 1, 3, 0),
+    op(8, "SeekGE", 1, 0, 3),
+    // cursor=1 (index), key_reg=3
+    op(10, "ResultRow", 1, 2, 0),
+  ]
+  let var_op = op(7, "Variable", 1, 3, 0)
+  let cursor_table = cursor_map([#(0, "t"), #(1, "t")])
+  let schemas = schema([col("id", IntType), col("val", StringType)])
+  let pk = pk_map([#("t", "id")])
+  let index_cols = index_col_map([#(1, [col("id", IntType)])])
+
+  let result =
+    infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk, index_cols)
+  // Index on first column: resolves to "id"
+  let assert Ok(Parameter(name: "id", column_type: IntType, nullable: False)) =
+    result
+}
+
+pub fn infer_parameter_seek_ge_index_cursor_non_first_column_test() {
+  // SeekGE on an index cursor where the indexed column is NOT the
+  // table's first column. Should resolve to the indexed column (email),
+  // not the table's first column (id).
+  let opcodes = [
+    op(5, "OpenRead", 0, 1, 0),
+    // table root=1, cursor=0
+    op(6, "OpenRead", 1, 2, 0),
+    // index root=2, cursor=1
+    op(7, "Variable", 1, 3, 0),
+    op(8, "SeekGE", 1, 0, 3),
+    // cursor=1 (index), key_reg=3
+    op(10, "ResultRow", 1, 2, 0),
+  ]
+  let var_op = op(7, "Variable", 1, 3, 0)
+  let cursor_table = cursor_map([#(0, "t"), #(1, "t")])
+  let schemas =
+    schema([
+      col("id", IntType),
+      col("email", StringType),
+      col("age", IntType),
+    ])
+  let pk = pk_map([#("t", "id")])
+  let index_cols = index_col_map([#(1, [col("email", StringType)])])
+
+  let result =
+    infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk, index_cols)
+  // Index on email (second column): resolves to "email", not "id"
+  let assert Ok(Parameter(
+    name: "email",
+    column_type: StringType,
+    nullable: False,
+  )) = result
+}
+
+pub fn infer_parameter_seek_lt_index_cursor_test() {
+  // SeekLT on an index cursor with a non-first indexed column
+  let opcodes = [
+    op(5, "OpenRead", 0, 1, 0),
+    op(6, "OpenRead", 1, 2, 0),
+    op(7, "Variable", 1, 3, 0),
+    op(8, "SeekLT", 1, 0, 3),
+    op(10, "ResultRow", 1, 2, 0),
+  ]
+  let var_op = op(7, "Variable", 1, 3, 0)
+  let cursor_table = cursor_map([#(0, "t"), #(1, "t")])
+  let schemas = schema([col("id", IntType), col("email", StringType)])
+  let pk = pk_map([#("t", "id")])
+  let index_cols = index_col_map([#(1, [col("email", StringType)])])
+
+  let result =
+    infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk, index_cols)
+  let assert Ok(Parameter(
+    name: "email",
+    column_type: StringType,
+    nullable: False,
+  )) = result
+}
+
+pub fn infer_parameter_seek_ge_table_cursor_fallback_test() {
+  // SeekGE on a table cursor (cursor 0) with index info available for
+  // cursor 1 but not cursor 0. Falls back to first table column.
+  let opcodes = [
+    op(5, "OpenRead", 0, 1, 0),
+    // table root=1, cursor=0
+    op(6, "Variable", 1, 3, 0),
+    op(7, "SeekGE", 0, 0, 3),
+    // cursor=0 (table), key_reg=3
+    op(10, "ResultRow", 1, 2, 0),
+  ]
+  let var_op = op(6, "Variable", 1, 3, 0)
+  let cursor_table = cursor_map([#(0, "t")])
+  let schemas = schema([col("name", StringType), col("val", IntType)])
+  let pk = pk_map([])
+  // Index columns for cursor 1 only, but SeekGE uses cursor 0
+  let index_cols = index_col_map([#(1, [col("val", IntType)])])
+
+  let result =
+    infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk, index_cols)
+  // Falls back to first table column
+  let assert Ok(Parameter(
+    name: "name",
+    column_type: StringType,
+    nullable: False,
+  )) = result
+}
+
+pub fn infer_parameter_seek_ge_index_cursor_no_schema_fallback_test() {
+  // SeekGE on an index cursor with a known index rootpage but the
+  // index column list is empty (shouldn't happen in practice). Falls
+  // back to first table column.
+  let opcodes = [
+    op(5, "OpenRead", 0, 1, 0),
+    op(6, "OpenRead", 1, 2, 0),
+    op(7, "Variable", 1, 3, 0),
+    op(8, "SeekGE", 1, 0, 3),
+    op(10, "ResultRow", 1, 2, 0),
+  ]
+  let var_op = op(7, "Variable", 1, 3, 0)
+  let cursor_table = cursor_map([#(0, "t"), #(1, "t")])
+  let schemas = schema([col("id", IntType), col("val", StringType)])
+  let pk = pk_map([#("t", "id")])
+  // Empty index columns list for cursor 1
+  let index_cols = index_col_map([#(1, [])])
+
+  let result =
+    infer_parameter_type(var_op, opcodes, cursor_table, schemas, pk, index_cols)
+  // Empty index cols => Error(Nil)
   let assert Error(Nil) = result
 }
 

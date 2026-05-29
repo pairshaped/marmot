@@ -1,0 +1,5 @@
+---
+version: 2.0.0
+title: select with index on non-first column
+---
+QueryInfo([Column("id", IntType, False), Column("username", StringType, False), Column("email", StringType, False), Column("age", IntType, False)], [Parameter("email", StringType, False)])

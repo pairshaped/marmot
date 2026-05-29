@@ -49,6 +49,19 @@ pub fn extract_parameters(
       list.map(metas, fn(m) { m.column })
     })
 
+  // Build cursor -> index columns mapping for index cursors
+  let cursor_index_columns =
+    list.fold(opcodes, dict.new(), fn(acc, op) {
+      case op.opcode {
+        "OpenRead" | "OpenWrite" ->
+          case dict.get(table_metadata.index_columns, op.p2) {
+            Ok(cols) -> dict.insert(acc, op.p1, cols)
+            Error(_) -> acc
+          }
+        _ -> acc
+      }
+    })
+
   let variable_ops =
     list.filter(opcodes, fn(op) { op.opcode == "Variable" })
     |> list.sort(fn(a, b) { int.compare(a.p1, b.p1) })
@@ -66,6 +79,7 @@ pub fn extract_parameters(
             cursor_table,
             table_schemas,
             pk_columns,
+            cursor_index_columns,
           )
         })
       }
@@ -118,6 +132,7 @@ fn infer_parameter_or_string(
   cursor_table: Dict(Int, String),
   table_schemas: Dict(String, List(Column)),
   pk_columns: Dict(String, String),
+  cursor_index_columns: opcode.CursorIndexColumns,
 ) -> Parameter {
   case
     opcode.infer_parameter_type(
@@ -126,6 +141,7 @@ fn infer_parameter_or_string(
       cursor_table,
       table_schemas,
       pk_columns,
+      cursor_index_columns,
     )
   {
     Ok(p) -> p
