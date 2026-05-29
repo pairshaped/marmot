@@ -59,7 +59,6 @@ pub fn to_string(error: MarmotError) -> String {
     DatabaseNotConfigured ->
       "error: Could not connect to SQLite database
   No database configured. Set one of:
-    \u{2022} DATABASE_URL environment variable
     \u{2022} database field in [tools.marmot] section of gleam.toml
     \u{2022} --database flag"
 

@@ -59,6 +59,7 @@ pub type DatabaseReference {
 
 pub type ConfigError {
   MixedDatabaseConfig
+  TomlParseError(reason: String)
 }
 
 type TomlConfig {
@@ -82,12 +83,19 @@ pub fn parse_config(
   args: List(String),
   env_database: Option(String),
 ) -> Config {
-  let toml_config = parse_toml_config(toml_content)
+  let #(toml_config, parse_error) = parse_toml_config(toml_content)
   let cli = parse_cli_args(args)
   let database_name = cli.database_name
   let database_ref =
     selected_database_reference(toml_config.databases, database_name)
-  let config_error = database_config_error(toml_config)
+  let config_error = case parse_error {
+    option.Some(_) -> parse_error
+    option.None ->
+      case toml_config.database, dict.is_empty(toml_config.databases) {
+        option.Some(_), False -> option.Some(MixedDatabaseConfig)
+        _, _ -> option.None
+      }
+  }
 
   let database = case cli.database {
     option.Some(_) -> cli.database
@@ -171,13 +179,6 @@ pub fn parse_config(
   )
 }
 
-fn database_config_error(toml_config: TomlConfig) -> Option(ConfigError) {
-  case toml_config.database, dict.is_empty(toml_config.databases) {
-    option.Some(_), False -> option.Some(MixedDatabaseConfig)
-    _, _ -> option.None
-  }
-}
-
 pub fn config_error_to_string(error: ConfigError) -> String {
   case error {
     MixedDatabaseConfig ->
@@ -187,32 +188,68 @@ pub fn config_error_to_string(error: ConfigError) -> String {
   \u{2502} [tools.marmot].database cannot be used with [tools.marmot.databases].
   \u{2502}
   hint: Use database/migrations_dir/seeds_dir for one database, or define only named databases and pass --database-name when one command should target a single database."
+
+    TomlParseError(reason:) -> "error: Could not parse gleam.toml
+  \u{250c}\u{2500} gleam.toml
+  \u{2502}
+  \u{2502} " <> reason
   }
 }
 
-fn parse_toml_config(toml_content: String) -> TomlConfig {
+fn parse_toml_config(
+  toml_content: String,
+) -> #(TomlConfig, Option(ConfigError)) {
   case tom.parse(toml_content) {
     Ok(parsed) -> {
       warn_unknown_config_keys(parsed)
-      TomlConfig(
-        database: get_toml_string(parsed, ["tools", "marmot", "database"]),
-        output: get_toml_string(parsed, ["tools", "marmot", "output"]),
-        query_function: get_toml_string(parsed, [
-          "tools",
-          "marmot",
-          "query_function",
-        ]),
-        sql_dir: get_toml_string(parsed, ["tools", "marmot", "sql_dir"]),
-        migrations_dir: get_toml_string(parsed, [
-          "tools",
-          "marmot",
-          "migrations_dir",
-        ]),
-        seeds_dir: get_toml_string(parsed, ["tools", "marmot", "seeds_dir"]),
-        databases: parse_database_references(parsed),
+      #(
+        TomlConfig(
+          database: get_toml_string(parsed, ["tools", "marmot", "database"]),
+          output: get_toml_string(parsed, ["tools", "marmot", "output"]),
+          query_function: get_toml_string(parsed, [
+            "tools",
+            "marmot",
+            "query_function",
+          ]),
+          sql_dir: get_toml_string(parsed, ["tools", "marmot", "sql_dir"]),
+          migrations_dir: get_toml_string(parsed, [
+            "tools",
+            "marmot",
+            "migrations_dir",
+          ]),
+          seeds_dir: get_toml_string(parsed, ["tools", "marmot", "seeds_dir"]),
+          databases: parse_database_references(parsed),
+        ),
+        database_config_error_from_toml(parsed),
       )
     }
-    Error(_) -> empty_toml_config()
+    Error(err) -> #(empty_toml_config(), option.Some(toml_parse_error(err)))
+  }
+}
+
+fn toml_parse_error(err: tom.ParseError) -> ConfigError {
+  case err {
+    tom.Unexpected(got:, expected:) ->
+      TomlParseError(reason: "Expected " <> expected <> ", got " <> got)
+    tom.KeyAlreadyInUse(key:) ->
+      TomlParseError(reason: "Duplicate key: " <> string.join(key, "."))
+  }
+}
+
+fn database_config_error_from_toml(
+  parsed: dict.Dict(String, tom.Toml),
+) -> Option(ConfigError) {
+  case tom.get_string(parsed, ["tools", "marmot", "database"]) {
+    Ok(_) ->
+      case tom.get_table(parsed, ["tools", "marmot", "databases"]) {
+        Ok(_) -> option.Some(MixedDatabaseConfig)
+        Error(_) ->
+          case tom.get_array(parsed, ["tools", "marmot", "databases"]) {
+            Ok(_) -> option.Some(MixedDatabaseConfig)
+            Error(_) -> option.None
+          }
+      }
+    Error(_) -> option.None
   }
 }
 
@@ -300,7 +337,7 @@ pub fn named_database_migrations_dir(
     option.Some(dir) -> dir
     option.None ->
       fallback
-      |> option.map(fn(dir) { path_join(dir, name) })
+      |> option.map(fn(dir) { path_join_namespace(dir, name) })
       |> option.unwrap("db/migrations/" <> name)
   }
 }
@@ -314,7 +351,7 @@ pub fn named_database_seeds_dir(
     option.Some(dir) -> dir
     option.None ->
       fallback
-      |> option.map(fn(dir) { path_join(dir, name) })
+      |> option.map(fn(dir) { path_join_namespace(dir, name) })
       |> option.unwrap("db/seeds/" <> name)
   }
 }
@@ -328,7 +365,7 @@ pub fn named_database_sql_dir(
     option.Some(dir) -> option.Some(dir)
     option.None ->
       fallback
-      |> option.map(fn(dir) { path_join(dir, name) })
+      |> option.map(fn(dir) { path_join_namespace(dir, name) })
       |> option.or(option.Some("src/sql/" <> name))
   }
 }
@@ -342,7 +379,7 @@ pub fn named_database_output(
     option.Some(dir) -> option.Some(dir)
     option.None ->
       fallback
-      |> option.map(fn(dir) { path_join(dir, name) })
+      |> option.map(fn(dir) { path_join_namespace(dir, name) })
       |> option.or(option.Some("src/generated/sql/" <> name))
   }
 }
@@ -352,6 +389,28 @@ fn path_join(base: String, segment: String) -> String {
     True -> base <> segment
     False -> base <> "/" <> segment
   }
+}
+
+fn path_join_namespace(base: String, name: String) -> String {
+  let trimmed = trim_trailing_slash(base)
+  case path_last_segment(trimmed) == name {
+    True -> trimmed
+    False -> path_join(trimmed, name)
+  }
+}
+
+fn trim_trailing_slash(path: String) -> String {
+  case string.ends_with(path, "/") {
+    True -> string.drop_end(path, 1)
+    False -> path
+  }
+}
+
+fn path_last_segment(path: String) -> String {
+  path
+  |> string.split("/")
+  |> list.last
+  |> result.unwrap("")
 }
 
 fn selected_database_reference(

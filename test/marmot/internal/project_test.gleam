@@ -1,6 +1,7 @@
 import gleam/dict
 import gleam/list
 import gleam/option
+import gleam/string
 import marmot/internal/project.{Config}
 import simplifile
 
@@ -358,6 +359,28 @@ name = \"primary\"
   ) = config
 }
 
+pub fn parse_config_named_database_does_not_double_configured_namespace_test() {
+  let toml =
+    "[tools.marmot]
+migrations_dir = \"priv/migrations/curling\"
+seeds_dir = \"priv/seeds/curling\"
+sql_dir = \"src/sql/curling\"
+output = \"src/generated/sql/curling\"
+
+[[tools.marmot.databases]]
+name = \"curling\"
+"
+  let config =
+    project.parse_config(toml, ["--database-name", "curling"], option.None)
+  let assert Config(
+    output: option.Some("src/generated/sql/curling"),
+    sql_dir: option.Some("src/sql/curling"),
+    migrations_dir: option.Some("priv/migrations/curling"),
+    seeds_dir: option.Some("priv/seeds/curling"),
+    ..,
+  ) = config
+}
+
 pub fn parse_config_cli_database_path_keeps_named_dirs_test() {
   let toml =
     "[tools.marmot.databases.curling]
@@ -428,6 +451,28 @@ path = \"db/analytics.db\"
   let config = project.parse_config(toml, [], option.None)
   let assert Config(error: option.Some(project.MixedDatabaseConfig), ..) =
     config
+}
+
+pub fn parse_config_malformed_toml_sets_error_test() {
+  let toml =
+    "[tools.marmot
+database = \"dev.sqlite\"
+"
+  let config = project.parse_config(toml, [], option.None)
+  let assert Config(error: option.Some(project.TomlParseError(_)), ..) = config
+}
+
+pub fn config_error_toml_parse_to_string_test() {
+  let err = project.TomlParseError("Expected ] on line 1, got end of file")
+  let msg = project.config_error_to_string(err)
+  let assert True = string.contains(msg, "Could not parse gleam.toml")
+  let assert True = string.contains(msg, "Expected ] on line 1")
+}
+
+pub fn parse_config_empty_toml_is_valid_test() {
+  // Empty string is valid TOML — should not produce a parse error
+  let config = project.parse_config("", [], option.None)
+  let assert Config(error: option.None, ..) = config
 }
 
 pub fn list_sql_files_test() {

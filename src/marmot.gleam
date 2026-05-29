@@ -261,9 +261,17 @@ fn with_database_targets(
   callback: fn(project.Config, List(DatabaseTarget)) -> Nil,
 ) -> Nil {
   let env_database = get_env("DATABASE_URL")
-  let toml_content =
-    simplifile.read("gleam.toml")
-    |> result.unwrap("")
+  let toml_content = case simplifile.read("gleam.toml") {
+    Ok(content) -> content
+    Error(_) -> {
+      io.println_error(
+        "error: Could not read gleam.toml
+  Marmot must be run from a Gleam project root with a gleam.toml file.",
+      )
+      halt(1)
+      ""
+    }
+  }
   let config = project.parse_config(toml_content, args, env_database)
 
   case database_targets(config) {
