@@ -535,3 +535,97 @@ pub fn ensure_parent_dir_file_blocks_directory_test() {
     Error(msg) -> panic as msg
   }
 }
+
+// ---- Generated output preflight collision detection ----
+
+pub fn detect_collisions_two_targets_same_path_test() {
+  let entries = [
+    #("src/generated/sql/users_sql.gleam", option.Some("primary")),
+    #("src/generated/sql/users_sql.gleam", option.Some("analytics")),
+  ]
+  let assert Error(collisions) = marmot.detect_output_path_collisions(entries)
+  let assert 1 = list.length(collisions)
+  let assert #("src/generated/sql/users_sql.gleam", _) =
+    list.first(collisions)
+    |> result.unwrap(#("", []))
+}
+
+pub fn detect_collisions_distinct_paths_test() {
+  let entries = [
+    #("src/generated/sql/users_sql.gleam", option.Some("primary")),
+    #("src/generated/sql/analytics_sql.gleam", option.Some("analytics")),
+  ]
+  let assert Ok(Nil) = marmot.detect_output_path_collisions(entries)
+}
+
+pub fn detect_collisions_single_target_test() {
+  let entries = [
+    #("src/generated/sql/users_sql.gleam", option.Some("primary")),
+  ]
+  let assert Ok(Nil) = marmot.detect_output_path_collisions(entries)
+}
+
+pub fn detect_collisions_no_targets_test() {
+  let entries = []
+  let assert Ok(Nil) = marmot.detect_output_path_collisions(entries)
+}
+
+pub fn detect_collisions_same_target_same_path_test() {
+  // One target producing two SQL dirs that map to the same output is not a
+  // cross-target collision — the per-target duplicate is handled by generate_all.
+  let entries = [
+    #("src/generated/sql/users_sql.gleam", option.Some("primary")),
+    #("src/generated/sql/users_sql.gleam", option.Some("primary")),
+  ]
+  let assert Ok(Nil) = marmot.detect_output_path_collisions(entries)
+}
+
+pub fn detect_collisions_reports_all_paths_test() {
+  // Two independent collisions in the same list
+  let entries = [
+    #("src/generated/sql/collision_a.gleam", option.Some("db_1")),
+    #("src/generated/sql/collision_a.gleam", option.Some("db_2")),
+    #("src/generated/sql/collision_b.gleam", option.Some("db_3")),
+    #("src/generated/sql/collision_b.gleam", option.Some("db_4")),
+    #("src/generated/sql/unique.gleam", option.Some("db_5")),
+  ]
+  let assert Error(collisions) = marmot.detect_output_path_collisions(entries)
+  let assert 2 = list.length(collisions)
+}
+
+pub fn detect_collisions_unnamed_targets_test() {
+  // Two unnamed targets can't occur in practice (simple --database mode
+  // produces at most one target), but if they did, the collision detector
+  // deduplicates target names and would not see a cross-target collision.
+  let entries = [
+    #("src/generated/sql/users_sql.gleam", option.None),
+    #("src/generated/sql/users_sql.gleam", option.None),
+  ]
+  let assert Ok(Nil) = marmot.detect_output_path_collisions(entries)
+}
+
+pub fn detect_collisions_three_targets_collide_test() {
+  let entries = [
+    #("src/generated/sql/shared.gleam", option.Some("a")),
+    #("src/generated/sql/shared.gleam", option.Some("b")),
+    #("src/generated/sql/shared.gleam", option.Some("c")),
+  ]
+  let assert Error(collisions) = marmot.detect_output_path_collisions(entries)
+  let assert 1 = list.length(collisions)
+  // All three names should be reported
+  let #(_, names) = list.first(collisions) |> result.unwrap(#("", []))
+  let assert 3 = list.length(names)
+}
+
+pub fn preflight_unreadable_sql_dir_test() {
+  // A configured sql_dir that doesn't exist should produce SqlDirUnreadable
+  let entries = [
+    #(
+      option.None,
+      option.Some("test_tmp_missing_sql_dir"),
+      option.Some("primary"),
+    ),
+  ]
+  let assert Error(errors) = marmot.preflight_generate_collisions(entries)
+  let assert [marmot.SqlDirUnreadable("test_tmp_missing_sql_dir")] = errors
+}

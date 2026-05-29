@@ -87,9 +87,29 @@ fn run_unknown_command(command: String) -> Nil {
 
 fn run_generate(args: List(String)) -> Nil {
   with_database_targets(args, fn(config, targets) {
-    list.each(targets, fn(target) {
+    // Build resolved configs for each target
+    let target_configs =
+      list.map(targets, fn(target) {
+        #(target, config_for_target(config, target))
+      })
+
+    // Preflight: check for output-path collisions across databases
+    let preflight_entries =
+      list.map(target_configs, fn(entry) {
+        let #(target, target_config) = entry
+        #(target_config.output, target_config.sql_dir, target.name)
+      })
+    case preflight_generate_collisions(preflight_entries) {
+      Error(errors) -> {
+        list.each(errors, print_preflight_error)
+        halt(1)
+      }
+      Ok(Nil) -> Nil
+    }
+
+    list.each(target_configs, fn(entry) {
+      let #(target, target_config) = entry
       print_database_target(target)
-      let target_config = config_for_target(config, target)
       case project.validate_output(target_config) {
         Error(_) -> {
           let output = option.unwrap(target_config.output, "")
@@ -101,6 +121,120 @@ fn run_generate(args: List(String)) -> Nil {
       with_open_database(target.path, fn(db) { generate_all(db, target_config) })
     })
   })
+}
+
+/// Preflight check: ensures all SQL directories are readable and no two
+/// distinct database targets would write to the same generated output path.
+/// Returns discovery errors before collision errors — fail early on I/O.
+@internal
+pub fn preflight_generate_collisions(
+  entries: List(#(Option(String), Option(String), Option(String))),
+) -> Result(Nil, List(PreflightError)) {
+  let initial = #([], [])
+  let #(output_pairs, discovery_errors) =
+    list.fold(entries, initial, fn(acc, entry) {
+      let #(pairs_acc, errors_acc) = acc
+      let #(output_config, sql_dir_config, target_name) = entry
+      case project.find_sql_directories_result("src", sql_dir_config) {
+        Ok(dirs) -> {
+          let pairs =
+            list.map(dirs, fn(sql_dir) {
+              let path =
+                project.output_path_from_source_root(
+                  sql_dir,
+                  output_config,
+                  sql_dir_config,
+                )
+              #(path, target_name)
+            })
+          // Deduplicate per-target: two SQL dirs in the same target mapping
+          // to the same output is not a cross-target collision.
+          #(list.append(pairs_acc, list.unique(pairs)), errors_acc)
+        }
+        Error(_) -> {
+          let dir = option.unwrap(sql_dir_config, "src/**/sql/")
+          #(pairs_acc, [SqlDirUnreadable(dir), ..errors_acc])
+        }
+      }
+    })
+
+  case discovery_errors {
+    [] ->
+      case detect_output_path_collisions(output_pairs) {
+        Ok(Nil) -> Ok(Nil)
+        Error(collisions) ->
+          Error(
+            list.map(collisions, fn(c) {
+              let #(path, targets) = c
+              OutputCollision(path, targets)
+            }),
+          )
+      }
+    _ -> Error(discovery_errors)
+  }
+}
+
+/// Pure collision detection over already-computed (output_path, target_name) pairs.
+/// No filesystem access — easily testable in isolation.
+@internal
+pub fn detect_output_path_collisions(
+  output_pairs: List(#(String, Option(String))),
+) -> Result(Nil, List(#(String, List(Option(String))))) {
+  // Group by output path
+  let grouped =
+    list.fold(output_pairs, dict.new(), fn(acc, pair) {
+      let #(path, target_name) = pair
+      dict.upsert(acc, path, fn(existing) {
+        case existing {
+          option.Some(list) -> [target_name, ..list]
+          option.None -> [target_name]
+        }
+      })
+    })
+
+  // Find groups with more than one distinct target
+  let collisions =
+    dict.fold(grouped, [], fn(acc, path, targets) {
+      let distinct = list.unique(targets)
+      case list.length(distinct) {
+        1 -> acc
+        _ -> [#(path, distinct), ..acc]
+      }
+    })
+
+  case collisions {
+    [] -> Ok(Nil)
+    _ -> Error(collisions)
+  }
+}
+
+fn print_preflight_error(error: PreflightError) -> Nil {
+  case error {
+    OutputCollision(path, targets) -> {
+      let names =
+        list.map(targets, fn(name) {
+          case name {
+            option.Some(n) -> "\"" <> n <> "\""
+            option.None -> "(unnamed database)"
+          }
+        })
+      let database_list = string.join(names, " and ")
+      io.println_error(
+        "error: Generated output collision\n"
+        <> "  \u{250c}\u{2500} "
+        <> path
+        <> "\n"
+        <> "  \u{2502}\n"
+        <> "  \u{2502} Named databases "
+        <> database_list
+        <> " would write to this file.\n"
+        <> "  \u{2502}\n"
+        <> "  hint: Give each named database its own output directory, or use separate sql/ directories.",
+      )
+    }
+    SqlDirUnreadable(dir) ->
+      io.println_error("error: Could not read SQL directory " <> dir)
+  }
 }
 
 pub fn migrate(
@@ -149,6 +283,12 @@ type DatabaseTargetError {
   TargetDatabaseNotConfigured
   TargetConfigError(error: project.ConfigError)
   TargetUnknownDatabaseName(name: String)
+}
+
+@internal
+pub type PreflightError {
+  OutputCollision(path: String, targets: List(Option(String)))
+  SqlDirUnreadable(sql_dir: String)
 }
 
 pub fn reset(
