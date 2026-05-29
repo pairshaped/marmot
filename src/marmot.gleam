@@ -296,22 +296,30 @@ fn database_targets(
       case dict.get(config.databases, name) {
         Ok(ref) -> {
           use target <- result.try(named_database_target(name, ref, config))
-          Ok([target_with_configured_path(target, config.database)])
+          // Named ref's own path wins — --database flag cannot override it
+          Ok([target])
         }
         Error(_) ->
-          case config.database {
-            option.Some(path) ->
-              Ok([
-                DatabaseTarget(
-                  name: config.database_name,
-                  path:,
-                  migrations_dir: migrations_directory(config),
-                  seeds_dir: seeds_directory(config),
-                  sql_dir: config.sql_dir,
-                  output: config.output,
-                ),
-              ])
-            option.None -> Error(TargetUnknownDatabaseName(name:))
+          case dict.is_empty(config.databases) {
+            // No named databases in config — --database-name is not meaningful
+            // here but don't punish the user; use --database path if available
+            True ->
+              case config.database {
+                option.Some(path) ->
+                  Ok([
+                    DatabaseTarget(
+                      name: config.database_name,
+                      path:,
+                      migrations_dir: migrations_directory(config),
+                      seeds_dir: seeds_directory(config),
+                      sql_dir: config.sql_dir,
+                      output: config.output,
+                    ),
+                  ])
+                option.None -> Error(TargetUnknownDatabaseName(name:))
+              }
+            // Named databases ARE configured, so --database-name must resolve
+            False -> Error(TargetUnknownDatabaseName(name:))
           }
       }
     option.None ->
@@ -333,16 +341,6 @@ fn database_targets(
             False -> named_database_targets(config)
           }
       }
-  }
-}
-
-fn target_with_configured_path(
-  target: DatabaseTarget,
-  configured_path: Option(String),
-) -> DatabaseTarget {
-  case configured_path {
-    option.Some(path) -> DatabaseTarget(..target, path:)
-    option.None -> target
   }
 }
 

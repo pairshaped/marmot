@@ -60,6 +60,13 @@ pub type DatabaseReference {
 
 pub type ConfigError {
   MixedDatabaseConfig
+  /// Both --database and --database-name were provided when named databases
+  /// are configured. With named databases, --database-name selects the ref;
+  /// --database would silently override its path, so it's rejected.
+  MixedDatabaseCliArgs
+  /// --database-name NAME was specified but NAME does not match any configured
+  /// named database reference.
+  UnknownDatabaseName(name: String)
   TomlParseError(reason: String)
   /// An entry in [[tools.marmot.databases]] is missing or has an empty name.
   MalformedDatabaseArrayEntry
@@ -94,9 +101,19 @@ pub fn parse_config(
   let config_error = case parse_error {
     option.Some(_) -> parse_error
     option.None ->
-      case toml_config.database, dict.is_empty(toml_config.databases) {
-        option.Some(_), False -> option.Some(MixedDatabaseConfig)
-        _, _ -> option.None
+      case cli.database, database_name, database_ref {
+        option.Some(_), option.Some(_), option.Some(_) ->
+          option.Some(MixedDatabaseCliArgs)
+        _, option.Some(name), option.None ->
+          case dict.is_empty(toml_config.databases) {
+            False -> option.Some(UnknownDatabaseName(name:))
+            True -> option.None
+          }
+        _, _, _ ->
+          case toml_config.database, dict.is_empty(toml_config.databases) {
+            option.Some(_), False -> option.Some(MixedDatabaseConfig)
+            _, _ -> option.None
+          }
       }
   }
 
@@ -192,6 +209,14 @@ pub fn config_error_to_string(error: ConfigError) -> String {
   \u{2502}
   hint: Use database/migrations_dir/seeds_dir for one database, or define only named databases and pass --database-name when one command should target a single database."
 
+    MixedDatabaseCliArgs ->
+      "error: Mixed database configuration
+  \u{250c}\u{2500} command line
+  \u{2502}
+  \u{2502} --database cannot be used with --database-name when named databases are configured.
+  \u{2502}
+  hint: Use --database for a simple database path, or --database-name to select a named database."
+
     TomlParseError(reason:) -> "error: Could not parse gleam.toml
   \u{250c}\u{2500} gleam.toml
   \u{2502}
@@ -204,6 +229,13 @@ pub fn config_error_to_string(error: ConfigError) -> String {
   \u{2502} Each database entry must have a name field.
   \u{2502}
   hint: Add name = \"db_name\" to each [[tools.marmot.databases]] entry."
+
+    UnknownDatabaseName(name:) -> "error: Unknown database name
+  \u{250c}\u{2500} " <> name <> "
+  \u{2502}
+  \u{2502} No database named \"" <> name <> "\" is configured in [tools.marmot.databases].
+  \u{2502}
+  hint: Check the --database-name spelling, or add the database to gleam.toml."
   }
 }
 

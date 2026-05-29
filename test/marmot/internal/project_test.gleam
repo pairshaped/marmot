@@ -381,7 +381,7 @@ name = \"curling\"
   ) = config
 }
 
-pub fn parse_config_cli_database_path_keeps_named_dirs_test() {
+pub fn parse_config_mixed_cli_database_and_name_errors_with_named_ref_test() {
   let toml =
     "[tools.marmot.databases.curling]
 path = \"db/curling.db\"
@@ -399,13 +399,83 @@ seeds_dir = \"db/seeds/curling\"
       ],
       option.None,
     )
+  let assert Config(error: option.Some(project.MixedDatabaseCliArgs), ..) =
+    config
+}
+
+pub fn parse_config_mixed_cli_database_and_name_no_databases_works_test() {
+  // --database + --database-name without any named databases configured
+  // should NOT error — the unknown --database-name falls through and
+  // --database provides the path.
+  let config =
+    project.parse_config(
+      "",
+      [
+        "--database",
+        "tmp/test.db",
+        "--database-name",
+        "curling",
+      ],
+      option.None,
+    )
   let assert Config(
     database: option.Some("tmp/test.db"),
     database_name: option.Some("curling"),
-    migrations_dir: option.Some("db/migrations/curling"),
-    seeds_dir: option.Some("db/seeds/curling"),
+    error: option.None,
     ..,
   ) = config
+}
+
+pub fn config_error_mixed_database_cli_args_to_string_test() {
+  let err = project.MixedDatabaseCliArgs
+  let msg = project.config_error_to_string(err)
+  let assert True =
+    string.contains(msg, "--database cannot be used with --database-name")
+  let assert True = string.contains(msg, "command line")
+}
+
+pub fn parse_config_unknown_database_name_sets_error_test() {
+  // --database-name with a name that doesn't match any configured ref should
+  // produce an UnknownDatabaseName error when named databases are configured.
+  let toml =
+    "[tools.marmot.databases.primary]
+path = \"db/primary.db\"
+"
+  let config =
+    project.parse_config(toml, ["--database-name", "nonexistent"], option.None)
+  let assert Config(error: option.Some(project.UnknownDatabaseName(name:)), ..) =
+    config
+  let assert "nonexistent" = name
+}
+
+pub fn parse_config_unknown_database_name_with_database_flag_sets_error_test() {
+  // --database + --database-name with a name that doesn't match any ref should
+  // also produce UnknownDatabaseName, not fall back to --database.
+  let toml =
+    "[tools.marmot.databases.primary]
+path = \"db/primary.db\"
+"
+  let config =
+    project.parse_config(
+      toml,
+      [
+        "--database",
+        "tmp/test.db",
+        "--database-name",
+        "nonexistent",
+      ],
+      option.None,
+    )
+  let assert Config(error: option.Some(project.UnknownDatabaseName(name:)), ..) =
+    config
+  let assert "nonexistent" = name
+}
+
+pub fn config_error_unknown_database_name_to_string_test() {
+  let err = project.UnknownDatabaseName("foo")
+  let msg = project.config_error_to_string(err)
+  let assert True = string.contains(msg, "Unknown database name")
+  let assert True = string.contains(msg, "foo")
 }
 
 pub fn parse_config_cli_named_database_wins_over_env_test() {
