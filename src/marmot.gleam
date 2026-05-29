@@ -16,6 +16,7 @@ import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option.{type Option}
+import gleam/order
 import gleam/result
 import gleam/string
 import marmot/internal/codegen
@@ -50,9 +51,9 @@ pub fn help_text() -> String {
 
 Usage:
   gleam run -m marmot [-- --database PATH]
-  gleam run -m marmot migrate --database PATH
-  gleam run -m marmot seed --database PATH
-  gleam run -m marmot reset --database PATH
+  gleam run -m marmot migrate [--database PATH | --database-name NAME]
+  gleam run -m marmot seed [--database PATH | --database-name NAME]
+  gleam run -m marmot reset [--database PATH | --database-name NAME]
   gleam run -m marmot help
 
 Commands:
@@ -63,8 +64,14 @@ Commands:
   help      Print this help text
 
 Database:
-  --database takes precedence over DATABASE_URL, which takes precedence over
-  [tools.marmot].database in gleam.toml."
+  --database takes precedence over --database-name, which takes precedence over
+  DATABASE_URL, which takes precedence over [tools.marmot].database.
+
+Migration and seed directories:
+  Defaults are db/migrations and db/seeds. Configure them with
+  [tools.marmot].migrations_dir, [tools.marmot].seeds_dir, or named database
+  refs. Without --database or --database-name, migrate, seed, and reset run all
+  named database refs when named refs are configured."
 }
 
 fn run_help() -> Nil {
@@ -88,6 +95,14 @@ fn with_database(
     |> result.unwrap("")
   let config = project.parse_config(toml_content, args, env_database)
 
+  case config.error {
+    option.Some(err) -> {
+      io.println_error(project.config_error_to_string(err))
+      halt(1)
+    }
+    option.None -> Nil
+  }
+
   case project.validate_output(config) {
     Error(_) -> {
       let output = option.unwrap(config.output, "")
@@ -99,7 +114,18 @@ fn with_database(
 
   case config.database {
     option.None -> {
-      io.println_error(error.to_string(error.DatabaseNotConfigured))
+      case dict.is_empty(config.databases) {
+        True -> io.println_error(error.to_string(error.DatabaseNotConfigured))
+        False ->
+          io.println_error(
+            "error: Database name required
+  \u{250c}\u{2500} gleam.toml
+  \u{2502}
+  \u{2502} Named databases are configured, so code generation needs one database name.
+  \u{2502}
+  hint: Run gleam run -m marmot -- --database-name NAME.",
+          )
+      }
       halt(1)
     }
     option.Some(db_path) ->
@@ -132,8 +158,22 @@ pub fn migrate(
   migrations.migrate(database_path)
 }
 
+pub fn migrate_from(
+  database_path: String,
+  migrations_dir: String,
+) -> Result(List(String), migrations.MigrationError) {
+  migrations.migrate_from(database_path, migrations_dir)
+}
+
 pub fn seed(database_path: String) -> Result(List(String), seeds.SeedError) {
   seeds.seed(database_path)
+}
+
+pub fn seed_from(
+  database_path: String,
+  seeds_dir: String,
+) -> Result(List(String), seeds.SeedError) {
+  seeds.seed_from(database_path, seeds_dir)
 }
 
 pub type ResetError {
@@ -143,16 +183,40 @@ pub type ResetError {
   ResetSeedError(error: seeds.SeedError)
 }
 
+type DatabaseTarget {
+  DatabaseTarget(
+    name: Option(String),
+    path: String,
+    migrations_dir: String,
+    seeds_dir: String,
+  )
+}
+
+type DatabaseTargetError {
+  TargetDatabaseNotConfigured
+  TargetConfigError(error: project.ConfigError)
+  TargetUnknownDatabaseName(name: String)
+  TargetNamedDatabaseMissingPath(name: String)
+}
+
 pub fn reset(
   database_path: String,
 ) -> Result(#(List(String), List(String)), ResetError) {
+  reset_from(database_path, migrations.migration_dir, seeds.seed_dir)
+}
+
+pub fn reset_from(
+  database_path: String,
+  migrations_dir: String,
+  seeds_dir: String,
+) -> Result(#(List(String), List(String)), ResetError) {
   use _ <- result.try(drop_database(database_path))
   use applied_migrations <- result.try(
-    migrations.migrate(database_path)
+    migrations.migrate_from(database_path, migrations_dir)
     |> result.map_error(ResetMigrationError),
   )
   use applied_seeds <- result.try(
-    seeds.seed(database_path)
+    seeds.seed_from(database_path, seeds_dir)
     |> result.map_error(ResetSeedError),
   )
   Ok(#(applied_migrations, applied_seeds))
@@ -161,7 +225,7 @@ pub fn reset(
 fn run_migrate(args: List(String)) -> Nil {
   run_sql_files_command(
     args,
-    migrations.migrate,
+    fn(target) { migrations.migrate_from(target.path, target.migrations_dir) },
     migrations.to_string,
     "Applied",
     "No migrations to apply",
@@ -172,7 +236,7 @@ fn run_migrate(args: List(String)) -> Nil {
 fn run_seed(args: List(String)) -> Nil {
   run_sql_files_command(
     args,
-    seeds.seed,
+    fn(target) { seeds.seed_from(target.path, target.seeds_dir) },
     seeds.to_string,
     "Ran",
     "No seed files to run",
@@ -181,64 +245,181 @@ fn run_seed(args: List(String)) -> Nil {
 }
 
 fn run_reset(args: List(String)) -> Nil {
-  with_database_path(args, fn(db_path) {
-    case reset(db_path) {
-      Error(err) -> {
-        io.println_error(reset_error_to_string(err))
-        halt(1)
+  with_database_targets(args, fn(targets) {
+    list.each(targets, fn(target) {
+      print_database_target(target)
+      case reset_from(target.path, target.migrations_dir, target.seeds_dir) {
+        Error(err) -> {
+          io.println_error(reset_error_to_string(err))
+          halt(1)
+        }
+        Ok(#(applied_migrations, applied_seeds)) -> {
+          io.println("Dropped " <> target.path)
+          print_sql_files_summary(
+            applied_migrations,
+            "Applied",
+            "No migrations to apply",
+            "migration",
+          )
+          print_sql_files_summary(
+            applied_seeds,
+            "Ran",
+            "No seed files to run",
+            "seed file",
+          )
+        }
       }
-      Ok(#(applied_migrations, applied_seeds)) -> {
-        io.println("Dropped " <> db_path)
-        print_sql_files_summary(
-          applied_migrations,
-          "Applied",
-          "No migrations to apply",
-          "migration",
-        )
-        print_sql_files_summary(
-          applied_seeds,
-          "Ran",
-          "No seed files to run",
-          "seed file",
-        )
-      }
-    }
+    })
   })
 }
 
 fn run_sql_files_command(
   args: List(String),
-  run: fn(String) -> Result(List(String), error_type),
+  run: fn(DatabaseTarget) -> Result(List(String), error_type),
   error_to_string: fn(error_type) -> String,
   action: String,
   empty_message: String,
   summary_noun: String,
 ) -> Nil {
-  with_database_path(args, fn(db_path) {
-    case run(db_path) {
-      Error(err) -> {
-        io.println_error(error_to_string(err))
-        halt(1)
+  with_database_targets(args, fn(targets) {
+    list.each(targets, fn(target) {
+      print_database_target(target)
+      case run(target) {
+        Error(err) -> {
+          io.println_error(error_to_string(err))
+          halt(1)
+        }
+        Ok(applied) ->
+          print_sql_files_summary(applied, action, empty_message, summary_noun)
       }
-      Ok(applied) ->
-        print_sql_files_summary(applied, action, empty_message, summary_noun)
-    }
+    })
   })
 }
 
-fn with_database_path(args: List(String), callback: fn(String) -> Nil) -> Nil {
+fn migrations_directory(config: project.Config) -> String {
+  option.unwrap(config.migrations_dir, migrations.migration_dir)
+}
+
+fn seeds_directory(config: project.Config) -> String {
+  option.unwrap(config.seeds_dir, seeds.seed_dir)
+}
+
+fn with_database_targets(
+  args: List(String),
+  callback: fn(List(DatabaseTarget)) -> Nil,
+) -> Nil {
   let env_database = get_env("DATABASE_URL")
   let toml_content =
     simplifile.read("gleam.toml")
     |> result.unwrap("")
   let config = project.parse_config(toml_content, args, env_database)
 
-  case config.database {
-    option.None -> {
-      io.println_error(error.to_string(error.DatabaseNotConfigured))
+  case database_targets(config) {
+    Error(err) -> {
+      io.println_error(database_target_error_to_string(err))
       halt(1)
     }
-    option.Some(db_path) -> callback(db_path)
+    Ok(targets) -> callback(targets)
+  }
+}
+
+fn database_targets(
+  config: project.Config,
+) -> Result(List(DatabaseTarget), DatabaseTargetError) {
+  use _ <- result.try(case config.error {
+    option.Some(err) -> Error(TargetConfigError(err))
+    option.None -> Ok(Nil)
+  })
+
+  case config.database {
+    option.Some(path) ->
+      Ok([
+        DatabaseTarget(
+          name: config.database_name,
+          path:,
+          migrations_dir: migrations_directory(config),
+          seeds_dir: seeds_directory(config),
+        ),
+      ])
+
+    option.None ->
+      case config.database_name {
+        option.Some(name) -> Error(TargetUnknownDatabaseName(name:))
+        option.None ->
+          case dict.is_empty(config.databases) {
+            True -> Error(TargetDatabaseNotConfigured)
+            False -> named_database_targets(config)
+          }
+      }
+  }
+}
+
+fn named_database_targets(
+  config: project.Config,
+) -> Result(List(DatabaseTarget), DatabaseTargetError) {
+  config.databases
+  |> dict.to_list
+  |> list.sort(compare_named_database)
+  |> list.try_map(fn(entry) {
+    let #(name, ref) = entry
+    named_database_target(name, ref, config)
+  })
+}
+
+fn compare_named_database(
+  a: #(String, project.DatabaseReference),
+  b: #(String, project.DatabaseReference),
+) -> order.Order {
+  let #(a_name, _) = a
+  let #(b_name, _) = b
+  string.compare(a_name, b_name)
+}
+
+fn named_database_target(
+  name: String,
+  ref: project.DatabaseReference,
+  config: project.Config,
+) -> Result(DatabaseTarget, DatabaseTargetError) {
+  case ref.path {
+    option.None -> Error(TargetNamedDatabaseMissingPath(name:))
+    option.Some(path) ->
+      Ok(DatabaseTarget(
+        name: option.Some(name),
+        path:,
+        migrations_dir: ref.migrations_dir
+          |> option.or(config.migrations_dir)
+          |> option.unwrap(migrations.migration_dir <> "/" <> name),
+        seeds_dir: ref.seeds_dir
+          |> option.or(config.seeds_dir)
+          |> option.unwrap(seeds.seed_dir <> "/" <> name),
+      ))
+  }
+}
+
+fn print_database_target(target: DatabaseTarget) -> Nil {
+  case target.name {
+    option.None -> Nil
+    option.Some(name) -> io.println("Database " <> name <> ": " <> target.path)
+  }
+}
+
+fn database_target_error_to_string(error: DatabaseTargetError) -> String {
+  case error {
+    TargetDatabaseNotConfigured -> error.to_string(error.DatabaseNotConfigured)
+    TargetConfigError(error:) -> project.config_error_to_string(error)
+    TargetUnknownDatabaseName(name:) -> "error: Unknown database name
+  \u{250c}\u{2500} " <> name <> "
+  \u{2502}
+  \u{2502} No matching [tools.marmot.databases." <> name <> "] entry was found.
+  \u{2502}
+  hint: Add the named database to gleam.toml or choose another --database-name."
+    TargetNamedDatabaseMissingPath(name:) ->
+      "error: Named database is missing a path
+  \u{250c}\u{2500} [tools.marmot.databases." <> name <> "]
+  \u{2502}
+  \u{2502} Named databases must say which SQLite file they use.
+  \u{2502}
+  hint: Add path = \"db/" <> name <> ".db\"."
   }
 }
 

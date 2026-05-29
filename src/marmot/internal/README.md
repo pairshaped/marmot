@@ -36,15 +36,18 @@ flowchart TD
 ### 1. Entry point (`marmot.gleam`)
 
 `main()` parses argv and routes database commands before generation:
-- `migrate` applies `db/migrations/NNN_description.sql` files and tracks
-  applied versions in `schema_migrations`
-- `seed` runs every `db/seeds/NNN_description.sql` file in filename order
+- `migrate` applies configured `NNN_description.sql` migration files and
+  tracks applied versions in `schema_migrations`; with named database refs and
+  no CLI selection, it runs each ref
+- `seed` runs every configured seed file in filename order; with named database
+  refs and no CLI selection, it runs each ref
 - `reset` deletes the configured SQLite database file, removes SQLite sidecar
   files, then runs migrations and seeds
 
 Without one of those commands, `run_generate()`:
 - Reads `gleam.toml` for `[tools.marmot]` config
-- Applies precedence: `--database` CLI > `DATABASE_URL` env > `gleam.toml`
+- Applies database precedence: `--database` CLI > `--database-name` CLI >
+  `DATABASE_URL` env > `gleam.toml` path
 - Opens the SQLite database via `sqlight`
 - Calls `generate_all()`
 
@@ -61,14 +64,22 @@ Without one of those commands, `run_generate()`:
 
 ### 2. Config (`project.gleam`)
 
-`Config` holds four optional fields from `[tools.marmot]`:
+`Config` holds optional fields from `[tools.marmot]`:
 
 | Field | Source | Purpose |
 |---|---|---|
 | `database` | CLI / env / toml | Path to SQLite file for introspection |
+| `database_name` | CLI / toml | Selected named database reference |
 | `output` | CLI / toml | Output directory for generated modules |
 | `query_function` | toml only | Custom wrapper replacing `sqlight.query` |
 | `sql_dir` | toml only | Override sql/ directory discovery |
+| `migrations_dir` | named database / toml | Directory for migration files |
+| `seeds_dir` | named database / toml | Directory for seed files |
+
+Named database references live under `[tools.marmot.databases.NAME]` and can
+provide `path`, `migrations_dir`, and `seeds_dir`. `[tools.marmot].database`
+remains supported as the simple single-database path. Mixing
+`[tools.marmot].database` with named database refs is a config error.
 
 `find_sql_directories()` has two modes:
 - **Default mode** (`sql_dir: None`): recursively walks `src/` for directories named `sql`

@@ -149,8 +149,9 @@ SQLite database file where your schema is defined. Marmot reads the database
 path with the following precedence:
 
 1. `--database` CLI flag
-2. `DATABASE_URL` environment variable
-3. `database` field in `[tools.marmot]` section of `gleam.toml`
+2. `--database-name` CLI flag
+3. `DATABASE_URL` environment variable
+4. `database` field in `[tools.marmot]` section of `gleam.toml`
 
 Set `DATABASE_URL`:
 
@@ -177,8 +178,54 @@ Then run Marmot:
 gleam run -m marmot
 ```
 
-If no database is configured, Marmot shows an error message listing all three
-options.
+If no database is configured, Marmot shows an error message listing the
+available options.
+
+For projects with more than one SQLite database, define named database
+references in `gleam.toml`. Do not combine this form with
+`[tools.marmot].database`.
+
+```toml
+[tools.marmot.databases.app]
+path = "db/app.db"
+migrations_dir = "db/migrations/app"
+seeds_dir = "db/seeds/app"
+
+[tools.marmot.databases.analytics]
+path = "db/analytics.db"
+migrations_dir = "db/migrations/analytics"
+seeds_dir = "db/seeds/analytics"
+```
+
+Run database commands against every named reference:
+
+```sh
+gleam run -m marmot migrate
+gleam run -m marmot seed
+gleam run -m marmot reset
+```
+
+In named-database mode, those commands use the named refs from `gleam.toml`
+unless you pass `--database` or `--database-name`.
+
+Pick one named database when you only want one:
+
+```sh
+gleam run -m marmot -- --database-name analytics
+gleam run -m marmot migrate --database-name analytics
+gleam run -m marmot seed --database-name analytics
+gleam run -m marmot reset --database-name analytics
+```
+
+Code generation always uses one database schema. If a project only has named
+database refs, pass `--database-name` when running `gleam run -m marmot`.
+
+The existing `database = "dev.sqlite"` form is still supported for
+single-database projects.
+
+If both `--database` and `--database-name` are passed, the explicit path from
+`--database` wins for the SQLite file, while the named reference can still
+supply `migrations_dir` and `seeds_dir`.
 
 To print CLI usage:
 
@@ -190,11 +237,11 @@ gleam run -m marmot help
 
 Marmot includes an opinionated, forward-only take on SQLite migrations. It is
 generic Marmot functionality, separate from code generation and any web
-framework. Use it if you want a small migration runner with fixed conventions.
-If you want down migrations, configurable paths, branching workflows, checksums,
-or a larger migration system, bring your own migration library.
+framework. Use it if you want a small migration runner with simple conventions.
+If you want down migrations, branching migration graphs, checksums, or a larger
+migration system, bring your own migration library.
 
-Migration files live in a fixed directory:
+Migration files live in `db/migrations/` by default:
 
 ```txt
 db/migrations/
@@ -220,12 +267,19 @@ Run migrations with:
 gleam run -m marmot migrate --database dev.sqlite
 ```
 
-You can also pass the database path through `DATABASE_URL` or
-`[tools.marmot].database`, using the same precedence as code generation.
+You can also pass the database path through `DATABASE_URL`, `--database-name`,
+or `[tools.marmot].database`, using the same precedence as code generation.
+To use another migration directory, set `migrations_dir` in `gleam.toml`:
+
+```toml
+[tools.marmot]
+database = "db/app.db"
+migrations_dir = "db/migrations/app"
+```
 
 The runner:
 
-- Reads `db/migrations/` in filename sort order.
+- Reads the configured migration directory in filename sort order.
 - Uses the filename stem as the version, such as `001_create_users`.
 - Creates `schema_migrations(version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)`
   if needed.
@@ -236,12 +290,12 @@ The runner:
 Running the command twice is safe. The second run skips migrations already
 recorded in `schema_migrations`.
 
-The migration directory and filename shape are fixed. Marmot does not support
-down migrations, branching migration graphs, or migration directory config.
+The filename shape is fixed. Marmot does not support down migrations or
+branching migration graphs.
 
 ### Seeds
 
-Seed files live next to migrations:
+Seed files live in `db/seeds/` by default:
 
 ```txt
 db/seeds/
@@ -259,9 +313,17 @@ Run seeds with:
 gleam run -m marmot seed --database dev.sqlite
 ```
 
+To use another seed directory, set `seeds_dir` in `gleam.toml`:
+
+```toml
+[tools.marmot]
+database = "db/app.db"
+seeds_dir = "db/seeds/app"
+```
+
 The seed runner:
 
-- Reads `db/seeds/` in filename sort order.
+- Reads the configured seed directory in filename sort order.
 - Runs every seed file it finds.
 - Runs each file in a transaction.
 - Stops on the first failure.
@@ -278,6 +340,9 @@ seeds:
 ```sh
 gleam run -m marmot reset --database dev.sqlite
 ```
+
+`reset` uses the same migration and seed directory config as `migrate` and
+`seed`.
 
 It also removes SQLite sidecar files for that path (`-wal`, `-shm`, and
 `-journal`) when they exist. Reset does not compile or inspect your application

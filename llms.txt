@@ -24,39 +24,72 @@ gleam run -m marmot reset --database dev.sqlite
 gleam run -m marmot help
 ```
 
+For most projects, configure one database in `gleam.toml`:
+
+```toml
+[tools.marmot]
+database = "dev.sqlite"
+migrations_dir = "db/migrations"
+seeds_dir = "db/seeds"
+```
+
+For projects with more than one SQLite database, use named database refs:
+
+```toml
+[tools.marmot.databases.app]
+path = "db/app.db"
+migrations_dir = "db/migrations/app"
+seeds_dir = "db/seeds/app"
+
+[tools.marmot.databases.analytics]
+path = "db/analytics.db"
+migrations_dir = "db/migrations/analytics"
+seeds_dir = "db/seeds/analytics"
+```
+
+Do not mix `[tools.marmot].database` with `[tools.marmot.databases]`. Marmot
+reports a config error if both modes are present.
+
+When named refs are configured, `migrate`, `seed`, and `reset` run every named
+ref if no database is selected. Use `--database-name NAME` to run one named ref.
+Code generation always needs one schema, so named-ref projects must pass
+`--database-name NAME` when running `gleam run -m marmot`.
+
 Public API:
 
 ```gleam
 marmot.migrate("dev.sqlite")
+marmot.migrate_from("dev.sqlite", "db/migrations")
 marmot.seed("dev.sqlite")
+marmot.seed_from("dev.sqlite", "db/seeds")
 marmot.reset("dev.sqlite")
+marmot.reset_from("dev.sqlite", "db/migrations", "db/seeds")
 ```
 
-Migration files live in `db/migrations/` and must be named
-`NNN_description.sql`, for example `001_create_users.sql`. The directory and
-naming shape are fixed. Marmot rejects invalid filenames.
+Migration files live in `db/migrations/` by default and must be named
+`NNN_description.sql`, for example `001_create_users.sql`. `migrations_dir`
+can set a different directory. Marmot rejects invalid filenames.
 
 The runner sorts filenames, uses the filename stem as the version, creates
 `schema_migrations(version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)` if
 needed, skips recorded versions, runs each migration in a transaction, records
 the version only after the SQL succeeds, and stops on the first failure.
 
-Seed files live in `db/seeds/` and use the same filename shape. The seed runner
-sorts filenames, runs every seed file in a transaction, and stops on the first
-failure. Marmot does not track seed files. Running `seed` twice runs the same
-files twice.
+Seed files live in `db/seeds/` by default and use the same filename shape.
+`seeds_dir` can set a different directory. The seed runner sorts filenames,
+runs every seed file in a transaction, and stops on the first failure. Marmot
+does not track seed files. Running `seed` twice runs the same files twice.
 
 Reset deletes the configured SQLite database file, removes sidecar files
 (`-wal`, `-shm`, and `-journal`) when present, then runs migrations and seeds.
 
 Marmot's database commands do not depend on generated code or app compilation.
 Projects can bring their own migration library if they want down migrations,
-configurable paths, branching workflows, checksums, or a larger migration
-system.
+branching workflows, checksums, or a larger migration system.
 
 ## How it works
 
-1. Reads config: `--database` CLI flag > `DATABASE_URL` env > `gleam.toml [tools.marmot]`
+1. Reads config: `--database` CLI flag > `--database-name` CLI flag > `DATABASE_URL` env > `gleam.toml [tools.marmot]`
 2. Opens the SQLite file, scans `src/` for `sql/` directories
 3. For each `.sql` file: reads SQL, tokenizes it, parses the statement shape, loads schema metadata with `PRAGMA table_xinfo`/`PRAGMA table_list`, and runs `EXPLAIN`
 4. Generates a `sql.gleam` module per `sql/` directory with typed functions + decoders
@@ -66,6 +99,11 @@ system.
 | Key | Default | Purpose |
 |---|---|---|
 | `database` | none | Path to the SQLite file used for introspection (also `DATABASE_URL` env, `--database` CLI) |
+| `migrations_dir` | `db/migrations` | Directory for migration files in simple database mode. |
+| `seeds_dir` | `db/seeds` | Directory for seed files in simple database mode. |
+| `databases.NAME.path` | none | Path to the SQLite file for a named database ref. |
+| `databases.NAME.migrations_dir` | `db/migrations/NAME` | Directory for a named database ref's migration files. |
+| `databases.NAME.seeds_dir` | `db/seeds/NAME` | Directory for a named database ref's seed files. |
 | `output` | `src/generated/sql` | Output directory for generated modules (must be under `src/`). Marmot infers the directory structure by finding the longest common path prefix between `output` and each `sql/` directory, then uses the remainder as the namespace (e.g. `src/app/users/sql/` with default output produces `src/generated/sql/app/users_sql.gleam`). |
 | `sql_dir` | none | Custom directory for SQL file discovery. When set, Marmot recursively finds all directories under this path that contain `.sql` files, instead of the default `src/**/sql/` convention. |
 | `query_function` | `sqlight.query` | Fully-qualified function (`module/path.name`) that generated code calls instead of `sqlight.query`. Wrapper must match `sqlight.query`'s labelled signature (`sql: String, on connection, with parameters, expecting decoder`). Useful for logging, timing, instrumentation. |
@@ -96,7 +134,7 @@ src/
 - **No external tools**: no `sqlc`, no `sqlite3` CLI, just `sqlight` (Gleam NIF)
 - **Convention over configuration**: follows Squirrel's conventions (one query per file, `sql/` dirs, filename = function name). `output` and `query_function` are opt-in knobs for larger projects.
 - **Generated code calls sqlight directly** (or a user-supplied wrapper via `query_function`): no tuples, no intermediate types
-- **Optional database commands**: Marmot can apply `db/migrations/NNN_description.sql`, run `db/seeds/NNN_description.sql`, and reset a SQLite database. Projects can use another migration or seed tool.
+- **Optional database commands**: Marmot can apply migration files, run seed files, and reset SQLite databases. Simple projects use one configured database. Multi-db projects can use named refs. Projects can use another migration or seed tool.
 
 ## Generated code patterns
 

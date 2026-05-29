@@ -4,7 +4,7 @@ import gleam/option
 import gleam/result
 import marmot/internal/sql_files
 
-const seed_dir = "db/seeds"
+pub const seed_dir = "db/seeds"
 
 pub type SeedError {
   DatabaseOpenError(path: String, message: String)
@@ -21,7 +21,6 @@ pub fn seed(database_path: String) -> Result(List(String), SeedError) {
   seed_from(database_path, seed_dir)
 }
 
-@internal
 pub fn seed_from(
   database_path: String,
   seeds_dir: String,

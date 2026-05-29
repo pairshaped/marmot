@@ -4,7 +4,7 @@ import gleam/option
 import gleam/result
 import marmot/internal/sql_files
 
-const migration_dir = "db/migrations"
+pub const migration_dir = "db/migrations"
 
 const tracking_table = "schema_migrations"
 
@@ -23,7 +23,6 @@ pub fn migrate(database_path: String) -> Result(List(String), MigrationError) {
   migrate_from(database_path, migration_dir)
 }
 
-@internal
 pub fn migrate_from(
   database_path: String,
   migrations_dir: String,

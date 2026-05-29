@@ -1,3 +1,4 @@
+import gleam/dict
 import gleam/list
 import gleam/option
 import marmot/internal/project.{Config}
@@ -21,9 +22,14 @@ pub fn parse_config_empty_toml_test() {
   let config = project.parse_config("", [], option.None)
   let assert Config(
     database: option.None,
+    database_name: option.None,
     output: option.None,
     query_function: option.None,
     sql_dir: option.None,
+    migrations_dir: option.None,
+    seeds_dir: option.None,
+    databases: _,
+    error: option.None,
   ) = config
 }
 
@@ -36,9 +42,14 @@ output = \"src/app/generated\"
   let config = project.parse_config(toml, [], option.None)
   let assert Config(
     database: option.Some("dev.sqlite"),
+    database_name: option.None,
     output: option.Some("src/app/generated"),
     query_function: option.None,
     sql_dir: option.None,
+    migrations_dir: option.None,
+    seeds_dir: option.None,
+    databases: _,
+    error: option.None,
   ) = config
 }
 
@@ -51,9 +62,14 @@ query_function = \"server/db.query\"
   let config = project.parse_config(toml, [], option.None)
   let assert Config(
     database: option.Some("dev.sqlite"),
+    database_name: option.None,
     output: option.None,
     query_function: option.Some("server/db.query"),
     sql_dir: option.None,
+    migrations_dir: option.None,
+    seeds_dir: option.None,
+    databases: _,
+    error: option.None,
   ) = config
 }
 
@@ -80,9 +96,14 @@ output = \"src/app/generated\"
     )
   let assert Config(
     database: option.Some("test.sqlite"),
+    database_name: option.None,
     output: option.Some("src/other/"),
     query_function: option.None,
     sql_dir: option.None,
+    migrations_dir: option.None,
+    seeds_dir: option.None,
+    databases: _,
+    error: option.None,
   ) = config
 }
 
@@ -203,6 +224,133 @@ sql_dir = \"src/sql\"
   let assert Config(sql_dir: option.Some("src/sql"), ..) = config
 }
 
+pub fn parse_config_migration_and_seed_dirs_from_toml_test() {
+  let toml =
+    "[tools.marmot]
+database = \"dev.sqlite\"
+migrations_dir = \"db/migrations/curling\"
+seeds_dir = \"db/seeds/curling\"
+"
+  let config = project.parse_config(toml, [], option.None)
+  let assert Config(
+    migrations_dir: option.Some("db/migrations/curling"),
+    seeds_dir: option.Some("db/seeds/curling"),
+    ..,
+  ) = config
+}
+
+pub fn parse_config_database_refs_are_not_selected_without_cli_test() {
+  let toml =
+    "[tools.marmot.databases.curling]
+path = \"db/curling.db\"
+migrations_dir = \"db/migrations/curling\"
+seeds_dir = \"db/seeds/curling\"
+"
+  let config = project.parse_config(toml, [], option.Some("db/env.db"))
+  let assert Config(
+    database: option.None,
+    database_name: option.None,
+    migrations_dir: option.None,
+    seeds_dir: option.None,
+    ..,
+  ) = config
+}
+
+pub fn parse_config_cli_named_database_selects_database_ref_test() {
+  let toml =
+    "[tools.marmot.databases.shared]
+path = \"db/shared.db\"
+migrations_dir = \"db/migrations/shared\"
+seeds_dir = \"db/seeds/shared\"
+
+[tools.marmot.databases.curling]
+path = \"db/curling.db\"
+migrations_dir = \"db/migrations/curling\"
+seeds_dir = \"db/seeds/curling\"
+"
+  let config =
+    project.parse_config(toml, ["--database-name", "shared"], option.None)
+  let assert Config(
+    database: option.Some("db/shared.db"),
+    database_name: option.Some("shared"),
+    migrations_dir: option.Some("db/migrations/shared"),
+    seeds_dir: option.Some("db/seeds/shared"),
+    ..,
+  ) = config
+}
+
+pub fn parse_config_cli_database_path_keeps_named_dirs_test() {
+  let toml =
+    "[tools.marmot.databases.curling]
+path = \"db/curling.db\"
+migrations_dir = \"db/migrations/curling\"
+seeds_dir = \"db/seeds/curling\"
+"
+  let config =
+    project.parse_config(
+      toml,
+      [
+        "--database",
+        "tmp/test.db",
+        "--database-name",
+        "curling",
+      ],
+      option.None,
+    )
+  let assert Config(
+    database: option.Some("tmp/test.db"),
+    database_name: option.Some("curling"),
+    migrations_dir: option.Some("db/migrations/curling"),
+    seeds_dir: option.Some("db/seeds/curling"),
+    ..,
+  ) = config
+}
+
+pub fn parse_config_cli_named_database_wins_over_env_test() {
+  let toml =
+    "[tools.marmot.databases.curling]
+path = \"db/curling.db\"
+"
+  let config =
+    project.parse_config(
+      toml,
+      ["--database-name", "curling"],
+      option.Some("db/env.db"),
+    )
+  let assert Config(
+    database: option.Some("db/curling.db"),
+    database_name: option.Some("curling"),
+    ..,
+  ) = config
+}
+
+pub fn parse_config_missing_cli_named_database_does_not_use_database_path_test() {
+  let toml =
+    "[tools.marmot]
+database = \"db/legacy.db\"
+"
+  let config =
+    project.parse_config(toml, ["--database-name", "missing"], option.None)
+  let assert Config(
+    database: option.None,
+    database_name: option.Some("missing"),
+    ..,
+  ) = config
+}
+
+pub fn parse_config_mixed_database_config_sets_error_test() {
+  let toml =
+    "[tools.marmot]
+database = \"db/app.db\"
+
+[tools.marmot.databases.analytics]
+path = \"db/analytics.db\"
+"
+  let config = project.parse_config(toml, [], option.None)
+  let assert Config(error: option.Some(project.MixedDatabaseConfig), ..) =
+    config
+}
+
 pub fn list_sql_files_test() {
   use <- with_temp_dir("test_tmp2")
 
@@ -224,9 +372,14 @@ pub fn parse_config_flag_without_value_test() {
     project.parse_config("", ["--database", "--output", "src/gen"], option.None)
   let assert Config(
     database: option.None,
+    database_name: option.None,
     output: option.Some("src/gen"),
     query_function: option.None,
     sql_dir: option.None,
+    migrations_dir: option.None,
+    seeds_dir: option.None,
+    databases: _,
+    error: option.None,
   ) = config
 }
 
@@ -254,9 +407,14 @@ pub fn parse_config_flag_as_last_arg_test() {
   let config = project.parse_config("", ["--database"], option.None)
   let assert Config(
     database: option.None,
+    database_name: option.None,
     output: option.None,
     query_function: option.None,
     sql_dir: option.None,
+    migrations_dir: option.None,
+    seeds_dir: option.None,
+    databases: _,
+    error: option.None,
   ) = config
 }
 
@@ -393,9 +551,14 @@ pub fn validate_output_under_src_test() {
   let config =
     Config(
       database: option.None,
+      database_name: option.None,
       output: option.Some("src/generated"),
       query_function: option.None,
       sql_dir: option.None,
+      migrations_dir: option.None,
+      seeds_dir: option.None,
+      databases: dict.new(),
+      error: option.None,
     )
   let assert Ok(Nil) = project.validate_output(config)
 }
@@ -404,9 +567,14 @@ pub fn validate_output_not_under_src_test() {
   let config =
     Config(
       database: option.None,
+      database_name: option.None,
       output: option.Some("gen/output"),
       query_function: option.None,
       sql_dir: option.None,
+      migrations_dir: option.None,
+      seeds_dir: option.None,
+      databases: dict.new(),
+      error: option.None,
     )
   let assert Error(Nil) = project.validate_output(config)
 }
@@ -415,9 +583,14 @@ pub fn validate_output_none_test() {
   let config =
     Config(
       database: option.None,
+      database_name: option.None,
       output: option.None,
       query_function: option.None,
       sql_dir: option.None,
+      migrations_dir: option.None,
+      seeds_dir: option.None,
+      databases: dict.new(),
+      error: option.None,
     )
   let assert Ok(Nil) = project.validate_output(config)
 }
@@ -426,9 +599,14 @@ pub fn validate_output_path_traversal_test() {
   let config =
     Config(
       database: option.None,
+      database_name: option.None,
       output: option.Some("src/../../etc/evil"),
       query_function: option.None,
       sql_dir: option.None,
+      migrations_dir: option.None,
+      seeds_dir: option.None,
+      databases: dict.new(),
+      error: option.None,
     )
   let assert Error(Nil) = project.validate_output(config)
 }
@@ -437,9 +615,14 @@ pub fn validate_output_dot_segments_test() {
   let config =
     Config(
       database: option.None,
+      database_name: option.None,
       output: option.Some("src/./generated"),
       query_function: option.None,
       sql_dir: option.None,
+      migrations_dir: option.None,
+      seeds_dir: option.None,
+      databases: dict.new(),
+      error: option.None,
     )
   let assert Ok(Nil) = project.validate_output(config)
 }
@@ -448,9 +631,14 @@ pub fn validate_output_double_traversal_test() {
   let config =
     Config(
       database: option.None,
+      database_name: option.None,
       output: option.Some("src/a/../../../outside"),
       query_function: option.None,
       sql_dir: option.None,
+      migrations_dir: option.None,
+      seeds_dir: option.None,
+      databases: dict.new(),
+      error: option.None,
     )
   let assert Error(Nil) = project.validate_output(config)
 }

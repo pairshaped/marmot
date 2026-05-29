@@ -757,6 +757,115 @@ pub fn e2e_cli_reset_drops_database_then_runs_migrations_and_seeds_test() {
   }
 }
 
+pub fn e2e_cli_reset_uses_named_database_config_test() {
+  let base = "test_e2e_cli_reset_named_database"
+  let result =
+    rescue(fn() {
+      write_cli_project_with_config(
+        "cli_reset_named_database",
+        base,
+        "\n[tools.marmot.databases.curling]\npath = \"db/curling.db\"\nmigrations_dir = \"db/migrations/curling\"\nseeds_dir = \"db/seeds/curling\"\n",
+      )
+      let assert Ok(_) =
+        simplifile.create_directory_all(base <> "/db/migrations/curling")
+      let assert Ok(_) =
+        simplifile.create_directory_all(base <> "/db/seeds/curling")
+      let assert Ok(_) =
+        simplifile.write(
+          base <> "/db/migrations/curling/001_create_users.sql",
+          "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL)",
+        )
+      let assert Ok(_) =
+        simplifile.write(
+          base <> "/db/seeds/curling/001_add_lucy.sql",
+          "INSERT INTO users (id, name) VALUES (1, 'Lucy')",
+        )
+
+      let exit_code =
+        marmot.run_executable_in_timeout(
+          "gleam",
+          ["run", "-m", "marmot", "reset", "--database-name", "curling"],
+          base,
+          120_000,
+        )
+      let assert 0 = exit_code
+
+      use db <- sqlight.with_connection(base <> "/db/curling.db")
+      let assert Ok(["Lucy"]) =
+        sqlight.query(
+          "SELECT name FROM users",
+          on: db,
+          with: [],
+          expecting: migration_version_decoder(),
+        )
+      Nil
+    })
+  let _ = simplifile.delete(base)
+  case result {
+    Ok(Nil) -> Nil
+    Error(msg) -> panic as msg
+  }
+}
+
+pub fn e2e_cli_migrate_runs_all_named_database_configs_test() {
+  let base = "test_e2e_cli_migrate_all_named_databases"
+  let result =
+    rescue(fn() {
+      write_cli_project_with_config(
+        "cli_migrate_all_named_databases",
+        base,
+        "\n[tools.marmot.databases.app]\npath = \"db/app.db\"\nmigrations_dir = \"db/migrations/app\"\n\n[tools.marmot.databases.analytics]\npath = \"db/analytics.db\"\nmigrations_dir = \"db/migrations/analytics\"\n",
+      )
+      let assert Ok(_) =
+        simplifile.create_directory_all(base <> "/db/migrations/app")
+      let assert Ok(_) =
+        simplifile.create_directory_all(base <> "/db/migrations/analytics")
+      let assert Ok(_) =
+        simplifile.write(
+          base <> "/db/migrations/app/001_create_app_table.sql",
+          "CREATE TABLE app_table (id INTEGER PRIMARY KEY)",
+        )
+      let assert Ok(_) =
+        simplifile.write(
+          base <> "/db/migrations/analytics/001_create_analytics_table.sql",
+          "CREATE TABLE analytics_table (id INTEGER PRIMARY KEY)",
+        )
+
+      let exit_code =
+        marmot.run_executable_in_timeout(
+          "gleam",
+          ["run", "-m", "marmot", "migrate"],
+          base,
+          120_000,
+        )
+      let assert 0 = exit_code
+
+      use app_db <- sqlight.with_connection(base <> "/db/app.db")
+      let assert Ok(["app_table", "schema_migrations"]) =
+        sqlight.query(
+          "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
+          on: app_db,
+          with: [],
+          expecting: migration_version_decoder(),
+        )
+
+      use analytics_db <- sqlight.with_connection(base <> "/db/analytics.db")
+      let assert Ok(["analytics_table", "schema_migrations"]) =
+        sqlight.query(
+          "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
+          on: analytics_db,
+          with: [],
+          expecting: migration_version_decoder(),
+        )
+      Nil
+    })
+  let _ = simplifile.delete(base)
+  case result {
+    Ok(Nil) -> Nil
+    Error(msg) -> panic as msg
+  }
+}
+
 fn migration_version_decoder() -> decode.Decoder(String) {
   use version <- decode.field(0, decode.string)
   decode.success(version)

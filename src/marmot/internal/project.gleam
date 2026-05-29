@@ -21,17 +21,53 @@ import tom
 /// Marmot configuration from gleam.toml [tools.marmot], CLI flags, and env vars.
 ///
 /// All fields are optional. Precedence is resolved in `parse_config`:
-/// database: CLI > env > toml; output: CLI > toml; the rest are toml-only.
+/// database: CLI path > CLI name > env > toml; output: CLI >
+/// toml; migration and seed directories: selected database reference > toml;
+/// the rest are toml-only.
 pub type Config {
   Config(
     /// Path to the SQLite database file used for introspection.
     database: Option(String),
+    /// Named database reference selected from `[tools.marmot.databases]`.
+    database_name: Option(String),
     /// Output directory for generated modules (must be under `src/`).
     output: Option(String),
     /// Fully-qualified wrapper function replacing `sqlight.query`.
     query_function: Option(String),
     /// Custom directory for SQL file discovery instead of `src/**/sql/`.
     sql_dir: Option(String),
+    /// Custom directory for migration files instead of `db/migrations/`.
+    migrations_dir: Option(String),
+    /// Custom directory for seed files instead of `db/seeds/`.
+    seeds_dir: Option(String),
+    /// Named database references from `[tools.marmot.databases]`.
+    databases: dict.Dict(String, DatabaseReference),
+    /// Config problem found while preserving the old parse_config API.
+    error: Option(ConfigError),
+  )
+}
+
+pub type DatabaseReference {
+  DatabaseReference(
+    path: Option(String),
+    migrations_dir: Option(String),
+    seeds_dir: Option(String),
+  )
+}
+
+pub type ConfigError {
+  MixedDatabaseConfig
+}
+
+type TomlConfig {
+  TomlConfig(
+    database: Option(String),
+    output: Option(String),
+    query_function: Option(String),
+    sql_dir: Option(String),
+    migrations_dir: Option(String),
+    seeds_dir: Option(String),
+    databases: dict.Dict(String, DatabaseReference),
   )
 }
 
@@ -44,59 +80,182 @@ pub fn parse_config(
   args: List(String),
   env_database: Option(String),
 ) -> Config {
-  let #(toml_database, toml_output, toml_query_function, toml_sql_dir) = case
-    tom.parse(toml_content)
-  {
-    Ok(parsed) -> {
-      warn_unknown_config_keys(parsed)
-      #(
-        tom.get_string(parsed, ["tools", "marmot", "database"])
-          |> result.map(option.Some)
-          |> result.unwrap(option.None),
-        tom.get_string(parsed, ["tools", "marmot", "output"])
-          |> result.map(option.Some)
-          |> result.unwrap(option.None),
-        tom.get_string(parsed, ["tools", "marmot", "query_function"])
-          |> result.map(option.Some)
-          |> result.unwrap(option.None),
-        tom.get_string(parsed, ["tools", "marmot", "sql_dir"])
-          |> result.map(option.Some)
-          |> result.unwrap(option.None),
-      )
-    }
-    Error(_) -> #(option.None, option.None, option.None, option.None)
-  }
-
+  let toml_config = parse_toml_config(toml_content)
   let cli = parse_cli_args(args)
+  let database_name = cli.database_name
+  let database_ref =
+    selected_database_reference(toml_config.databases, database_name)
+  let config_error = database_config_error(toml_config)
 
   let database = case cli.database {
     option.Some(_) -> cli.database
     option.None ->
-      case env_database {
-        option.Some(_) -> env_database
-        option.None -> toml_database
+      case database_name {
+        option.Some(_) ->
+          case database_ref {
+            option.Some(ref) -> ref.path
+            option.None -> option.None
+          }
+        option.None ->
+          case dict.is_empty(toml_config.databases) {
+            False -> option.None
+            True ->
+              case env_database {
+                option.Some(_) -> env_database
+                option.None -> toml_config.database
+              }
+          }
       }
   }
 
   let output = case cli.output {
     option.Some(_) -> cli.output
-    option.None -> toml_output
+    option.None -> toml_config.output
+  }
+
+  let migrations_dir = case database_ref {
+    option.Some(ref) ->
+      case ref.migrations_dir {
+        option.Some(_) -> ref.migrations_dir
+        option.None -> toml_config.migrations_dir
+      }
+    option.None -> toml_config.migrations_dir
+  }
+
+  let seeds_dir = case database_ref {
+    option.Some(ref) ->
+      case ref.seeds_dir {
+        option.Some(_) -> ref.seeds_dir
+        option.None -> toml_config.seeds_dir
+      }
+    option.None -> toml_config.seeds_dir
   }
 
   Config(
     database:,
+    database_name:,
     output:,
-    query_function: toml_query_function,
-    sql_dir: toml_sql_dir,
+    query_function: toml_config.query_function,
+    sql_dir: toml_config.sql_dir,
+    migrations_dir:,
+    seeds_dir:,
+    databases: toml_config.databases,
+    error: config_error,
   )
 }
 
+fn database_config_error(toml_config: TomlConfig) -> Option(ConfigError) {
+  case toml_config.database, dict.is_empty(toml_config.databases) {
+    option.Some(_), False -> option.Some(MixedDatabaseConfig)
+    _, _ -> option.None
+  }
+}
+
+pub fn config_error_to_string(error: ConfigError) -> String {
+  case error {
+    MixedDatabaseConfig ->
+      "error: Mixed database configuration
+  \u{250c}\u{2500} gleam.toml
+  \u{2502}
+  \u{2502} [tools.marmot].database cannot be used with [tools.marmot.databases].
+  \u{2502}
+  hint: Use database/migrations_dir/seeds_dir for one database, or define only named databases and pass --database-name when one command should target a single database."
+  }
+}
+
+fn parse_toml_config(toml_content: String) -> TomlConfig {
+  case tom.parse(toml_content) {
+    Ok(parsed) -> {
+      warn_unknown_config_keys(parsed)
+      TomlConfig(
+        database: get_toml_string(parsed, ["tools", "marmot", "database"]),
+        output: get_toml_string(parsed, ["tools", "marmot", "output"]),
+        query_function: get_toml_string(parsed, [
+          "tools",
+          "marmot",
+          "query_function",
+        ]),
+        sql_dir: get_toml_string(parsed, ["tools", "marmot", "sql_dir"]),
+        migrations_dir: get_toml_string(parsed, [
+          "tools",
+          "marmot",
+          "migrations_dir",
+        ]),
+        seeds_dir: get_toml_string(parsed, ["tools", "marmot", "seeds_dir"]),
+        databases: parse_database_references(parsed),
+      )
+    }
+    Error(_) -> empty_toml_config()
+  }
+}
+
+fn empty_toml_config() -> TomlConfig {
+  TomlConfig(
+    database: option.None,
+    output: option.None,
+    query_function: option.None,
+    sql_dir: option.None,
+    migrations_dir: option.None,
+    seeds_dir: option.None,
+    databases: dict.new(),
+  )
+}
+
+fn get_toml_string(
+  parsed: dict.Dict(String, tom.Toml),
+  key: List(String),
+) -> Option(String) {
+  tom.get_string(parsed, key)
+  |> result.map(option.Some)
+  |> result.unwrap(option.None)
+}
+
+fn parse_database_references(
+  parsed: dict.Dict(String, tom.Toml),
+) -> dict.Dict(String, DatabaseReference) {
+  case tom.get_table(parsed, ["tools", "marmot", "databases"]) {
+    Error(_) -> dict.new()
+    Ok(databases) ->
+      databases
+      |> dict.fold(dict.new(), fn(acc, name, value) {
+        case tom.as_table(value) {
+          Error(_) -> acc
+          Ok(table) -> dict.insert(acc, name, parse_database_reference(table))
+        }
+      })
+  }
+}
+
+fn parse_database_reference(
+  table: dict.Dict(String, tom.Toml),
+) -> DatabaseReference {
+  DatabaseReference(
+    path: get_toml_string(table, ["path"]),
+    migrations_dir: get_toml_string(table, ["migrations_dir"]),
+    seeds_dir: get_toml_string(table, ["seeds_dir"]),
+  )
+}
+
+fn selected_database_reference(
+  databases: dict.Dict(String, DatabaseReference),
+  database_name: Option(String),
+) -> Option(DatabaseReference) {
+  use name <- option.then(database_name)
+  dict.get(databases, name)
+  |> result.map(option.Some)
+  |> result.unwrap(option.None)
+}
+
 type CliArgs {
-  CliArgs(database: Option(String), output: Option(String))
+  CliArgs(
+    database: Option(String),
+    database_name: Option(String),
+    output: Option(String),
+  )
 }
 
 fn parse_cli_args(args: List(String)) -> CliArgs {
-  parse_cli_args_loop(args, CliArgs(option.None, option.None))
+  parse_cli_args_loop(args, CliArgs(option.None, option.None, option.None))
 }
 
 fn parse_cli_args_loop(args: List(String), acc: CliArgs) -> CliArgs {
@@ -108,6 +267,15 @@ fn parse_cli_args_loop(args: List(String), acc: CliArgs) -> CliArgs {
           parse_cli_args_loop(
             rest,
             CliArgs(..acc, database: option.Some(value)),
+          )
+      }
+    ["--database-name", value, ..rest] ->
+      case is_missing_flag_value(value) {
+        True -> parse_cli_args_loop([value, ..rest], acc)
+        False ->
+          parse_cli_args_loop(
+            rest,
+            CliArgs(..acc, database_name: option.Some(value)),
           )
       }
     ["--output", value, ..rest] ->
@@ -151,8 +319,29 @@ fn parse_cli_equals_arg(
               )
           }
         }
-        False -> parse_cli_args_loop(rest, acc)
+        False -> parse_cli_database_name_equals_arg(arg, rest, acc)
       }
+  }
+}
+
+fn parse_cli_database_name_equals_arg(
+  arg: String,
+  rest: List(String),
+  acc: CliArgs,
+) -> CliArgs {
+  case string.starts_with(arg, "--database-name=") {
+    True -> {
+      let value = string.drop_start(arg, string.length("--database-name="))
+      case is_empty_flag_value(value) {
+        True -> parse_cli_args_loop(rest, acc)
+        False ->
+          parse_cli_args_loop(
+            rest,
+            CliArgs(..acc, database_name: option.Some(value)),
+          )
+      }
+    }
+    False -> parse_cli_args_loop(rest, acc)
   }
 }
 
@@ -341,7 +530,15 @@ fn resolve_path(path: String) -> String {
   |> string.join("/")
 }
 
-const known_config_keys = ["database", "output", "query_function", "sql_dir"]
+const known_config_keys = [
+  "database",
+  "databases",
+  "output",
+  "query_function",
+  "sql_dir",
+  "migrations_dir",
+  "seeds_dir",
+]
 
 fn warn_unknown_config_keys(parsed: dict.Dict(String, tom.Toml)) -> Nil {
   case tom.get_table(parsed, ["tools", "marmot"]) {
