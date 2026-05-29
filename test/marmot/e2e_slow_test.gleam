@@ -494,6 +494,72 @@ pub fn e2e_cli_no_sql_directories_test() {
   }
 }
 
+pub fn e2e_cli_generate_runs_all_named_database_configs_test() {
+  let base = "test_e2e_cli_generate_all_named_databases"
+  let result =
+    rescue(fn() {
+      write_cli_project_with_config(
+        "cli_generate_all_named_databases",
+        base,
+        "\n[[tools.marmot.databases]]\nname = \"app\"\n\n[[tools.marmot.databases]]\nname = \"analytics\"\n",
+      )
+
+      let assert Ok(_) = simplifile.create_directory_all(base <> "/db/app")
+      let assert Ok(app_db) = sqlight.open(base <> "/db/app/db.sqlite")
+      let assert Ok(_) =
+        sqlight.exec(
+          "CREATE TABLE users (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+          on: app_db,
+        )
+      let _ = sqlight.close(app_db)
+
+      let assert Ok(_) =
+        simplifile.create_directory_all(base <> "/db/analytics")
+      let assert Ok(analytics_db) =
+        sqlight.open(base <> "/db/analytics/db.sqlite")
+      let assert Ok(_) =
+        sqlight.exec(
+          "CREATE TABLE events (id INTEGER NOT NULL PRIMARY KEY, title TEXT NOT NULL)",
+          on: analytics_db,
+        )
+      let _ = sqlight.close(analytics_db)
+
+      let assert Ok(_) = simplifile.create_directory_all(base <> "/src/app/sql")
+      let assert Ok(_) =
+        simplifile.write(
+          base <> "/src/app/sql/find_user.sql",
+          "SELECT id, name FROM users WHERE id = ?",
+        )
+      let assert Ok(_) =
+        simplifile.create_directory_all(base <> "/src/analytics/sql")
+      let assert Ok(_) =
+        simplifile.write(
+          base <> "/src/analytics/sql/list_events.sql",
+          "SELECT id, title FROM events",
+        )
+
+      let exit_code =
+        marmot.run_executable_in_timeout(
+          "gleam",
+          ["run", "-m", "marmot"],
+          base,
+          120_000,
+        )
+
+      let assert Ok(True) =
+        simplifile.is_file(base <> "/src/generated/sql/app_sql.gleam")
+      let assert Ok(True) =
+        simplifile.is_file(base <> "/src/generated/sql/analytics_sql.gleam")
+      let assert 0 = exit_code
+      Nil
+    })
+  let _ = simplifile.delete(base)
+  case result {
+    Ok(Nil) -> Nil
+    Error(msg) -> panic as msg
+  }
+}
+
 pub fn e2e_cli_configured_sql_dir_missing_test() {
   let base = "test_e2e_cli_missing_sql_dir"
   let result =

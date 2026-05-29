@@ -33,27 +33,29 @@ migrations_dir = "db/migrations"
 seeds_dir = "db/seeds"
 ```
 
+## Multiple Databases
+
 For projects with more than one SQLite database, use named database refs:
 
 ```toml
-[tools.marmot.databases.app]
-path = "db/app.db"
-migrations_dir = "db/migrations/app"
-seeds_dir = "db/seeds/app"
+[[tools.marmot.databases]]
+name = "app"
 
-[tools.marmot.databases.analytics]
-path = "db/analytics.db"
-migrations_dir = "db/migrations/analytics"
-seeds_dir = "db/seeds/analytics"
+[[tools.marmot.databases]]
+name = "analytics"
 ```
+
+`name = "app"` derives `db/app/db.sqlite`, `db/app/migrations`,
+`db/app/seeds`, and `src/app/sql`. `path`, `migrations_dir`, `seeds_dir`,
+`sql_dir`, and `output` can be set on a named ref to override the derived
+values.
 
 Do not mix `[tools.marmot].database` with `[tools.marmot.databases]`. Marmot
 reports a config error if both modes are present.
 
-When named refs are configured, `migrate`, `seed`, and `reset` run every named
-ref if no database is selected. Use `--database-name NAME` to run one named ref.
-Code generation always needs one schema, so named-ref projects must pass
-`--database-name NAME` when running `gleam run -m marmot`.
+When named refs are configured, `generate`, `migrate`, `seed`, and `reset` run
+every named ref if no database is selected. Use `--database-name NAME` to run
+one named ref.
 
 Public API:
 
@@ -89,7 +91,7 @@ branching workflows, checksums, or a larger migration system.
 
 ## How it works
 
-1. Reads config: `--database` CLI flag > `--database-name` CLI flag > `DATABASE_URL` env > `gleam.toml [tools.marmot]`
+1. Reads config: `--database` CLI flag > `--database-name` CLI flag > `gleam.toml [tools.marmot]`
 2. Opens the SQLite file, scans `src/` for `sql/` directories
 3. For each `.sql` file: reads SQL, tokenizes it, parses the statement shape, loads schema metadata with `PRAGMA table_xinfo`/`PRAGMA table_list`, and runs `EXPLAIN`
 4. Generates a `sql.gleam` module per `sql/` directory with typed functions + decoders
@@ -98,12 +100,15 @@ branching workflows, checksums, or a larger migration system.
 
 | Key | Default | Purpose |
 |---|---|---|
-| `database` | none | Path to the SQLite file used for introspection (also `DATABASE_URL` env, `--database` CLI) |
+| `database` | none | Path to the SQLite file used for introspection (also `--database` CLI) |
 | `migrations_dir` | `db/migrations` | Directory for migration files in simple database mode. |
 | `seeds_dir` | `db/seeds` | Directory for seed files in simple database mode. |
-| `databases.NAME.path` | none | Path to the SQLite file for a named database ref. |
-| `databases.NAME.migrations_dir` | `db/migrations/NAME` | Directory for a named database ref's migration files. |
-| `databases.NAME.seeds_dir` | `db/seeds/NAME` | Directory for a named database ref's seed files. |
+| `databases[].name` / `databases.NAME` | none | Named database ref. Array form uses `name = "app"`; table form uses `[tools.marmot.databases.app]`. |
+| `databases.NAME.path` | `db/NAME/db.sqlite` | Path to the SQLite file for a named database ref. |
+| `databases.NAME.migrations_dir` | `db/NAME/migrations` | Directory for a named database ref's migration files. |
+| `databases.NAME.seeds_dir` | `db/NAME/seeds` | Directory for a named database ref's seed files. |
+| `databases.NAME.sql_dir` | `src/NAME/sql` | SQL discovery root for a named database ref. |
+| `databases.NAME.output` | `output` value | Output directory override for a named database ref. |
 | `output` | `src/generated/sql` | Output directory for generated modules (must be under `src/`). Marmot infers the directory structure by finding the longest common path prefix between `output` and each `sql/` directory, then uses the remainder as the namespace (e.g. `src/app/users/sql/` with default output produces `src/generated/sql/app/users_sql.gleam`). |
 | `sql_dir` | none | Custom directory for SQL file discovery. When set, Marmot recursively finds all directories under this path that contain `.sql` files, instead of the default `src/**/sql/` convention. |
 | `query_function` | `sqlight.query` | Fully-qualified function (`module/path.name`) that generated code calls instead of `sqlight.query`. Wrapper must match `sqlight.query`'s labelled signature (`sql: String, on connection, with parameters, expecting decoder`). Useful for logging, timing, instrumentation. |

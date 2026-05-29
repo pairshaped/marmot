@@ -279,6 +279,62 @@ seeds_dir = \"db/seeds/curling\"
   ) = config
 }
 
+pub fn parse_config_named_database_derives_default_paths_test() {
+  let toml =
+    "[tools.marmot.databases.primary]
+"
+  let config =
+    project.parse_config(toml, ["--database-name", "primary"], option.None)
+  let assert Config(
+    database: option.Some("db/primary/db.sqlite"),
+    database_name: option.Some("primary"),
+    output: option.None,
+    sql_dir: option.Some("src/primary/sql"),
+    migrations_dir: option.Some("db/primary/migrations"),
+    seeds_dir: option.Some("db/primary/seeds"),
+    ..,
+  ) = config
+}
+
+pub fn parse_config_named_database_array_uses_name_test() {
+  let toml =
+    "[[tools.marmot.databases]]
+name = \"primary\"
+"
+  let config =
+    project.parse_config(toml, ["--database-name", "primary"], option.None)
+  let assert Config(
+    database: option.Some("db/primary/db.sqlite"),
+    database_name: option.Some("primary"),
+    sql_dir: option.Some("src/primary/sql"),
+    migrations_dir: option.Some("db/primary/migrations"),
+    seeds_dir: option.Some("db/primary/seeds"),
+    ..,
+  ) = config
+}
+
+pub fn parse_config_named_database_allows_overrides_test() {
+  let toml =
+    "[[tools.marmot.databases]]
+name = \"primary\"
+path = \"priv/db/main.sqlite\"
+migrations_dir = \"priv/db/migrations\"
+seeds_dir = \"priv/db/seeds\"
+sql_dir = \"src/db/sql\"
+output = \"src/db/generated\"
+"
+  let config =
+    project.parse_config(toml, ["--database-name", "primary"], option.None)
+  let assert Config(
+    database: option.Some("priv/db/main.sqlite"),
+    output: option.Some("src/db/generated"),
+    sql_dir: option.Some("src/db/sql"),
+    migrations_dir: option.Some("priv/db/migrations"),
+    seeds_dir: option.Some("priv/db/seeds"),
+    ..,
+  ) = config
+}
+
 pub fn parse_config_cli_database_path_keeps_named_dirs_test() {
   let toml =
     "[tools.marmot.databases.curling]

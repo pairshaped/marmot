@@ -22,8 +22,8 @@ import tom
 ///
 /// All fields are optional. Precedence is resolved in `parse_config`:
 /// database: CLI path > CLI name > env > toml; output: CLI >
-/// toml; migration and seed directories: selected database reference > toml;
-/// the rest are toml-only.
+/// selected database reference > toml; migration, seed, and SQL directories:
+/// selected database reference > toml; the rest are toml-only.
 pub type Config {
   Config(
     /// Path to the SQLite database file used for introspection.
@@ -52,6 +52,8 @@ pub type DatabaseReference {
     path: Option(String),
     migrations_dir: Option(String),
     seeds_dir: Option(String),
+    sql_dir: Option(String),
+    output: Option(String),
   )
 }
 
@@ -91,9 +93,9 @@ pub fn parse_config(
     option.Some(_) -> cli.database
     option.None ->
       case database_name {
-        option.Some(_) ->
+        option.Some(name) ->
           case database_ref {
-            option.Some(ref) -> ref.path
+            option.Some(ref) -> option.Some(named_database_path(name, ref))
             option.None -> option.None
           }
         option.None ->
@@ -110,13 +112,34 @@ pub fn parse_config(
 
   let output = case cli.output {
     option.Some(_) -> cli.output
-    option.None -> toml_config.output
+    option.None ->
+      case database_ref {
+        option.Some(ref) ->
+          ref.output
+          |> option.or(toml_config.output)
+        option.None -> toml_config.output
+      }
+  }
+
+  let sql_dir = case database_ref {
+    option.Some(ref) ->
+      case database_name {
+        option.Some(name) ->
+          named_database_sql_dir(name, ref, toml_config.sql_dir)
+        option.None -> toml_config.sql_dir
+      }
+    option.None -> toml_config.sql_dir
   }
 
   let migrations_dir = case database_ref {
     option.Some(ref) ->
-      case ref.migrations_dir {
-        option.Some(_) -> ref.migrations_dir
+      case database_name {
+        option.Some(name) ->
+          option.Some(named_database_migrations_dir(
+            name,
+            ref,
+            toml_config.migrations_dir,
+          ))
         option.None -> toml_config.migrations_dir
       }
     option.None -> toml_config.migrations_dir
@@ -124,8 +147,9 @@ pub fn parse_config(
 
   let seeds_dir = case database_ref {
     option.Some(ref) ->
-      case ref.seeds_dir {
-        option.Some(_) -> ref.seeds_dir
+      case database_name {
+        option.Some(name) ->
+          option.Some(named_database_seeds_dir(name, ref, toml_config.seeds_dir))
         option.None -> toml_config.seeds_dir
       }
     option.None -> toml_config.seeds_dir
@@ -136,7 +160,7 @@ pub fn parse_config(
     database_name:,
     output:,
     query_function: toml_config.query_function,
-    sql_dir: toml_config.sql_dir,
+    sql_dir:,
     migrations_dir:,
     seeds_dir:,
     databases: toml_config.databases,
@@ -214,13 +238,34 @@ fn parse_database_references(
   parsed: dict.Dict(String, tom.Toml),
 ) -> dict.Dict(String, DatabaseReference) {
   case tom.get_table(parsed, ["tools", "marmot", "databases"]) {
-    Error(_) -> dict.new()
+    Error(_) -> parse_database_reference_array(parsed)
     Ok(databases) ->
       databases
       |> dict.fold(dict.new(), fn(acc, name, value) {
         case tom.as_table(value) {
           Error(_) -> acc
           Ok(table) -> dict.insert(acc, name, parse_database_reference(table))
+        }
+      })
+  }
+}
+
+fn parse_database_reference_array(
+  parsed: dict.Dict(String, tom.Toml),
+) -> dict.Dict(String, DatabaseReference) {
+  case tom.get_array(parsed, ["tools", "marmot", "databases"]) {
+    Error(_) -> dict.new()
+    Ok(databases) ->
+      databases
+      |> list.fold(dict.new(), fn(acc, value) {
+        case tom.as_table(value) {
+          Error(_) -> acc
+          Ok(table) ->
+            case get_toml_string(table, ["name"]) {
+              option.None -> acc
+              option.Some(name) ->
+                dict.insert(acc, name, parse_database_reference(table))
+            }
         }
       })
   }
@@ -233,7 +278,53 @@ fn parse_database_reference(
     path: get_toml_string(table, ["path"]),
     migrations_dir: get_toml_string(table, ["migrations_dir"]),
     seeds_dir: get_toml_string(table, ["seeds_dir"]),
+    sql_dir: get_toml_string(table, ["sql_dir"]),
+    output: get_toml_string(table, ["output"]),
   )
+}
+
+pub fn named_database_path(name: String, ref: DatabaseReference) -> String {
+  ref.path
+  |> option.unwrap("db/" <> name <> "/db.sqlite")
+}
+
+pub fn named_database_migrations_dir(
+  name: String,
+  ref: DatabaseReference,
+  fallback: Option(String),
+) -> String {
+  ref.migrations_dir
+  |> option.or(fallback)
+  |> option.unwrap("db/" <> name <> "/migrations")
+}
+
+pub fn named_database_seeds_dir(
+  name: String,
+  ref: DatabaseReference,
+  fallback: Option(String),
+) -> String {
+  ref.seeds_dir
+  |> option.or(fallback)
+  |> option.unwrap("db/" <> name <> "/seeds")
+}
+
+pub fn named_database_sql_dir(
+  name: String,
+  ref: DatabaseReference,
+  fallback: Option(String),
+) -> Option(String) {
+  ref.sql_dir
+  |> option.or(fallback)
+  |> option.or(option.Some("src/" <> name <> "/sql"))
+}
+
+pub fn named_database_output(
+  _name: String,
+  ref: DatabaseReference,
+  fallback: Option(String),
+) -> Option(String) {
+  ref.output
+  |> option.or(fallback)
 }
 
 fn selected_database_reference(

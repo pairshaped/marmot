@@ -46,10 +46,10 @@ flowchart TD
 
 Without one of those commands, `run_generate()`:
 - Reads `gleam.toml` for `[tools.marmot]` config
-- Applies database precedence: `--database` CLI > `--database-name` CLI >
-  `DATABASE_URL` env > `gleam.toml` path
-- Opens the SQLite database via `sqlight`
-- Calls `generate_all()`
+- Resolves one simple database target, one selected named ref, or every named
+  ref when no name is selected
+- Opens each SQLite database via `sqlight`
+- Calls `generate_all()`, scoped to that target's SQL and output config
 
 `generate_all()`:
 1. Finds SQL directories (default: `src/**/sql/`; or `sql_dir` config)

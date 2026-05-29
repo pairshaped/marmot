@@ -149,15 +149,7 @@ SQLite database file where your schema is defined. Marmot reads the database
 path with the following precedence:
 
 1. `--database` CLI flag
-2. `--database-name` CLI flag
-3. `DATABASE_URL` environment variable
-4. `database` field in `[tools.marmot]` section of `gleam.toml`
-
-Set `DATABASE_URL`:
-
-```sh
-export DATABASE_URL=dev.sqlite
-```
+2. `database` field in `[tools.marmot]` section of `gleam.toml`
 
 Pass `--database` when you run Marmot:
 
@@ -181,32 +173,48 @@ gleam run -m marmot
 If no database is configured, Marmot shows an error message listing the
 available options.
 
+### Multiple Databases
+
 For projects with more than one SQLite database, define named database
 references in `gleam.toml`. Do not combine this form with
 `[tools.marmot].database`.
 
 ```toml
-[tools.marmot.databases.app]
-path = "db/app.db"
-migrations_dir = "db/migrations/app"
-seeds_dir = "db/seeds/app"
+[[tools.marmot.databases]]
+name = "app"
 
-[tools.marmot.databases.analytics]
-path = "db/analytics.db"
-migrations_dir = "db/migrations/analytics"
-seeds_dir = "db/seeds/analytics"
+[[tools.marmot.databases]]
+name = "analytics"
 ```
 
-Run database commands against every named reference:
+For `name = "app"`, Marmot derives these defaults:
+
+- SQLite database: `db/app/db.sqlite`
+- Migrations: `db/app/migrations`
+- Seeds: `db/app/seeds`
+- SQL files: `src/app/sql`
+- Generated modules: `src/generated/sql/`, using `app` as the namespace
+
+You can override any derived path:
+
+```toml
+[[tools.marmot.databases]]
+name = "analytics"
+path = "priv/analytics.sqlite"
+migrations_dir = "priv/analytics/migrations"
+seeds_dir = "priv/analytics/seeds"
+sql_dir = "src/analytics_queries"
+output = "src/analytics/generated"
+```
+
+Run commands against every named reference:
 
 ```sh
+gleam run -m marmot
 gleam run -m marmot migrate
 gleam run -m marmot seed
 gleam run -m marmot reset
 ```
-
-In named-database mode, those commands use the named refs from `gleam.toml`
-unless you pass `--database` or `--database-name`.
 
 Pick one named database when you only want one:
 
@@ -217,15 +225,8 @@ gleam run -m marmot seed --database-name analytics
 gleam run -m marmot reset --database-name analytics
 ```
 
-Code generation always uses one database schema. If a project only has named
-database refs, pass `--database-name` when running `gleam run -m marmot`.
-
 The existing `database = "dev.sqlite"` form is still supported for
-single-database projects.
-
-If both `--database` and `--database-name` are passed, the explicit path from
-`--database` wins for the SQLite file, while the named reference can still
-supply `migrations_dir` and `seeds_dir`.
+single-database projects and keeps the existing default paths.
 
 To print CLI usage:
 
@@ -267,14 +268,14 @@ Run migrations with:
 gleam run -m marmot migrate --database dev.sqlite
 ```
 
-You can also pass the database path through `DATABASE_URL`, `--database-name`,
-or `[tools.marmot].database`, using the same precedence as code generation.
+You can also select the database with `--database-name` or
+`[tools.marmot].database`, using the same precedence as code generation.
 To use another migration directory, set `migrations_dir` in `gleam.toml`:
 
 ```toml
 [tools.marmot]
-database = "db/app.db"
-migrations_dir = "db/migrations/app"
+database = "db/app/db.sqlite"
+migrations_dir = "db/app/migrations"
 ```
 
 The runner:
@@ -317,8 +318,8 @@ To use another seed directory, set `seeds_dir` in `gleam.toml`:
 
 ```toml
 [tools.marmot]
-database = "db/app.db"
-seeds_dir = "db/seeds/app"
+database = "db/app/db.sqlite"
+seeds_dir = "db/app/seeds"
 ```
 
 The seed runner:
