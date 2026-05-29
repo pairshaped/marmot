@@ -12,21 +12,6 @@ pub type StatementType {
   Other
 }
 
-pub fn classify_statement(tokens: List(Token)) -> StatementType {
-  case tokens {
-    [Word(w), ..] ->
-      case string.uppercase(w) {
-        "SELECT" -> Select
-        "INSERT" -> Insert
-        "UPDATE" -> Update
-        "DELETE" -> Delete
-        "REPLACE" -> Replace
-        _ -> Other
-      }
-    _ -> Other
-  }
-}
-
 fn extract_name_after_keyword(tokens: List(Token), keyword: String) -> String {
   case tokenize.split_at_keyword(tokens, keyword) {
     Ok(#(_, after)) -> tokenize.first_word(after)

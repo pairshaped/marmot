@@ -141,7 +141,7 @@ pub fn generate_module(
 /// When `query_function` is set (e.g., `Some("server/db.query")`) the
 /// generated code calls through the configured wrapper function instead of
 /// `sqlight.query`.
-pub fn generate_function_with_config(
+fn generate_function_with_config(
   q: Query,
   query_function: Option(String),
 ) -> String {
@@ -420,7 +420,7 @@ fn generate_row_type_named(type_name: String, columns: List(Column)) -> String {
   <> "\n  )\n}"
 }
 
-pub fn shared_decoder_name(type_name: String) -> String {
+fn shared_decoder_name(type_name: String) -> String {
   pascal_to_snake(type_name) <> "_decoder"
 }
 

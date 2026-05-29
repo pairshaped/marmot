@@ -9,6 +9,7 @@
 //// What lives elsewhere: .sql file processing -> marmot.gleam; SQL
 //// introspection -> sqlite.gleam; code generation -> codegen.gleam.
 
+import gleam/bool
 import gleam/dict
 import gleam/io
 import gleam/list
@@ -400,10 +401,8 @@ fn path_join_namespace(base: String, name: String) -> String {
 }
 
 fn trim_trailing_slash(path: String) -> String {
-  case string.ends_with(path, "/") {
-    True -> string.drop_end(path, 1)
-    False -> path
-  }
+  use <- bool.guard(!string.ends_with(path, "/"), path)
+  string.drop_end(path, 1)
 }
 
 fn path_last_segment(path: String) -> String {

@@ -23,9 +23,16 @@ birdie = ">= 2.0.0 and < 3.0.0"
 glinter = ">= 2.19.0 and < 3.0.0"
 
 [tools.glinter.rules]
-# Tech debt: re-enable as warnings are resolved.
-# label_possible (203), thrown_away_error (83), deep_nesting (55),
-# unused_exports (15), error_context_lost (2), stringly_typed_error (1)
+# label_possible fires on every function parameter with a matching-type argument
+# at the call site (477 warnings). Adding labels to internal helpers is noise.
 label_possible = "off"
+# unused_exports flags pub values that no other compiled module references. It
+# cannot distinguish library public API, @internal functions consumed by tests,
+# or cross-module sharing forced by Gleam's binary visibility. The functions
+# that were genuinely unused have been made private.
 unused_exports = "off"
+# thrown_away_error fires on every Error(_) pattern where the discriminant is
+# discarded (106 warnings). Most are intentional: the caller prints a
+# user-facing message instead of propagating, or falls back to a default.
+# Binding every discarded error would add dead variables.
 thrown_away_error = "off"

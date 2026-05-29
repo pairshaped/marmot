@@ -301,8 +301,7 @@ fn strip_trailing_join_modifiers(reversed_tokens: List(Token)) -> List(Token) {
 
 // ---- RETURNING column parsing ----
 
-/// Parse a RETURNING body slice into column names. The whole-statement helper
-/// `parse_returning_columns/1` is now a shim that slices and delegates.
+/// Parse a RETURNING body slice into column names.
 pub fn parse_returning_body(returning_tokens: List(Token)) -> List(String) {
   tokenize.split_on_commas(returning_tokens)
   |> list.map(fn(group) {
@@ -311,11 +310,4 @@ pub fn parse_returning_body(returning_tokens: List(Token)) -> List(String) {
       Error(_) -> util.token_list_to_name(group)
     }
   })
-}
-
-pub fn parse_returning_columns(tokens: List(Token)) -> List(String) {
-  case tokenize.split_at_keyword(tokens, "RETURNING") {
-    Error(_) -> []
-    Ok(#(_, after)) -> parse_returning_body(after)
-  }
 }

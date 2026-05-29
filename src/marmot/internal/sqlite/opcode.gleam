@@ -290,7 +290,7 @@ fn get_env(name: String) -> Option(String)
 /// Look up a column by cursor and index.
 /// Returns Error(Nil) when column resolution fails, after logging a warning
 /// so users can diagnose type inference gaps.
-pub fn resolve_column(
+fn resolve_column(
   cursor: Int,
   col_idx: Int,
   cursor_table: Dict(Int, String),

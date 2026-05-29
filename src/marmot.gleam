@@ -659,7 +659,7 @@ fn warn_subdirectories(sql_dir: String) -> Nil {
 
 fn write_module_file(output: String, module_content: String) -> Bool {
   case ensure_parent_dir(output) {
-    Error(msg) -> {
+    Error(MakeDirError(msg)) -> {
       io.println_error(
         "error: Could not create parent directory for "
         <> output
@@ -683,7 +683,7 @@ fn write_module_file(output: String, module_content: String) -> Bool {
 }
 
 @internal
-pub fn ensure_parent_dir(path: String) -> Result(Nil, String) {
+pub fn ensure_parent_dir(path: String) -> Result(Nil, MakeDirError) {
   let parent =
     path
     |> string.split("/")
@@ -698,7 +698,7 @@ pub fn ensure_parent_dir(path: String) -> Result(Nil, String) {
     dir ->
       case simplifile.create_directory_all(dir) {
         Ok(_) -> Ok(Nil)
-        Error(err) -> Error(simplifile.describe_error(err))
+        Error(err) -> Error(MakeDirError(simplifile.describe_error(err)))
       }
   }
 }
@@ -1070,6 +1070,12 @@ fn timer_sleep(ms: Int) -> Nil
 @internal
 pub type MakeTmpFileError {
   MakeTmpFileError(String)
+}
+
+/// Error from ensure_parent_dir when the parent directory cannot be created.
+@internal
+pub type MakeDirError {
+  MakeDirError(String)
 }
 
 /// Create a temp file with a cryptographically random name and write content

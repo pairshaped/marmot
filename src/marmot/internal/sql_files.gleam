@@ -216,24 +216,30 @@ fn apply_file(
     Ok(_) ->
       case tracking_table {
         option.None -> commit_transaction(db, file)
-        option.Some(table_name) -> {
-          case record_version(db, table_name, file.version, file.path) {
-            Error(err) -> {
-              let _rollback = rollback_transaction(db)
-              Error(err)
-            }
-
-            Ok(_) -> commit_transaction(db, file)
-          }
-        }
+        option.Some(table_name) ->
+          record_version_and_commit(db, table_name, file)
       }
+  }
+}
+
+fn record_version_and_commit(
+  db: sqlight.Connection,
+  table_name: String,
+  file: SqlFile,
+) -> Result(Nil, SqlFilesError) {
+  case record_version(db, table_name, file.version, file.path) {
+    Error(err) -> {
+      let _rollback = rollback_transaction(db)
+      Error(err)
+    }
+    Ok(_) -> commit_transaction(db, file)
   }
 }
 
 fn read_sql(file: SqlFile) -> Result(String, SqlFilesError) {
   simplifile.read(file.path)
   |> result.map_error(fn(err) {
-    FileReadError(path: file.path, message: string.inspect(err))
+    FileReadError(path: file.path, message: simplifile.describe_error(err))
   })
 }
 

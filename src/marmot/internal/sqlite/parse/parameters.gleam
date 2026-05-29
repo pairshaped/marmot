@@ -437,7 +437,7 @@ fn extract_all_named_params_from_tokens(tokens: List(Token)) -> List(String) {
 // ---- Column reference normalization ----
 
 /// Strip table prefix and function wrappers from a column reference.
-pub fn normalize_column_ref(raw: String) -> String {
+fn normalize_column_ref(raw: String) -> String {
   let name = case string.split_once(raw, ".") {
     Ok(#(_, col)) -> col
     Error(_) -> raw
@@ -455,12 +455,4 @@ fn do_normalize_column_ref(name: String) -> String {
     Error(_) -> name
   }
 }
-
 // ---- Utility ----
-
-/// Check if a token is a named parameter prefix.
-pub fn starts_with_param_prefix(s: String) -> Bool {
-  string.starts_with(s, "@")
-  || string.starts_with(s, ":")
-  || string.starts_with(s, "$")
-}
