@@ -475,6 +475,60 @@ pub fn parse_config_empty_toml_is_valid_test() {
   let assert Config(error: option.None, ..) = config
 }
 
+pub fn parse_config_array_entry_missing_name_sets_error_test() {
+  let toml =
+    "[[tools.marmot.databases]]
+  path = \"db/app.db\"
+  "
+  let config = project.parse_config(toml, [], option.None)
+  let assert Config(
+    error: option.Some(project.MalformedDatabaseArrayEntry),
+    databases: dbs,
+    ..,
+  ) = config
+  let assert True = dict.is_empty(dbs)
+}
+
+pub fn parse_config_array_entry_empty_name_sets_error_test() {
+  let toml =
+    "[[tools.marmot.databases]]
+  name = \"\"
+  path = \"db/app.db\"
+  "
+  let config = project.parse_config(toml, [], option.None)
+  let assert Config(
+    error: option.Some(project.MalformedDatabaseArrayEntry),
+    databases: dbs,
+    ..,
+  ) = config
+  let assert True = dict.is_empty(dbs)
+}
+
+pub fn parse_config_array_entry_malformed_with_valid_entries_test() {
+  let toml =
+    "[[tools.marmot.databases]]
+  name = \"valid\"
+  path = \"db/valid.db\"
+
+  [[tools.marmot.databases]]
+  path = \"db/missing_name.db\"
+  "
+  let config = project.parse_config(toml, [], option.None)
+  let assert Config(
+    error: option.Some(project.MalformedDatabaseArrayEntry),
+    databases: dbs,
+    ..,
+  ) = config
+  // Valid entry should still be parsed
+  let assert True = dict.has_key(dbs, "valid")
+}
+
+pub fn config_error_malformed_database_array_entry_to_string_test() {
+  let msg = project.config_error_to_string(project.MalformedDatabaseArrayEntry)
+  let assert True = string.contains(msg, "Missing or empty name")
+  let assert True = string.contains(msg, "[[tools.marmot.databases]]")
+}
+
 pub fn list_sql_files_test() {
   use <- with_temp_dir("test_tmp2")
 

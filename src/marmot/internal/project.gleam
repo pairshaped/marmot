@@ -61,6 +61,8 @@ pub type DatabaseReference {
 pub type ConfigError {
   MixedDatabaseConfig
   TomlParseError(reason: String)
+  /// An entry in [[tools.marmot.databases]] is missing or has an empty name.
+  MalformedDatabaseArrayEntry
 }
 
 type TomlConfig {
@@ -194,6 +196,14 @@ pub fn config_error_to_string(error: ConfigError) -> String {
   \u{250c}\u{2500} gleam.toml
   \u{2502}
   \u{2502} " <> reason
+
+    MalformedDatabaseArrayEntry ->
+      "error: Missing or empty name in [[tools.marmot.databases]]
+  \u{250c}\u{2500} gleam.toml
+  \u{2502}
+  \u{2502} Each database entry must have a name field.
+  \u{2502}
+  hint: Add name = \"db_name\" to each [[tools.marmot.databases]] entry."
   }
 }
 
@@ -203,6 +213,11 @@ fn parse_toml_config(
   case tom.parse(toml_content) {
     Ok(parsed) -> {
       warn_unknown_config_keys(parsed)
+      let #(databases, array_error) = parse_database_references(parsed)
+      let config_error = case array_error {
+        option.Some(_) -> array_error
+        option.None -> database_config_error_from_toml(parsed)
+      }
       #(
         TomlConfig(
           database: get_toml_string(parsed, ["tools", "marmot", "database"]),
@@ -219,9 +234,9 @@ fn parse_toml_config(
             "migrations_dir",
           ]),
           seeds_dir: get_toml_string(parsed, ["tools", "marmot", "seeds_dir"]),
-          databases: parse_database_references(parsed),
+          databases: databases,
         ),
-        database_config_error_from_toml(parsed),
+        config_error,
       )
     }
     Error(err) -> #(empty_toml_config(), option.Some(toml_parse_error(err)))
@@ -277,38 +292,53 @@ fn get_toml_string(
 
 fn parse_database_references(
   parsed: dict.Dict(String, tom.Toml),
-) -> dict.Dict(String, DatabaseReference) {
+) -> #(dict.Dict(String, DatabaseReference), Option(ConfigError)) {
   case tom.get_table(parsed, ["tools", "marmot", "databases"]) {
     Error(_) -> parse_database_reference_array(parsed)
-    Ok(databases) ->
+    Ok(databases) -> #(
       databases
-      |> dict.fold(dict.new(), fn(acc, name, value) {
-        case tom.as_table(value) {
-          Error(_) -> acc
-          Ok(table) -> dict.insert(acc, name, parse_database_reference(table))
-        }
-      })
+        |> dict.fold(dict.new(), fn(acc, name, value) {
+          case tom.as_table(value) {
+            Error(_) -> acc
+            Ok(table) -> dict.insert(acc, name, parse_database_reference(table))
+          }
+        }),
+      option.None,
+    )
   }
 }
 
 fn parse_database_reference_array(
   parsed: dict.Dict(String, tom.Toml),
-) -> dict.Dict(String, DatabaseReference) {
+) -> #(dict.Dict(String, DatabaseReference), Option(ConfigError)) {
   case tom.get_array(parsed, ["tools", "marmot", "databases"]) {
-    Error(_) -> dict.new()
+    Error(_) -> #(dict.new(), option.None)
     Ok(databases) ->
       databases
-      |> list.fold(dict.new(), fn(acc, value) {
+      |> list.fold(#(dict.new(), option.None), fn(acc, value) {
         case tom.as_table(value) {
           Error(_) -> acc
-          Ok(table) ->
-            case get_toml_string(table, ["name"]) {
-              option.None -> acc
-              option.Some(name) ->
-                dict.insert(acc, name, parse_database_reference(table))
-            }
+          Ok(table) -> fold_array_entry(acc, table)
         }
       })
+  }
+}
+
+fn fold_array_entry(
+  acc: #(dict.Dict(String, DatabaseReference), Option(ConfigError)),
+  table: dict.Dict(String, tom.Toml),
+) -> #(dict.Dict(String, DatabaseReference), Option(ConfigError)) {
+  let #(db_acc, err) = acc
+  case get_toml_string(table, ["name"]) {
+    option.None -> #(db_acc, option.Some(MalformedDatabaseArrayEntry))
+    option.Some(name) ->
+      case string.trim(name) == "" {
+        True -> #(db_acc, option.Some(MalformedDatabaseArrayEntry))
+        False -> #(
+          dict.insert(db_acc, name, parse_database_reference(table)),
+          err,
+        )
+      }
   }
 }
 
