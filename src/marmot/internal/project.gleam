@@ -115,8 +115,11 @@ pub fn parse_config(
     option.None ->
       case database_ref {
         option.Some(ref) ->
-          ref.output
-          |> option.or(toml_config.output)
+          case database_name {
+            option.Some(name) ->
+              named_database_output(name, ref, toml_config.output)
+            option.None -> toml_config.output
+          }
         option.None -> toml_config.output
       }
   }
@@ -285,7 +288,7 @@ fn parse_database_reference(
 
 pub fn named_database_path(name: String, ref: DatabaseReference) -> String {
   ref.path
-  |> option.unwrap("db/" <> name <> "/db.sqlite")
+  |> option.unwrap("db/" <> name <> ".sqlite")
 }
 
 pub fn named_database_migrations_dir(
@@ -293,9 +296,13 @@ pub fn named_database_migrations_dir(
   ref: DatabaseReference,
   fallback: Option(String),
 ) -> String {
-  ref.migrations_dir
-  |> option.or(fallback)
-  |> option.unwrap("db/" <> name <> "/migrations")
+  case ref.migrations_dir {
+    option.Some(dir) -> dir
+    option.None ->
+      fallback
+      |> option.map(fn(dir) { path_join(dir, name) })
+      |> option.unwrap("db/migrations/" <> name)
+  }
 }
 
 pub fn named_database_seeds_dir(
@@ -303,9 +310,13 @@ pub fn named_database_seeds_dir(
   ref: DatabaseReference,
   fallback: Option(String),
 ) -> String {
-  ref.seeds_dir
-  |> option.or(fallback)
-  |> option.unwrap("db/" <> name <> "/seeds")
+  case ref.seeds_dir {
+    option.Some(dir) -> dir
+    option.None ->
+      fallback
+      |> option.map(fn(dir) { path_join(dir, name) })
+      |> option.unwrap("db/seeds/" <> name)
+  }
 }
 
 pub fn named_database_sql_dir(
@@ -313,18 +324,34 @@ pub fn named_database_sql_dir(
   ref: DatabaseReference,
   fallback: Option(String),
 ) -> Option(String) {
-  ref.sql_dir
-  |> option.or(fallback)
-  |> option.or(option.Some("src/" <> name <> "/sql"))
+  case ref.sql_dir {
+    option.Some(dir) -> option.Some(dir)
+    option.None ->
+      fallback
+      |> option.map(fn(dir) { path_join(dir, name) })
+      |> option.or(option.Some("src/sql/" <> name))
+  }
 }
 
 pub fn named_database_output(
-  _name: String,
+  name: String,
   ref: DatabaseReference,
   fallback: Option(String),
 ) -> Option(String) {
-  ref.output
-  |> option.or(fallback)
+  case ref.output {
+    option.Some(dir) -> option.Some(dir)
+    option.None ->
+      fallback
+      |> option.map(fn(dir) { path_join(dir, name) })
+      |> option.or(option.Some("src/generated/sql/" <> name))
+  }
+}
+
+fn path_join(base: String, segment: String) -> String {
+  case string.ends_with(base, "/") {
+    True -> base <> segment
+    False -> base <> "/" <> segment
+  }
 }
 
 fn selected_database_reference(
@@ -555,23 +582,71 @@ pub fn output_path(
   sql_dir: String,
   configured_output: Option(String),
 ) -> String {
-  let output = case configured_output {
-    option.Some(o) -> o
-    option.None -> "src/generated/sql"
-  }
-  let trimmed = case string.ends_with(output, "/") {
-    True -> string.drop_end(output, 1)
-    False -> output
-  }
+  let trimmed = output_dir(configured_output)
   let output_parts = string.split(trimmed, "/")
   let sql_parts = string.split(sql_dir, "/")
   let common_len = common_prefix_length(output_parts, sql_parts, 0)
   let relative = list.drop(sql_parts, common_len)
+  output_path_from_relative(trimmed, relative)
+}
+
+pub fn output_path_from_source_root(
+  sql_dir: String,
+  configured_output: Option(String),
+  source_root: Option(String),
+) -> String {
+  let trimmed = output_dir(configured_output)
+  case source_root {
+    option.None -> output_path(sql_dir, configured_output)
+    option.Some(root) -> {
+      let root_parts = path_parts(root)
+      let sql_parts = path_parts(sql_dir)
+      case path_has_prefix(sql_parts, root_parts) {
+        True ->
+          output_path_from_relative(
+            trimmed,
+            list.drop(sql_parts, list.length(root_parts)),
+          )
+        False -> output_path(sql_dir, configured_output)
+      }
+    }
+  }
+}
+
+fn output_dir(configured_output: Option(String)) -> String {
+  let output = case configured_output {
+    option.Some(o) -> o
+    option.None -> "src/generated/sql"
+  }
+  case string.ends_with(output, "/") {
+    True -> string.drop_end(output, 1)
+    False -> output
+  }
+}
+
+fn output_path_from_relative(output: String, relative: List(String)) -> String {
   let entity_parts = list.filter(relative, fn(seg) { seg != "sql" })
   let entity_path = string.join(entity_parts, "/")
   case entity_path {
-    "" -> trimmed <> "/sql.gleam"
-    path -> trimmed <> "/" <> path <> "_sql.gleam"
+    "" -> output <> "/sql.gleam"
+    path -> output <> "/" <> path <> "_sql.gleam"
+  }
+}
+
+fn path_parts(path: String) -> List(String) {
+  let trimmed = case string.ends_with(path, "/") {
+    True -> string.drop_end(path, 1)
+    False -> path
+  }
+  string.split(trimmed, "/")
+}
+
+fn path_has_prefix(path: List(String), prefix: List(String)) -> Bool {
+  case path, prefix {
+    _, [] -> True
+    [part, ..path_rest], [prefix_part, ..prefix_rest] if part == prefix_part ->
+      path_has_prefix(path_rest, prefix_rest)
+    _, _ -> False
   }
 }
 

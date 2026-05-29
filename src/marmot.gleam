@@ -544,7 +544,13 @@ fn generate_all(db: sqlight.Connection, config: project.Config) -> Nil {
     [] -> io.println("No sql/ directories found under src/")
     dirs -> {
       let outputs =
-        list.map(dirs, fn(dir) { project.output_path(dir, config.output) })
+        list.map(dirs, fn(dir) {
+          project.output_path_from_source_root(
+            dir,
+            config.output,
+            config.sql_dir,
+          )
+        })
       case list.length(list.unique(outputs)) != list.length(outputs) {
         True -> {
           io.println_error(
@@ -596,7 +602,12 @@ fn generate_for_directory(
       // had errors. Only return True (success) when the directory was empty.
       list.is_empty(sql_files)
     _ -> {
-      let output = project.output_path(sql_dir, config.output)
+      let output =
+        project.output_path_from_source_root(
+          sql_dir,
+          config.output,
+          config.sql_dir,
+        )
       case codegen.generate_module_with_config(queries, config.query_function) {
         Error(err) -> {
           io.println_error(error.to_string(err))

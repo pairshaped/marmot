@@ -189,11 +189,11 @@ name = "analytics"
 
 For `name = "app"`, Marmot derives these defaults:
 
-- SQLite database: `db/app/db.sqlite`
-- Migrations: `db/app/migrations`
-- Seeds: `db/app/seeds`
-- SQL files: `src/app/sql`
-- Generated modules: `src/generated/sql/`, using `app` as the namespace
+- SQLite database: `db/app.sqlite`
+- Migrations: `db/migrations/app`
+- Seeds: `db/seeds/app`
+- SQL files: `src/sql/app`
+- Generated modules: `src/generated/sql/app`
 
 You can override any derived path:
 
@@ -274,8 +274,8 @@ To use another migration directory, set `migrations_dir` in `gleam.toml`:
 
 ```toml
 [tools.marmot]
-database = "db/app/db.sqlite"
-migrations_dir = "db/app/migrations"
+database = "db/app.sqlite"
+migrations_dir = "db/migrations/app"
 ```
 
 The runner:
@@ -318,8 +318,8 @@ To use another seed directory, set `seeds_dir` in `gleam.toml`:
 
 ```toml
 [tools.marmot]
-database = "db/app/db.sqlite"
-seeds_dir = "db/app/seeds"
+database = "db/app.sqlite"
+seeds_dir = "db/seeds/app"
 ```
 
 The seed runner:

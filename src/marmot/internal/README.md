@@ -76,8 +76,9 @@ Without one of those commands, `run_generate()`:
 | `migrations_dir` | named database / toml | Directory for migration files |
 | `seeds_dir` | named database / toml | Directory for seed files |
 
-Named database references live under `[tools.marmot.databases.NAME]` and can
-provide `path`, `migrations_dir`, and `seeds_dir`. `[tools.marmot].database`
+Named database references live under `[tools.marmot.databases.NAME]` or
+`[[tools.marmot.databases]] name = "NAME"`. They can provide `path`,
+`migrations_dir`, `seeds_dir`, `sql_dir`, and `output`. `[tools.marmot].database`
 remains supported as the simple single-database path. Mixing
 `[tools.marmot].database` with named database refs is a config error.
 

@@ -504,8 +504,8 @@ pub fn e2e_cli_generate_runs_all_named_database_configs_test() {
         "\n[[tools.marmot.databases]]\nname = \"app\"\n\n[[tools.marmot.databases]]\nname = \"analytics\"\n",
       )
 
-      let assert Ok(_) = simplifile.create_directory_all(base <> "/db/app")
-      let assert Ok(app_db) = sqlight.open(base <> "/db/app/db.sqlite")
+      let assert Ok(_) = simplifile.create_directory_all(base <> "/db")
+      let assert Ok(app_db) = sqlight.open(base <> "/db/app.sqlite")
       let assert Ok(_) =
         sqlight.exec(
           "CREATE TABLE users (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
@@ -513,10 +513,7 @@ pub fn e2e_cli_generate_runs_all_named_database_configs_test() {
         )
       let _ = sqlight.close(app_db)
 
-      let assert Ok(_) =
-        simplifile.create_directory_all(base <> "/db/analytics")
-      let assert Ok(analytics_db) =
-        sqlight.open(base <> "/db/analytics/db.sqlite")
+      let assert Ok(analytics_db) = sqlight.open(base <> "/db/analytics.sqlite")
       let assert Ok(_) =
         sqlight.exec(
           "CREATE TABLE events (id INTEGER NOT NULL PRIMARY KEY, title TEXT NOT NULL)",
@@ -524,17 +521,17 @@ pub fn e2e_cli_generate_runs_all_named_database_configs_test() {
         )
       let _ = sqlight.close(analytics_db)
 
-      let assert Ok(_) = simplifile.create_directory_all(base <> "/src/app/sql")
+      let assert Ok(_) = simplifile.create_directory_all(base <> "/src/sql/app")
       let assert Ok(_) =
         simplifile.write(
-          base <> "/src/app/sql/find_user.sql",
+          base <> "/src/sql/app/find_user.sql",
           "SELECT id, name FROM users WHERE id = ?",
         )
       let assert Ok(_) =
-        simplifile.create_directory_all(base <> "/src/analytics/sql")
+        simplifile.create_directory_all(base <> "/src/sql/analytics")
       let assert Ok(_) =
         simplifile.write(
-          base <> "/src/analytics/sql/list_events.sql",
+          base <> "/src/sql/analytics/list_events.sql",
           "SELECT id, title FROM events",
         )
 
@@ -547,9 +544,9 @@ pub fn e2e_cli_generate_runs_all_named_database_configs_test() {
         )
 
       let assert Ok(True) =
-        simplifile.is_file(base <> "/src/generated/sql/app_sql.gleam")
+        simplifile.is_file(base <> "/src/generated/sql/app/sql.gleam")
       let assert Ok(True) =
-        simplifile.is_file(base <> "/src/generated/sql/analytics_sql.gleam")
+        simplifile.is_file(base <> "/src/generated/sql/analytics/sql.gleam")
       let assert 0 = exit_code
       Nil
     })

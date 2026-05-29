@@ -286,12 +286,12 @@ pub fn parse_config_named_database_derives_default_paths_test() {
   let config =
     project.parse_config(toml, ["--database-name", "primary"], option.None)
   let assert Config(
-    database: option.Some("db/primary/db.sqlite"),
+    database: option.Some("db/primary.sqlite"),
     database_name: option.Some("primary"),
-    output: option.None,
-    sql_dir: option.Some("src/primary/sql"),
-    migrations_dir: option.Some("db/primary/migrations"),
-    seeds_dir: option.Some("db/primary/seeds"),
+    output: option.Some("src/generated/sql/primary"),
+    sql_dir: option.Some("src/sql/primary"),
+    migrations_dir: option.Some("db/migrations/primary"),
+    seeds_dir: option.Some("db/seeds/primary"),
     ..,
   ) = config
 }
@@ -304,11 +304,12 @@ name = \"primary\"
   let config =
     project.parse_config(toml, ["--database-name", "primary"], option.None)
   let assert Config(
-    database: option.Some("db/primary/db.sqlite"),
+    database: option.Some("db/primary.sqlite"),
     database_name: option.Some("primary"),
-    sql_dir: option.Some("src/primary/sql"),
-    migrations_dir: option.Some("db/primary/migrations"),
-    seeds_dir: option.Some("db/primary/seeds"),
+    output: option.Some("src/generated/sql/primary"),
+    sql_dir: option.Some("src/sql/primary"),
+    migrations_dir: option.Some("db/migrations/primary"),
+    seeds_dir: option.Some("db/seeds/primary"),
     ..,
   ) = config
 }
@@ -331,6 +332,28 @@ output = \"src/db/generated\"
     sql_dir: option.Some("src/db/sql"),
     migrations_dir: option.Some("priv/db/migrations"),
     seeds_dir: option.Some("priv/db/seeds"),
+    ..,
+  ) = config
+}
+
+pub fn parse_config_named_database_appends_name_to_global_dirs_test() {
+  let toml =
+    "[tools.marmot]
+migrations_dir = \"priv/migrations\"
+seeds_dir = \"priv/seeds\"
+sql_dir = \"src/database_sql\"
+output = \"src/generated/database_sql\"
+
+[[tools.marmot.databases]]
+name = \"primary\"
+"
+  let config =
+    project.parse_config(toml, ["--database-name", "primary"], option.None)
+  let assert Config(
+    output: option.Some("src/generated/database_sql/primary"),
+    sql_dir: option.Some("src/database_sql/primary"),
+    migrations_dir: option.Some("priv/migrations/primary"),
+    seeds_dir: option.Some("priv/seeds/primary"),
     ..,
   ) = config
 }
@@ -563,6 +586,24 @@ pub fn output_path_sql_dir_root_test() {
   // File goes inside the output directory, not alongside it.
   let assert "src/generated/sql.gleam" =
     project.output_path("src/sql", option.Some("src/generated"))
+}
+
+pub fn output_path_from_source_root_for_named_database_test() {
+  let assert "src/generated/sql/primary/users_sql.gleam" =
+    project.output_path_from_source_root(
+      "src/sql/primary/users",
+      option.Some("src/generated/sql/primary"),
+      option.Some("src/sql/primary"),
+    )
+}
+
+pub fn output_path_from_source_root_for_named_database_root_test() {
+  let assert "src/generated/sql/primary/sql.gleam" =
+    project.output_path_from_source_root(
+      "src/sql/primary",
+      option.Some("src/generated/sql/primary"),
+      option.Some("src/sql/primary"),
+    )
 }
 
 pub fn find_sql_directories_with_sql_dir_nested_test() {

@@ -45,10 +45,10 @@ name = "app"
 name = "analytics"
 ```
 
-`name = "app"` derives `db/app/db.sqlite`, `db/app/migrations`,
-`db/app/seeds`, and `src/app/sql`. `path`, `migrations_dir`, `seeds_dir`,
-`sql_dir`, and `output` can be set on a named ref to override the derived
-values.
+`name = "app"` derives `db/app.sqlite`, `db/migrations/app`,
+`db/seeds/app`, `src/sql/app`, and `src/generated/sql/app`. `path`,
+`migrations_dir`, `seeds_dir`, `sql_dir`, and `output` can be set on a named
+ref to override the derived values.
 
 Do not mix `[tools.marmot].database` with `[tools.marmot.databases]`. Marmot
 reports a config error if both modes are present.
@@ -104,11 +104,11 @@ branching workflows, checksums, or a larger migration system.
 | `migrations_dir` | `db/migrations` | Directory for migration files in simple database mode. |
 | `seeds_dir` | `db/seeds` | Directory for seed files in simple database mode. |
 | `databases[].name` / `databases.NAME` | none | Named database ref. Array form uses `name = "app"`; table form uses `[tools.marmot.databases.app]`. |
-| `databases.NAME.path` | `db/NAME/db.sqlite` | Path to the SQLite file for a named database ref. |
-| `databases.NAME.migrations_dir` | `db/NAME/migrations` | Directory for a named database ref's migration files. |
-| `databases.NAME.seeds_dir` | `db/NAME/seeds` | Directory for a named database ref's seed files. |
-| `databases.NAME.sql_dir` | `src/NAME/sql` | SQL discovery root for a named database ref. |
-| `databases.NAME.output` | `output` value | Output directory override for a named database ref. |
+| `databases.NAME.path` | `db/NAME.sqlite` | Path to the SQLite file for a named database ref. |
+| `databases.NAME.migrations_dir` | `db/migrations/NAME` | Directory for a named database ref's migration files. |
+| `databases.NAME.seeds_dir` | `db/seeds/NAME` | Directory for a named database ref's seed files. |
+| `databases.NAME.sql_dir` | `src/sql/NAME` | SQL discovery root for a named database ref. |
+| `databases.NAME.output` | `src/generated/sql/NAME` | Output directory override for a named database ref. |
 | `output` | `src/generated/sql` | Output directory for generated modules (must be under `src/`). Marmot infers the directory structure by finding the longest common path prefix between `output` and each `sql/` directory, then uses the remainder as the namespace (e.g. `src/app/users/sql/` with default output produces `src/generated/sql/app/users_sql.gleam`). |
 | `sql_dir` | none | Custom directory for SQL file discovery. When set, Marmot recursively finds all directories under this path that contain `.sql` files, instead of the default `src/**/sql/` convention. |
 | `query_function` | `sqlight.query` | Fully-qualified function (`module/path.name`) that generated code calls instead of `sqlight.query`. Wrapper must match `sqlight.query`'s labelled signature (`sql: String, on connection, with parameters, expecting decoder`). Useful for logging, timing, instrumentation. |
