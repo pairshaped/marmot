@@ -1,5 +1,6 @@
 //// Shared ordered SQL-file runner for migrations and seeds.
 
+import gleam/bool
 import gleam/dynamic/decode
 import gleam/list
 import gleam/option.{type Option}
@@ -113,11 +114,12 @@ fn sql_file_from_filename(
 }
 
 fn valid_filename(filename: String) -> Bool {
-  use <- bool_guard(string.ends_with(filename, ".sql"), False)
+  use <- bool.guard(!string.ends_with(filename, ".sql"), False)
   let stem = string.drop_end(filename, string.length(".sql"))
-  use <- bool_guard(string.length(stem) > 4, False)
-  use <- bool_guard(string.slice(stem, at_index: 3, length: 1) == "_", False)
-  use <- bool_guard(stem |> string.drop_start(4) |> description_is_valid, False)
+  use <- bool.guard(string.length(stem) <= 4, False)
+  use <- bool.guard(string.slice(stem, at_index: 3, length: 1) != "_", False)
+  let desc_valid = stem |> string.drop_start(4) |> description_is_valid
+  use <- bool.guard(!desc_valid, False)
 
   stem
   |> string.slice(at_index: 0, length: 3)
@@ -147,13 +149,6 @@ fn is_description_character(char: String) -> Bool {
     ],
     char,
   )
-}
-
-fn bool_guard(check: Bool, fallback: a, next: fn() -> a) -> a {
-  case check {
-    True -> next()
-    False -> fallback
-  }
 }
 
 fn ensure_tracking_table(

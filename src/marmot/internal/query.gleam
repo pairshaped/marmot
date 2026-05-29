@@ -12,6 +12,7 @@ import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/option.{type Option}
+import gleam/result
 import gleam/string
 
 /// Gleam type that a SQLite column or parameter maps to.
@@ -150,6 +151,23 @@ const reserved_words = [
 pub fn safe_name(name: String) -> String {
   use <- bool.guard(list.contains(reserved_words, name), name <> "_")
   name
+}
+
+/// Find names that appear more than once in a list.
+pub fn find_duplicates(names: List(String)) -> List(String) {
+  let counts =
+    list.fold(names, dict.new(), fn(acc, name) {
+      let count = result.unwrap(dict.get(acc, name), 0)
+      dict.insert(acc, name, count + 1)
+    })
+  names
+  |> list.unique
+  |> list.filter(fn(name) {
+    case dict.get(counts, name) {
+      Ok(n) if n > 1 -> True
+      _ -> False
+    }
+  })
 }
 
 pub fn row_type_name(name: String) -> String {

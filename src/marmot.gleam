@@ -659,9 +659,12 @@ fn warn_subdirectories(sql_dir: String) -> Nil {
 
 fn write_module_file(output: String, module_content: String) -> Bool {
   case ensure_parent_dir(output) {
-    Error(_) -> {
+    Error(msg) -> {
       io.println_error(
-        "error: Could not create parent directory for " <> output,
+        "error: Could not create parent directory for "
+        <> output
+        <> "\n  "
+        <> msg,
       )
       False
     }
@@ -680,7 +683,7 @@ fn write_module_file(output: String, module_content: String) -> Bool {
 }
 
 @internal
-pub fn ensure_parent_dir(path: String) -> Result(Nil, Nil) {
+pub fn ensure_parent_dir(path: String) -> Result(Nil, String) {
   let parent =
     path
     |> string.split("/")
@@ -695,7 +698,7 @@ pub fn ensure_parent_dir(path: String) -> Result(Nil, Nil) {
     dir ->
       case simplifile.create_directory_all(dir) {
         Ok(_) -> Ok(Nil)
-        Error(_) -> Error(Nil)
+        Error(err) -> Error(simplifile.describe_error(err))
       }
   }
 }
@@ -854,7 +857,7 @@ pub fn check_duplicate_columns(
   file_path: String,
 ) -> Result(Nil, Nil) {
   let names = list.map(columns, fn(c) { c.name })
-  let dupes = find_duplicates(names)
+  let dupes = query.find_duplicates(names)
   case dupes {
     [] -> Ok(Nil)
     _ -> {
@@ -864,22 +867,6 @@ pub fn check_duplicate_columns(
       Error(Nil)
     }
   }
-}
-
-fn find_duplicates(names: List(String)) -> List(String) {
-  let counts =
-    list.fold(names, dict.new(), fn(acc, name) {
-      let count = result.unwrap(dict.get(acc, name), 0)
-      dict.insert(acc, name, count + 1)
-    })
-  names
-  |> list.unique
-  |> list.filter(fn(name) {
-    case dict.get(counts, name) {
-      Ok(n) if n > 1 -> True
-      _ -> False
-    }
-  })
 }
 
 /// Check for semicolons outside of quoted SQL contexts, line comments, and
@@ -920,7 +907,7 @@ fn check_generated_name_pairs(
   file_path: String,
 ) -> Result(Nil, Nil) {
   let generated_names = list.map(pairs, fn(pair) { pair.1 })
-  let dupes = find_duplicates(generated_names)
+  let dupes = query.find_duplicates(generated_names)
 
   case dupes {
     [] -> Ok(Nil)

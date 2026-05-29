@@ -272,22 +272,6 @@ pub fn generate_module_with_config(
   )
 }
 
-fn find_duplicates(names: List(String)) -> List(String) {
-  let counts =
-    list.fold(names, dict.new(), fn(acc, name) {
-      let count = result.unwrap(dict.get(acc, name), 0)
-      dict.insert(acc, name, count + 1)
-    })
-  names
-  |> list.unique
-  |> list.filter(fn(name) {
-    case dict.get(counts, name) {
-      Ok(n) if n > 1 -> True
-      _ -> False
-    }
-  })
-}
-
 fn check_generated_declarations(
   queries: List(Query),
   module_path: String,
@@ -304,7 +288,7 @@ fn check_generated_query_names(
     queries
     |> list.map(fn(q) { #(q.path, q.name) })
   let names = list.map(pairs, fn(pair) { pair.1 })
-  let dupes = find_duplicates(names)
+  let dupes = query.find_duplicates(names)
 
   case dupes {
     [] -> Ok(Nil)
@@ -336,7 +320,7 @@ fn check_generated_row_type_names(
       }
     })
   let names = list.map(pairs, fn(t) { t.1 })
-  let dupes = find_duplicates(names)
+  let dupes = query.find_duplicates(names)
 
   case dupes {
     [] -> Ok(Nil)

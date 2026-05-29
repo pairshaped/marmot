@@ -523,7 +523,9 @@ pub fn ensure_parent_dir_file_blocks_directory_test() {
   let result =
     rescue(fn() {
       let assert Ok(_) = simplifile.write(base, "blocking file")
-      let assert Error(Nil) = marmot.ensure_parent_dir(base <> "/out.gleam")
+      let assert Error(msg) = marmot.ensure_parent_dir(base <> "/out.gleam")
+      // Should describe the underlying filesystem error, not just discard it
+      let assert "Not a directory" = msg
       Nil
     })
   let _ = simplifile.delete(base)
