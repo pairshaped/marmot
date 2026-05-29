@@ -1,13 +1,13 @@
 ---
 # marmot-xhvm
 title: Address validated code review findings
-status: todo
+status: completed
 type: epic
 priority: high
 tags:
     - review
 created_at: 2026-05-29T17:53:47Z
-updated_at: 2026-05-29T17:53:47Z
+updated_at: 2026-05-29T22:13:37Z
 ---
 
 Tackle order: quick wins first, then the highest-risk correctness work.
