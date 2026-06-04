@@ -659,18 +659,23 @@ fn find_sql_directory_child(
   let path = dir <> "/" <> entry
 
   case simplifile.is_directory(path) {
-    Ok(True) -> find_sql_directory_from_child_dir(path, entry)
+    Ok(True) -> find_sql_directory_from_child_dir(dir, path, entry)
     _ -> []
   }
 }
 
 fn find_sql_directory_from_child_dir(
+  parent: String,
   path: String,
   entry: String,
 ) -> List(String) {
-  case entry {
-    "sql" -> [path]
-    _ -> find_sql_directories_recursive(path)
+  let is_generated_output = entry == "generated"
+  let is_src_root = parent == "src" || string.ends_with(parent, "/src")
+
+  case is_generated_output, is_src_root, entry {
+    True, True, _ -> []
+    _, _, "sql" -> [path]
+    _, _, _ -> find_sql_directories_recursive(path)
   }
 }
 

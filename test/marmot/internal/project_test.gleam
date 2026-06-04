@@ -148,6 +148,23 @@ pub fn find_sql_directories_test() {
   Nil
 }
 
+pub fn find_sql_directories_ignores_generated_test() {
+  use <- with_temp_dir("test_tmp_generated")
+
+  let assert Ok(_) =
+    simplifile.create_directory_all("test_tmp_generated/src/app/sql")
+  let assert Ok(_) =
+    simplifile.write("test_tmp_generated/src/app/sql/find_user.sql", "SELECT 1")
+  let assert Ok(_) =
+    simplifile.create_directory_all("test_tmp_generated/src/generated/sql")
+
+  let dirs = project.find_sql_directories("test_tmp_generated/src", option.None)
+  let assert True = list.contains(dirs, "test_tmp_generated/src/app/sql")
+  let assert False = list.contains(dirs, "test_tmp_generated/src/generated/sql")
+  let assert 1 = list.length(dirs)
+  Nil
+}
+
 pub fn find_sql_directories_with_sql_dir_test() {
   use <- with_temp_dir("test_tmp_sqldir")
 

@@ -83,7 +83,7 @@ remains supported as the simple single-database path. Mixing
 `[tools.marmot].database` with named database refs is a config error.
 
 `find_sql_directories()` has two modes:
-- **Default mode** (`sql_dir: None`): recursively walks `src/` for directories named `sql`
+- **Default mode** (`sql_dir: None`): recursively walks `src/` for directories named `sql`, skipping `src/generated`
 - **Configured mode** (`sql_dir: Some("path")`): recursively finds all directories under `path` that contain `.sql` files
 
 `output_path()` computes where a generated module lands. It finds the longest common prefix between the output directory and the sql directory, strips it, removes `sql` segments, and joins with output. Examples:
