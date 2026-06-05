@@ -162,7 +162,7 @@ pub fn basic_test() {
     let assert Ok(_) =
       basic.replace_user(
         db:,
-        id: 1,
+        id: Some(1),
         name: "Alice",
         email: "alice@example.com",
         created_at: 1_714_400_000,
@@ -191,8 +191,8 @@ pub fn filtering_test() {
     let assert Ok(_) =
       filters.where_comparison(
         db:,
-        since: Some(1_714_500_000),
-        until: Some(1_715_000_000),
+        since: 1_714_500_000,
+        until: 1_715_000_000,
         exclude_user_id: 3,
       )
     let assert Ok(_) =
@@ -202,16 +202,12 @@ pub fn filtering_test() {
         exclude_pattern: "ZZZ%",
       )
     let assert Ok(_) = filters.where_is_null(db:)
-    let assert Ok(_) = filters.where_in_list(db:, user_ids: "1,2,3")
+    let assert Ok(_) = filters.where_in_list(db:, user_ids: 1)
     let assert Ok(_) = filters.where_in_subquery(db:, active: 1)
     let assert Ok(_) =
-      filters.where_between(
-        db:,
-        from: Some(1_714_500_000),
-        to: Some(1_715_000_000),
-      )
+      filters.where_between(db:, from: 1_714_500_000, to: 1_715_000_000)
     let assert Ok(_) =
-      filters.where_and_or(db:, since: Some(1_714_500_000), user_id: 1)
+      filters.where_and_or(db:, since: 1_714_500_000, user_id: 1)
     let assert Ok(_) = filters.where_not_operators(db:, pattern: "ZZZ%")
     Nil
   })
@@ -233,7 +229,7 @@ pub fn expressions_test() {
   with_setup(fn(db) {
     let assert Ok(_) = exprs.cast(db:)
     let assert Ok(_) = exprs.coalesce(db:)
-    let assert Ok(_) = exprs.case_searched(db:, cutoff: Some(1_714_500_000))
+    let assert Ok(_) = exprs.case_searched(db:, cutoff: 1_714_500_000)
     let assert Ok(_) = exprs.case_simple(db:)
     let assert Ok(_) = exprs.case_nested(db:)
     let assert Ok(_) = exprs.arithmetic(db:)
@@ -278,7 +274,7 @@ pub fn parameters_test() {
   with_setup(fn(db) {
     let assert Ok(_) = params.anonymous_params(db:, name: "Alice")
     let assert Ok(_) =
-      params.named_params(db:, user_id: 1, since: Some(0), pattern: "%")
+      params.named_params(db:, user_id: 1, since: 0, pattern: "%")
     let assert Ok(_) = params.repeated_named_param(db:, pattern: "%")
     let assert Ok(_) = params.limit_param(db:, limit: 2)
     Nil
@@ -289,7 +285,7 @@ pub fn modifiers_test() {
   with_setup(fn(db) {
     let assert Ok(_) = mods.distinct(db:)
     let assert Ok(_) = mods.distinct_multiple(db:)
-    let assert Ok(_) = mods.union(db:, since: 0)
+    let assert Ok(_) = mods.union(db:, created_at: 0)
     let assert Ok(_) = mods.union_all(db:, user_id: 1)
     let assert Ok(_) = mods.intersect(db:)
     let assert Ok(_) = mods.except(db:)
@@ -325,7 +321,7 @@ pub fn returning_test() {
     let assert Ok(_) = ret.update_returning(db:, active: 0, id: 1)
     let assert Ok(_) = ret.delete_returning(db:)
     let assert Ok(_) =
-      ret.insert_from_select_returning(db:, cutoff: Some(1_715_000_000))
+      ret.insert_from_select_returning(db:, cutoff: 1_715_000_000)
     Nil
   })
 }
@@ -335,7 +331,7 @@ pub fn upserts_test() {
     let assert Ok(_) =
       upserts.insert_or_replace(
         db:,
-        id: 1,
+        id: Some(1),
         name: "Alice",
         email: "alice@example.com",
         created_at: 1_714_400_000,
@@ -344,7 +340,7 @@ pub fn upserts_test() {
     let assert Ok(_) =
       upserts.on_conflict_do_nothing(
         db:,
-        id: 1,
+        id: Some(1),
         name: "Alice",
         email: "alice@example.com",
         created_at: 1_714_400_000,
@@ -352,7 +348,7 @@ pub fn upserts_test() {
     let assert Ok(_) =
       upserts.on_conflict_do_update(
         db:,
-        id: 1,
+        id: Some(1),
         name: "Alice",
         email: "alice@example.com",
         created_at: 1_714_400_000,
