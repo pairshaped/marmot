@@ -2085,3 +2085,28 @@ pub fn introspect_inner_alias_shadowing_resolves_inner_scope_test() {
     Parameter(name: "actor_id", column_type: IntType, nullable: False),
   ] = result.parameters
 }
+
+pub fn introspect_case_result_param_compared_to_column_resolves_type_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE orders (
+        id INTEGER NOT NULL PRIMARY KEY,
+        status_rank INTEGER NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "test",
+      "SELECT id
+       FROM orders
+       WHERE CASE
+         WHEN @rank = 0 THEN status_rank
+         ELSE @rank
+       END = status_rank",
+    )
+  let assert [Parameter(name: "rank", column_type: IntType, nullable: False)] =
+    result.parameters
+}

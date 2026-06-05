@@ -261,7 +261,12 @@ fn extract_select_parameters_resolved(
       case typed {
         Ok(params) ->
           case list.length(params) == param_count {
-            True -> Ok(params)
+            True ->
+              Ok(refine_string_parameter_types(
+                params,
+                opcode_fallback(),
+                contextless_named_parameter_names(tokens),
+              ))
             False -> Ok(opcode_fallback())
           }
         Error(e) -> Error(e)
@@ -308,7 +313,12 @@ fn extract_update_parameters_resolved(
       case typed {
         Ok(params) ->
           case list.length(params) == param_count {
-            True -> Ok(params)
+            True ->
+              Ok(refine_string_parameter_types(
+                params,
+                opcode_fallback(),
+                contextless_named_parameter_names(tokens),
+              ))
             False -> Ok(opcode_fallback())
           }
         Error(e) -> Error(e)
@@ -354,6 +364,62 @@ fn extract_update_set_parameters_resolved(
         Parameter(name: param_name, column_type: StringType, nullable: False)
       })
   }
+}
+
+fn refine_string_parameter_types(
+  params: List(Parameter),
+  opcode_params: List(Parameter),
+  contextless_named_params: List(String),
+) -> List(Parameter) {
+  case params, opcode_params {
+    [], _ -> []
+    [param, ..rest], [opcode_param, ..opcode_rest] -> [
+      refine_string_parameter_type(
+        param,
+        opcode_param,
+        contextless_named_params,
+      ),
+      ..refine_string_parameter_types(
+        rest,
+        opcode_rest,
+        contextless_named_params,
+      )
+    ]
+    [param, ..rest], [] -> [
+      param,
+      ..refine_string_parameter_types(rest, [], contextless_named_params)
+    ]
+  }
+}
+
+fn refine_string_parameter_type(
+  param: Parameter,
+  opcode_param: Parameter,
+  contextless_named_params: List(String),
+) -> Parameter {
+  // Preserve named parameters from the SQL text while using opcode evidence
+  // when the text resolver only found its generic StringType fallback.
+  case
+    list.contains(contextless_named_params, param.name)
+    && param.column_type == StringType
+    && opcode_param.column_type != StringType
+  {
+    True -> Parameter(..param, column_type: opcode_param.column_type)
+    False -> param
+  }
+}
+
+fn contextless_named_parameter_names(
+  tokens: List(tokenize.Token),
+) -> List(String) {
+  binder.find_param_binder_occurrences(tokens)
+  |> list.filter_map(fn(occurrence) {
+    case occurrence.anonymous, occurrence.binder.binder_column {
+      False, option.None -> Ok(occurrence.binder.name)
+      _, _ -> Error(Nil)
+    }
+  })
+  |> list.unique
 }
 
 fn extract_via_resolver(
