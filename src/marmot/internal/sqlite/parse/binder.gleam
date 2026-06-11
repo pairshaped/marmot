@@ -20,8 +20,8 @@ pub type BinderOccurrence {
 ///
 /// Heuristic walker: scans for `?` or `@name` tokens and looks backward through
 /// the preceding tokens to find a column name (`col = ?`, `col > ?`, etc.).
-/// Handles simple comparison patterns. Falls back to StringType when the
-/// preceding context is too complex: IN-list params (`col IN (?, ?, ?)`),
+/// Handles simple comparison patterns and named IN-list params (`col IN (@a,
+/// @b)`). Falls back to StringType when the preceding context is too complex:
 /// nested expressions, function calls, subqueries. Known blind spots: parameters
 /// in ON clauses of nested joins, parameters inside CASE expressions.
 pub fn find_param_binders(tokens: List(Token)) -> List(Binder) {
@@ -58,7 +58,7 @@ fn do_find_param_binder_occurrences(
         acc,
       )
     [ParamAnon, ..rest] -> {
-      let col = extract_column_from_prev(prev)
+      let col = extract_column_from_prev_without_in_list(prev)
       case col {
         option.None ->
           do_find_param_binder_occurrences(
@@ -149,6 +149,19 @@ fn replace_binder_occurrence(b: Binder, acc: List(Binder)) -> List(Binder) {
 /// Look backward in the reversed previous-token list for a column
 /// before a comparison operator.
 fn extract_column_from_prev(prev: List(Token)) -> Option(String) {
+  extract_column_from_prev_with_in_list(prev, True)
+}
+
+fn extract_column_from_prev_without_in_list(
+  prev: List(Token),
+) -> Option(String) {
+  extract_column_from_prev_with_in_list(prev, False)
+}
+
+fn extract_column_from_prev_with_in_list(
+  prev: List(Token),
+  include_in_list: Bool,
+) -> Option(String) {
   // prev is reversed: for "col = ?", prev is [Eq, Word("col")].
   // For "col BETWEEN ?", prev is [Word("BETWEEN"), Word("col")].
   // Always skip the operator first, then extract the column after it.
@@ -156,10 +169,52 @@ fn extract_column_from_prev(prev: List(Token)) -> Option(String) {
   case skip_operator_in_prev(effective_prev) {
     option.Some(after_op) -> extract_column_word(after_op)
     option.None ->
-      case effective_prev {
-        [QuotedId(col), ..] -> option.Some(col)
-        _ -> option.None
+      extract_column_from_prev_without_operator(effective_prev, include_in_list)
+  }
+}
+
+fn extract_column_from_prev_without_operator(
+  prev: List(Token),
+  include_in_list: Bool,
+) -> Option(String) {
+  case include_in_list {
+    True ->
+      case extract_column_from_in_list(prev) {
+        option.Some(col) -> option.Some(col)
+        option.None -> extract_direct_column_from_prev(prev)
       }
+    False -> extract_direct_column_from_prev(prev)
+  }
+}
+
+fn extract_direct_column_from_prev(prev: List(Token)) -> Option(String) {
+  case prev {
+    [QuotedId(col), ..] -> option.Some(col)
+    _ -> option.None
+  }
+}
+
+fn extract_column_from_in_list(prev: List(Token)) -> Option(String) {
+  do_extract_column_from_in_list(prev, 0)
+}
+
+fn do_extract_column_from_in_list(
+  prev: List(Token),
+  depth: Int,
+) -> Option(String) {
+  case prev {
+    [] -> option.None
+    [CloseParen, ..rest] -> do_extract_column_from_in_list(rest, depth + 1)
+    [OpenParen, ..rest] if depth > 0 ->
+      do_extract_column_from_in_list(rest, depth - 1)
+    [OpenParen, Word(w), ..rest] -> {
+      case string.uppercase(w) == "IN" {
+        True -> extract_column_word(rest)
+        False -> option.None
+      }
+    }
+    [OpenParen, ..] -> option.None
+    [_, ..rest] -> do_extract_column_from_in_list(rest, depth)
   }
 }
 

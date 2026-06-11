@@ -1944,6 +1944,34 @@ pub fn introspect_select_with_multiplication_param_test() {
   ] = result.parameters
 }
 
+pub fn introspect_named_params_in_integer_in_list_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE app_fees (
+        id INTEGER NOT NULL PRIMARY KEY,
+        club_id INTEGER NOT NULL,
+        active INTEGER NOT NULL
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "test",
+      "SELECT count(*) AS value
+       FROM app_fees
+       WHERE club_id IN (@club_id, @parent_id, @grandparent_id)
+         AND active = @active",
+    )
+  let assert [
+    Parameter(name: "club_id", column_type: IntType, nullable: False),
+    Parameter(name: "parent_id", column_type: IntType, nullable: False),
+    Parameter(name: "grandparent_id", column_type: IntType, nullable: False),
+    Parameter(name: "active", column_type: IntType, nullable: False),
+  ] = result.parameters
+}
+
 // ---- Adversarial SQL regression probes ----
 //
 // These cases are small versions of SQL shapes that tend to expose parser
@@ -1970,6 +1998,33 @@ pub fn introspect_param_inside_cte_body_resolves_column_type_test() {
        SELECT COUNT(*) FROM filtered",
     )
   let assert [Parameter(name: "org_id", column_type: IntType, nullable: False)] =
+    result.parameters
+}
+
+pub fn introspect_recursive_cte_preserves_named_param_name_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE app_clubs (
+        id INTEGER NOT NULL PRIMARY KEY,
+        parent_id INTEGER
+      )",
+      on: db,
+    )
+  let assert Ok(result) =
+    sqlite.introspect_query(
+      db,
+      "test",
+      "WITH RECURSIVE parents(id, parent_id) AS (
+         SELECT id, parent_id FROM app_clubs WHERE id = @club_id
+         UNION ALL
+         SELECT c.id, c.parent_id
+         FROM app_clubs c
+         INNER JOIN parents p ON p.parent_id = c.id
+       )
+       SELECT CAST(coalesce(sum(id), 0) AS INTEGER) AS value FROM parents",
+    )
+  let assert [Parameter(name: "club_id", column_type: IntType, nullable: False)] =
     result.parameters
 }
 

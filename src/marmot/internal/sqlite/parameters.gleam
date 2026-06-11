@@ -82,6 +82,7 @@ pub fn extract_parameters(
             cursor_index_columns,
           )
         })
+        |> preserve_opcode_named_parameter_names(tokens)
       }
 
       let body_result = case statement_parser.parse(tokens) {
@@ -494,14 +495,13 @@ fn refine_string_parameter_type(
 ) -> Parameter {
   // Preserve named parameters from the SQL text while using opcode evidence
   // when the text resolver only found its generic StringType fallback.
-  case
-    list.contains(contextless_named_params, param.name)
-    && param.column_type == StringType
-    && opcode_param.column_type != StringType
-  {
-    True -> Parameter(..param, column_type: opcode_param.column_type)
-    False -> param
-  }
+  use <- bool.guard(
+    !list.contains(contextless_named_params, param.name)
+      || param.column_type != StringType
+      || opcode_param.column_type == StringType,
+    param,
+  )
+  Parameter(..param, column_type: opcode_param.column_type)
 }
 
 fn contextless_named_parameter_names(
@@ -515,6 +515,46 @@ fn contextless_named_parameter_names(
     }
   })
   |> list.unique
+}
+
+fn preserve_opcode_named_parameter_names(
+  params: List(Parameter),
+  tokens: List(tokenize.Token),
+) -> List(Parameter) {
+  let overrides = collect_parameter_name_overrides(tokens, [], [])
+  use <- bool.guard(list.length(overrides) != list.length(params), params)
+
+  list.zip(params, overrides)
+  |> list.map(fn(pair) {
+    let #(param, override) = pair
+    case override {
+      option.Some(name) -> Parameter(..param, name: name)
+      option.None -> param
+    }
+  })
+}
+
+fn collect_parameter_name_overrides(
+  tokens: List(tokenize.Token),
+  seen_named: List(String),
+  acc: List(option.Option(String)),
+) -> List(option.Option(String)) {
+  case tokens {
+    [] -> list.reverse(acc)
+    [tokenize.ParamAnon, ..rest] ->
+      collect_parameter_name_overrides(rest, seen_named, [option.None, ..acc])
+    [tokenize.ParamNamed(name), ..rest] -> {
+      case list.contains(seen_named, name) {
+        True -> collect_parameter_name_overrides(rest, seen_named, acc)
+        False ->
+          collect_parameter_name_overrides(rest, [name, ..seen_named], [
+            option.Some(name),
+            ..acc
+          ])
+      }
+    }
+    [_, ..rest] -> collect_parameter_name_overrides(rest, seen_named, acc)
+  }
 }
 
 fn extract_via_resolver(
