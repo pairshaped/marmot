@@ -6,6 +6,7 @@ repository = { type = "github", user = "pairshaped", repo = "marmot" }
 target = "erlang"
 links = [
   { title = "Internals", href = "https://github.com/pairshaped/marmot/blob/master/src/marmot/internal/README.md" },
+  { title = "Benchmark report", href = "https://github.com/pairshaped/marmot/blob/master/BENCHMARK_REPORT.md" },
   { title = "llms.txt", href = "https://raw.githubusercontent.com/pairshaped/marmot/refs/heads/master/llms.txt" },
 ]
 
