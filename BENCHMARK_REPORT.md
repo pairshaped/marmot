@@ -22,6 +22,9 @@ The dedicated benchmark host is:
 - Memory: 62 GiB
 - Architecture: x86_64
 
+See the [full benchmark report](https://github.com/pairshaped/gleam_sqlite_benchmarks/blob/master/REPORT.md)
+for the complete cross-runtime comparison.
+
 ## Results
 
 These are median rows from a five-run benchmark with 10,000 simulated requests
@@ -103,9 +106,3 @@ code. The probed rows answer a different question: how SQLite NIF work affects
 the rest of a BEAM application while similar request-shaped SQLite work is
 running. They are included because that effect is easy to miss if the benchmark
 only reports request throughput.
-
-## Scope
-
-This report intentionally does not include Rust Marmot or SQLx rows. Those are
-useful for evaluating Rust data-access choices, but they are not needed to
-understand Marmot's Gleam SQLite behavior.
