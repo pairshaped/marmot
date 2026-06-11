@@ -4,4 +4,4 @@ title: returning alias preserves case
 file: ./test/marmot/internal/sqlite_test.gleam
 test_name: introspect_returning_alias_preserves_case_test
 ---
-QueryInfo([Column("userId", StringType, True), Column("userName", StringType, True)], [Parameter("name", StringType, False)])
+QueryInfo([Column("userId", IntType, False), Column("userName", StringType, False)], [Parameter("name", StringType, False)])

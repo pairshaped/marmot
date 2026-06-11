@@ -153,10 +153,16 @@ fn infer_parameter_or_string(
 fn extract_insert_values_body_result(
   stmt: statement_parser.InsertStmt,
   table_metadata: schema.TableMetadataV2,
+  table_schemas: Dict(String, List(Column)),
   param_count: Int,
   opcode_fallback: fn() -> List(Parameter),
 ) -> Result(List(Parameter), ParameterResolutionError) {
-  use parsed <- result.try(extract_insert_parameters_v2(stmt, table_metadata))
+  use values_params <- result.try(extract_insert_parameters_v2(
+    stmt,
+    table_metadata,
+  ))
+  let upsert_params = extract_anonymous_upsert_parameters(stmt, table_schemas)
+  let parsed = list.append(values_params, upsert_params)
   // If the extracted param count doesn't match (e.g. upsert with ON CONFLICT DO
   // UPDATE SET adds more `?` parameters beyond the VALUES row), fall back to
   // opcode inference so those extra parameters aren't silently dropped.
@@ -177,6 +183,7 @@ fn extract_insert_body_result(
       extract_insert_values_body_result(
         stmt,
         table_metadata,
+        table_schemas,
         param_count,
         opcode_fallback,
       )
@@ -209,6 +216,94 @@ fn return_parsed_when_count_matches(
 ) -> Result(List(Parameter), ParameterResolutionError) {
   use <- bool.guard(list.length(parsed) != param_count, Ok(opcode_fallback()))
   Ok(parsed)
+}
+
+fn extract_anonymous_upsert_parameters(
+  stmt: statement_parser.InsertStmt,
+  table_schemas: Dict(String, List(Column)),
+) -> List(Parameter) {
+  case stmt.upsert {
+    option.None -> []
+    option.Some(upsert_tokens) -> {
+      use <- bool.guard(!has_anonymous_param(upsert_tokens), [])
+
+      let table_name = stmt.target.table.name.text
+      let set_params =
+        extract_upsert_set_parameters(upsert_tokens, table_schemas, table_name)
+      let where_params =
+        extract_upsert_where_parameters(
+          upsert_tokens,
+          table_schemas,
+          table_name,
+        )
+      list.append(set_params, where_params)
+    }
+  }
+}
+
+fn has_anonymous_param(tokens: List(tokenize.Token)) -> Bool {
+  list.any(tokens, fn(t) {
+    case t {
+      tokenize.ParamAnon -> True
+      _ -> False
+    }
+  })
+}
+
+fn extract_upsert_set_parameters(
+  upsert_tokens: List(tokenize.Token),
+  table_schemas: Dict(String, List(Column)),
+  table_name: String,
+) -> List(Parameter) {
+  case tokenize.split_at_keyword(upsert_tokens, "SET") {
+    Error(_) -> []
+    Ok(#(_, after_set)) -> {
+      let set_tokens = tokenize.take_until_keywords(after_set, ["WHERE"])
+      extract_update_set_parameters_resolved(
+        table_schemas,
+        table_name,
+        set_tokens,
+      )
+    }
+  }
+}
+
+fn extract_upsert_where_parameters(
+  upsert_tokens: List(tokenize.Token),
+  table_schemas: Dict(String, List(Column)),
+  table_name: String,
+) -> List(Parameter) {
+  case upsert_update_where_tokens(upsert_tokens) {
+    Error(_) -> []
+    Ok(where_tokens) -> {
+      let where_params = parse_params.parse_where_body(where_tokens)
+      list.map(where_params, fn(param) {
+        let #(param_name, lookup_col) = param
+        let found_col =
+          find_column_in_table(table_schemas, table_name, lookup_col)
+        parameter_from_column_result(param_name, found_col, False)
+      })
+    }
+  }
+}
+
+fn upsert_update_where_tokens(
+  upsert_tokens: List(tokenize.Token),
+) -> Result(List(tokenize.Token), Nil) {
+  use after_set <- result.try(
+    tokenize.split_at_keyword(upsert_tokens, "SET")
+    |> result.map(fn(split) { split.1 }),
+  )
+  tokenize.split_at_keyword(after_set, "WHERE")
+  |> result.map(fn(split) { split.1 })
+}
+
+fn find_column_in_table(
+  table_schemas: Dict(String, List(Column)),
+  table_name: String,
+  column_name: String,
+) -> Result(Column, Nil) {
+  query.find_column_ci(table_schemas, table_name, column_name)
 }
 
 // ---- Resolver-driven extraction for SELECT/DELETE/UPDATE ----

@@ -10,7 +10,7 @@ import marmot/internal/sqlite/parse/expression
 import marmot/internal/sqlite/parse/select
 import marmot/internal/sqlite/parse/statement_parser
 import marmot/internal/sqlite/parse/util
-import marmot/internal/sqlite/tokenize.{type Token}
+import marmot/internal/sqlite/tokenize.{type Token, Star}
 
 /// Extract result columns for regular (non-INSERT) queries.
 ///
@@ -237,21 +237,35 @@ pub fn extract_returning_columns(
   table_name: String,
   table_schemas: Dict(String, List(Column)),
 ) -> List(Column) {
-  let returning_cols = select.parse_returning_body(returning_tokens)
-  case returning_cols {
+  case returning_tokens {
     [] -> []
-    ["*"] ->
+    [Star] ->
       case dict.get(table_schemas, table_name) {
         Ok(table_cols) -> table_cols
         Error(_) -> []
       }
-    cols ->
-      list.map(cols, fn(col_name) {
-        case query.find_column_ci(table_schemas, table_name, col_name) {
-          Ok(col) -> Column(..col, name: col_name)
-          Error(_) ->
-            Column(name: col_name, column_type: StringType, nullable: True)
-        }
+    _ ->
+      returning_tokens
+      |> select.parse_select_item_list
+      |> list.map(fn(item) {
+        resolve_returning_item(item, table_name, table_schemas)
       })
   }
+}
+
+fn resolve_returning_item(
+  item: select.SelectItem,
+  table_name: String,
+  table_schemas: Dict(String, List(Column)),
+) -> Column {
+  let col = case item.bare_column {
+    option.Some(col_name) ->
+      case query.find_column_ci(table_schemas, table_name, col_name) {
+        Ok(col) -> Column(..col, name: item.alias)
+        Error(_) -> alias_string_column(item.alias)
+      }
+    option.None -> expression.infer_expression_type(item)
+  }
+
+  expression.apply_override(col, item.override)
 }
