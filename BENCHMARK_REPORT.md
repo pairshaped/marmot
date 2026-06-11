@@ -84,6 +84,12 @@ The `pog` runner has two shapes:
   cases
 - `batched_request/*`: the same logical work with fewer, larger SQL statements
 
+These Postgres rows are useful for comparing the cost of running the same
+request-shaped work through `pog`, but they should not be read as ideal
+Postgres application design. A Postgres-backed application would often reshape
+some of this work into fewer queries, wider joins, CTEs, or server-side
+aggregation instead of preserving the SQLite-oriented many-small-query shape.
+
 The batched rows are included because Postgres often rewards fewer protocol
 round-trips. They are not meant to say the `app_request/*` shape is invalid;
 they show the cost of choosing that shape over a local Postgres connection.
