@@ -42,6 +42,10 @@ per run.
 | Gleam Postgres (`pog`) | `batched_request/admin_item_edit` | 4,657,410us | 465 | fewer protocol round-trips |
 | Gleam Postgres (`pog`) | `app_request/admin_item_update` | 17,309,572us | 1,730 | same request shape through local Postgres |
 | Gleam Postgres (`pog`) | `batched_request/admin_item_update` | 16,276,321us | 1,627 | fewer protocol round-trips |
+| Gleam Postgres (`pog`), probed | `probed_app_request/admin_item_edit` | 12,431,822us | 1,243 | BEAM runtime interference probe |
+| Gleam Postgres (`pog`), probed | `probed_batched_request/admin_item_edit` | 5,898,673us | 589 | BEAM runtime interference probe |
+| Gleam Postgres (`pog`), probed | `probed_app_request/admin_item_update` | 17,951,184us | 1,795 | BEAM runtime interference probe |
+| Gleam Postgres (`pog`), probed | `probed_batched_request/admin_item_update` | 16,639,675us | 1,663 | BEAM runtime interference probe |
 | Ruby ActiveRecord SQLite | `active_record/app_request/admin_item_edit` | 12,732,861us | 1,273 | ORM reference |
 | Ruby ActiveRecord SQLite | `active_record/app_request/admin_item_update` | 4,230,022us | 423 | ORM reference |
 
@@ -96,19 +100,21 @@ they show the cost of choosing that shape over a local Postgres connection.
 
 ## Probe Rows
 
-The benchmark harness measures a probe-enabled Gleam SQLite path. During the
-measured request loop, separate lightweight workers repeatedly exercise:
+The benchmark harness measures probe-enabled Gleam SQLite and Gleam Postgres
+paths. During the measured request loop, separate lightweight workers repeatedly
+exercise:
 
 - BEAM scheduler heartbeat timing
 - `file:sendfile/2`
 - `file:read_file/1`
 
 Those rows answer a different question from plain throughput: what happens to
-other runtime and file IO work while SQLite requests are running through the
+other runtime and file IO work while database requests are running through the
 Gleam path.
 
 The plain Marmot rows are the fair throughput comparison for generated query
-code. The probed rows answer a different question: how SQLite NIF work affects
-the rest of a BEAM application while similar request-shaped SQLite work is
-running. They are included because that effect is easy to miss if the benchmark
-only reports request throughput.
+code. The SQLite probe rows show how SQLite NIF work affects the rest of a BEAM
+application while request-shaped SQLite work is running. The Postgres probe rows
+provide a useful comparison point for similar BEAM-side request work that does
+not run SQLite through a NIF. They are included because runtime interference is
+easy to miss if the benchmark only reports request throughput.
