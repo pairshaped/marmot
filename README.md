@@ -173,6 +173,33 @@ gleam run -m marmot
 If no database is configured, Marmot shows an error message listing the
 available options.
 
+#### Initializing the codegen connection
+
+If Marmot needs extra setup before it can inspect your queries, configure
+`init_sql` with a path to a SQL file:
+
+```toml
+[tools.marmot]
+database = "dev.sqlite"
+init_sql = "db/marmot_init.sql"
+```
+
+Marmot runs that file on the database connection it opens for generation,
+before reading schema metadata or running `EXPLAIN`.
+
+Warning: this is an escape hatch. Marmot does not sandbox the SQL, wrap it in a
+rollback-only transaction, or check whether it changes schema or data. If the
+file says `DROP TABLE`, Marmot will ask SQLite to do exactly that.
+
+Use `init_sql` for setup that belongs to Marmot's introspection connection:
+`ATTACH`, temporary tables, PRAGMAs, or other statements your queries need at
+codegen time. Do not treat it as a migration system. It only runs during Marmot
+generation, and it does not run when your application starts.
+
+Also note that `init_sql` does not magically enable native SQLite extension
+loading. If your SQL driver does not expose extension loading, a statement such
+as `SELECT load_extension(...)` can still fail.
+
 ### Multiple Databases
 
 For projects with more than one SQLite database, define named database
@@ -204,8 +231,12 @@ path = "priv/analytics.sqlite"
 migrations_dir = "priv/analytics/migrations"
 seeds_dir = "priv/analytics/seeds"
 sql_dir = "src/analytics_queries"
+init_sql = "priv/analytics/marmot_init.sql"
 output = "src/analytics/generated"
 ```
+
+Named databases inherit `[tools.marmot].init_sql` when it is set. Set
+`init_sql` on a named database to override it for that database.
 
 Run commands against every named reference:
 

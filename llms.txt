@@ -92,7 +92,7 @@ branching workflows, checksums, or a larger migration system.
 ## How it works
 
 1. Reads config: `--database` CLI flag > `--database-name` CLI flag > `gleam.toml [tools.marmot]`
-2. Opens the SQLite file, scans `src/` for `sql/` directories
+2. Opens the SQLite file, runs `init_sql` when configured, scans `src/` for `sql/` directories
 3. For each `.sql` file: reads SQL, tokenizes it, parses the statement shape, loads schema metadata with `PRAGMA table_xinfo`/`PRAGMA table_list`, and runs `EXPLAIN`
 4. Generates a `sql.gleam` module per `sql/` directory with typed functions + decoders
 
@@ -108,9 +108,11 @@ branching workflows, checksums, or a larger migration system.
 | `databases.NAME.migrations_dir` | `db/migrations/NAME` | Directory for a named database ref's migration files. |
 | `databases.NAME.seeds_dir` | `db/seeds/NAME` | Directory for a named database ref's seed files. |
 | `databases.NAME.sql_dir` | `src/sql/NAME` | SQL discovery root for a named database ref. |
+| `databases.NAME.init_sql` | inherited from `[tools.marmot].init_sql` | SQL file run on the named database's generation connection before schema/query analysis. |
 | `databases.NAME.output` | `src/generated/sql/NAME` | Output directory override for a named database ref. |
 | `output` | `src/generated/sql` | Output directory for generated modules (must be under `src/`). Marmot infers the directory structure by finding the longest common path prefix between `output` and each `sql/` directory, then uses the remainder as the namespace (e.g. `src/app/users/sql/` with default output produces `src/generated/sql/app/users_sql.gleam`). |
 | `sql_dir` | none | Custom directory for SQL file discovery. When set, Marmot recursively finds all directories under this path that contain `.sql` files, instead of the default `src/**/sql/` convention. |
+| `init_sql` | none | SQL file run on Marmot's generation connection before schema/query analysis. This SQL is not sandboxed or rolled back. It can change schema or data, and it does not enable native SQLite extension loading unless the driver supports it. |
 | `query_function` | `sqlight.query` | Fully-qualified function (`module/path.name`) that generated code calls instead of `sqlight.query`. Wrapper must match `sqlight.query`'s labelled signature (`sql: String, on connection, with parameters, expecting decoder`). Useful for logging, timing, instrumentation. |
 
 ## Project structure

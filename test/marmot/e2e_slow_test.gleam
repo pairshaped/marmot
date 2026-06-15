@@ -460,6 +460,51 @@ pub fn e2e_cli_successful_generation_test() {
   }
 }
 
+pub fn e2e_cli_init_sql_runs_before_generation_test() {
+  let base = "test_e2e_cli_init_sql"
+  let result =
+    rescue(fn() {
+      write_cli_project_with_config(
+        "cli_init_sql",
+        base,
+        "\n[tools.marmot]\ndatabase = \"test.db\"\ninit_sql = \"db/marmot_init.sql\"\n",
+      )
+
+      let assert Ok(_) = simplifile.create_directory_all(base <> "/db")
+      let assert Ok(_) =
+        simplifile.write(
+          base <> "/db/marmot_init.sql",
+          "CREATE TABLE users (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL)",
+        )
+
+      let sql_dir = base <> "/src/sql"
+      let assert Ok(_) = simplifile.create_directory(sql_dir)
+      let assert Ok(_) =
+        simplifile.write(
+          sql_dir <> "/find_user.sql",
+          "SELECT id, name FROM users WHERE id = ?",
+        )
+
+      let exit_code =
+        marmot.run_executable_in_timeout(
+          "gleam",
+          ["run", "-m", "marmot"],
+          base,
+          120_000,
+        )
+
+      let assert Ok(True) =
+        simplifile.is_file(base <> "/src/generated/sql/sql.gleam")
+      let assert 0 = exit_code
+      Nil
+    })
+  let _ = simplifile.delete(base)
+  case result {
+    Ok(Nil) -> Nil
+    Error(msg) -> panic as msg
+  }
+}
+
 pub fn e2e_cli_no_sql_directories_test() {
   let base = "test_e2e_cli_no_sql"
   let result =

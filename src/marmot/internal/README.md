@@ -49,6 +49,7 @@ Without one of those commands, `run_generate()`:
 - Resolves one simple database target, one selected named ref, or every named
   ref when no name is selected
 - Opens each SQLite database via `sqlight`
+- Runs `init_sql` on the generation connection when configured
 - Calls `generate_all()`, scoped to that target's SQL and output config
 
 `generate_all()`:
@@ -73,14 +74,21 @@ Without one of those commands, `run_generate()`:
 | `output` | CLI / toml | Output directory for generated modules |
 | `query_function` | toml only | Custom wrapper replacing `sqlight.query` |
 | `sql_dir` | toml only | Override sql/ directory discovery |
+| `init_sql` | named database / toml | SQL file run before generation introspection |
 | `migrations_dir` | named database / toml | Directory for migration files |
 | `seeds_dir` | named database / toml | Directory for seed files |
 
 Named database references live under `[tools.marmot.databases.NAME]` or
 `[[tools.marmot.databases]] name = "NAME"`. They can provide `path`,
-`migrations_dir`, `seeds_dir`, `sql_dir`, and `output`. `[tools.marmot].database`
-remains supported as the simple single-database path. Mixing
+`migrations_dir`, `seeds_dir`, `sql_dir`, `init_sql`, and `output`.
+`[tools.marmot].database` remains supported as the simple single-database path. Mixing
 `[tools.marmot].database` with named database refs is a config error.
+
+`init_sql` is an escape hatch for the generation connection. Marmot runs the
+file as normal SQL before schema/query analysis. It is not sandboxed, not
+rolled back, and not a migration system. It can change schema or data. It also
+does not enable native SQLite extension loading unless the underlying driver
+supports it.
 
 `find_sql_directories()` has two modes:
 - **Default mode** (`sql_dir: None`): recursively walks `src/` for directories named `sql`, skipping `src/generated`

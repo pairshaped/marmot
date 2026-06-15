@@ -118,7 +118,9 @@ fn run_generate(args: List(String)) -> Nil {
         }
         Ok(_) -> Nil
       }
-      with_open_database(target.path, fn(db) { generate_all(db, target_config) })
+      with_open_database(target.path, target.init_sql, fn(db) {
+        generate_all(db, target_config)
+      })
     })
   })
 }
@@ -275,8 +277,14 @@ type DatabaseTarget {
     migrations_dir: String,
     seeds_dir: String,
     sql_dir: Option(String),
+    init_sql: Option(String),
     output: Option(String),
   )
+}
+
+type InitSqlError {
+  InitSqlReadError(path: String, message: String)
+  InitSqlExecError(path: String, message: String)
 }
 
 type DatabaseTargetError {
@@ -453,6 +461,7 @@ fn database_targets(
                       migrations_dir: migrations_directory(config),
                       seeds_dir: seeds_directory(config),
                       sql_dir: config.sql_dir,
+                      init_sql: config.init_sql,
                       output: config.output,
                     ),
                   ])
@@ -472,6 +481,7 @@ fn database_targets(
               migrations_dir: migrations_directory(config),
               seeds_dir: seeds_directory(config),
               sql_dir: config.sql_dir,
+              init_sql: config.init_sql,
               output: config.output,
             ),
           ])
@@ -520,6 +530,7 @@ fn named_database_target(
     ),
     seeds_dir: project.named_database_seeds_dir(name, ref, config.seeds_dir),
     sql_dir: project.named_database_sql_dir(name, ref, config.sql_dir),
+    init_sql: project.named_database_init_sql(ref, config.init_sql),
     output: project.named_database_output(name, ref, config.output),
   ))
 }
@@ -535,19 +546,30 @@ fn config_for_target(
     migrations_dir: option.Some(target.migrations_dir),
     seeds_dir: option.Some(target.seeds_dir),
     sql_dir: target.sql_dir,
+    init_sql: target.init_sql,
     output: target.output,
   )
 }
 
 fn with_open_database(
   db_path: String,
+  init_sql: Option(String),
   callback: fn(sqlight.Connection) -> Nil,
 ) -> Nil {
   case sqlight.open(db_path) {
     Ok(db) -> {
-      callback(db)
-      let _close_result = sqlight.close(db)
-      Nil
+      case run_init_sql(db, init_sql) {
+        Ok(Nil) -> {
+          callback(db)
+          let _close_result = sqlight.close(db)
+          Nil
+        }
+        Error(err) -> {
+          let _close_result = sqlight.close(db)
+          io.println_error(init_sql_error_to_string(err))
+          halt(1)
+        }
+      }
     }
     Error(err) -> {
       io.println_error(
@@ -558,6 +580,44 @@ fn with_open_database(
       )
       halt(1)
     }
+  }
+}
+
+fn run_init_sql(
+  db: sqlight.Connection,
+  init_sql: Option(String),
+) -> Result(Nil, InitSqlError) {
+  case init_sql {
+    option.None -> Ok(Nil)
+    option.Some(path) -> {
+      use sql <- result.try(case simplifile.read(path) {
+        Ok(sql) -> Ok(sql)
+        Error(err) ->
+          Error(InitSqlReadError(
+            path: path,
+            message: simplifile.describe_error(err),
+          ))
+      })
+
+      sqlight.exec(sql, on: db)
+      |> result.map_error(fn(err) {
+        InitSqlExecError(path: path, message: err.message)
+      })
+    }
+  }
+}
+
+fn init_sql_error_to_string(error: InitSqlError) -> String {
+  case error {
+    InitSqlReadError(path:, message:) -> "error: Could not read init_sql
+  \u{250c}\u{2500} " <> path <> "
+  \u{2502}
+  \u{2502} " <> message
+
+    InitSqlExecError(path:, message:) -> "error: Could not run init_sql
+  \u{250c}\u{2500} " <> path <> "
+  \u{2502}
+  \u{2502} " <> message
   }
 }
 

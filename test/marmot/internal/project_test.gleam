@@ -27,6 +27,7 @@ pub fn parse_config_empty_toml_test() {
     output: option.None,
     query_function: option.None,
     sql_dir: option.None,
+    init_sql: option.None,
     migrations_dir: option.None,
     seeds_dir: option.None,
     databases: _,
@@ -47,6 +48,7 @@ output = \"src/app/generated\"
     output: option.Some("src/app/generated"),
     query_function: option.None,
     sql_dir: option.None,
+    init_sql: option.None,
     migrations_dir: option.None,
     seeds_dir: option.None,
     databases: _,
@@ -67,6 +69,7 @@ query_function = \"server/db.query\"
     output: option.None,
     query_function: option.Some("server/db.query"),
     sql_dir: option.None,
+    init_sql: option.None,
     migrations_dir: option.None,
     seeds_dir: option.None,
     databases: _,
@@ -101,6 +104,7 @@ output = \"src/app/generated\"
     output: option.Some("src/other/"),
     query_function: option.None,
     sql_dir: option.None,
+    init_sql: option.None,
     migrations_dir: option.None,
     seeds_dir: option.None,
     databases: _,
@@ -242,6 +246,16 @@ sql_dir = \"src/sql\"
   let assert Config(sql_dir: option.Some("src/sql"), ..) = config
 }
 
+pub fn parse_config_init_sql_from_toml_test() {
+  let toml =
+    "[tools.marmot]
+database = \"dev.sqlite\"
+init_sql = \"db/marmot_init.sql\"
+"
+  let config = project.parse_config(toml, [], option.None)
+  let assert Config(init_sql: option.Some("db/marmot_init.sql"), ..) = config
+}
+
 pub fn parse_config_migration_and_seed_dirs_from_toml_test() {
   let toml =
     "[tools.marmot]
@@ -255,6 +269,33 @@ seeds_dir = \"db/seeds/curling\"
     seeds_dir: option.Some("db/seeds/curling"),
     ..,
   ) = config
+}
+
+pub fn parse_config_named_database_inherits_init_sql_test() {
+  let toml =
+    "[tools.marmot]
+init_sql = \"db/marmot_init.sql\"
+
+[tools.marmot.databases.primary]
+path = \"db/primary.db\"
+"
+  let config =
+    project.parse_config(toml, ["--database-name", "primary"], option.None)
+  let assert Config(init_sql: option.Some("db/marmot_init.sql"), ..) = config
+}
+
+pub fn parse_config_named_database_overrides_init_sql_test() {
+  let toml =
+    "[tools.marmot]
+init_sql = \"db/marmot_init.sql\"
+
+[tools.marmot.databases.primary]
+path = \"db/primary.db\"
+init_sql = \"db/primary_init.sql\"
+"
+  let config =
+    project.parse_config(toml, ["--database-name", "primary"], option.None)
+  let assert Config(init_sql: option.Some("db/primary_init.sql"), ..) = config
 }
 
 pub fn parse_config_database_refs_are_not_selected_without_cli_test() {
@@ -641,6 +682,7 @@ pub fn parse_config_flag_without_value_test() {
     output: option.Some("src/gen"),
     query_function: option.None,
     sql_dir: option.None,
+    init_sql: option.None,
     migrations_dir: option.None,
     seeds_dir: option.None,
     databases: _,
@@ -676,6 +718,7 @@ pub fn parse_config_flag_as_last_arg_test() {
     output: option.None,
     query_function: option.None,
     sql_dir: option.None,
+    init_sql: option.None,
     migrations_dir: option.None,
     seeds_dir: option.None,
     databases: _,
@@ -838,6 +881,7 @@ pub fn validate_output_under_src_test() {
       output: option.Some("src/generated"),
       query_function: option.None,
       sql_dir: option.None,
+      init_sql: option.None,
       migrations_dir: option.None,
       seeds_dir: option.None,
       databases: dict.new(),
@@ -854,6 +898,7 @@ pub fn validate_output_not_under_src_test() {
       output: option.Some("gen/output"),
       query_function: option.None,
       sql_dir: option.None,
+      init_sql: option.None,
       migrations_dir: option.None,
       seeds_dir: option.None,
       databases: dict.new(),
@@ -870,6 +915,7 @@ pub fn validate_output_none_test() {
       output: option.None,
       query_function: option.None,
       sql_dir: option.None,
+      init_sql: option.None,
       migrations_dir: option.None,
       seeds_dir: option.None,
       databases: dict.new(),
@@ -886,6 +932,7 @@ pub fn validate_output_path_traversal_test() {
       output: option.Some("src/../../etc/evil"),
       query_function: option.None,
       sql_dir: option.None,
+      init_sql: option.None,
       migrations_dir: option.None,
       seeds_dir: option.None,
       databases: dict.new(),
@@ -902,6 +949,7 @@ pub fn validate_output_dot_segments_test() {
       output: option.Some("src/./generated"),
       query_function: option.None,
       sql_dir: option.None,
+      init_sql: option.None,
       migrations_dir: option.None,
       seeds_dir: option.None,
       databases: dict.new(),
@@ -918,6 +966,7 @@ pub fn validate_output_double_traversal_test() {
       output: option.Some("src/a/../../../outside"),
       query_function: option.None,
       sql_dir: option.None,
+      init_sql: option.None,
       migrations_dir: option.None,
       seeds_dir: option.None,
       databases: dict.new(),

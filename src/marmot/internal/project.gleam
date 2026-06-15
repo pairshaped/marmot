@@ -23,8 +23,8 @@ import tom
 ///
 /// All fields are optional. Precedence is resolved in `parse_config`:
 /// database: CLI path > CLI name > env > toml; output: CLI >
-/// selected database reference > toml; migration, seed, and SQL directories:
-/// selected database reference > toml; the rest are toml-only.
+/// selected database reference > toml; migration, seed, SQL, and init SQL
+/// paths: selected database reference > toml; the rest are toml-only.
 pub type Config {
   Config(
     /// Path to the SQLite database file used for introspection.
@@ -37,6 +37,8 @@ pub type Config {
     query_function: Option(String),
     /// Custom directory for SQL file discovery instead of `src/**/sql/`.
     sql_dir: Option(String),
+    /// SQL file run on Marmot's introspection connection before generation.
+    init_sql: Option(String),
     /// Custom directory for migration files instead of `db/migrations/`.
     migrations_dir: Option(String),
     /// Custom directory for seed files instead of `db/seeds/`.
@@ -54,6 +56,7 @@ pub type DatabaseReference {
     migrations_dir: Option(String),
     seeds_dir: Option(String),
     sql_dir: Option(String),
+    init_sql: Option(String),
     output: Option(String),
   )
 }
@@ -78,6 +81,7 @@ type TomlConfig {
     output: Option(String),
     query_function: Option(String),
     sql_dir: Option(String),
+    init_sql: Option(String),
     migrations_dir: Option(String),
     seeds_dir: Option(String),
     databases: dict.Dict(String, DatabaseReference),
@@ -162,6 +166,15 @@ pub fn parse_config(
     option.None -> toml_config.sql_dir
   }
 
+  let init_sql = case database_ref {
+    option.Some(ref) ->
+      case database_name {
+        option.Some(_) -> named_database_init_sql(ref, toml_config.init_sql)
+        option.None -> toml_config.init_sql
+      }
+    option.None -> toml_config.init_sql
+  }
+
   let migrations_dir = case database_ref {
     option.Some(ref) ->
       case database_name {
@@ -192,6 +205,7 @@ pub fn parse_config(
     output:,
     query_function: toml_config.query_function,
     sql_dir:,
+    init_sql:,
     migrations_dir:,
     seeds_dir:,
     databases: toml_config.databases,
@@ -260,6 +274,7 @@ fn parse_toml_config(
             "query_function",
           ]),
           sql_dir: get_toml_string(parsed, ["tools", "marmot", "sql_dir"]),
+          init_sql: get_toml_string(parsed, ["tools", "marmot", "init_sql"]),
           migrations_dir: get_toml_string(parsed, [
             "tools",
             "marmot",
@@ -307,6 +322,7 @@ fn empty_toml_config() -> TomlConfig {
     output: option.None,
     query_function: option.None,
     sql_dir: option.None,
+    init_sql: option.None,
     migrations_dir: option.None,
     seeds_dir: option.None,
     databases: dict.new(),
@@ -382,8 +398,19 @@ fn parse_database_reference(
     migrations_dir: get_toml_string(table, ["migrations_dir"]),
     seeds_dir: get_toml_string(table, ["seeds_dir"]),
     sql_dir: get_toml_string(table, ["sql_dir"]),
+    init_sql: get_toml_string(table, ["init_sql"]),
     output: get_toml_string(table, ["output"]),
   )
+}
+
+pub fn named_database_init_sql(
+  ref: DatabaseReference,
+  fallback: Option(String),
+) -> Option(String) {
+  case ref.init_sql {
+    option.Some(path) -> option.Some(path)
+    option.None -> fallback
+  }
 }
 
 pub fn named_database_path(name: String, ref: DatabaseReference) -> String {
@@ -827,6 +854,7 @@ const known_config_keys = [
   "output",
   "query_function",
   "sql_dir",
+  "init_sql",
   "migrations_dir",
   "seeds_dir",
 ]
