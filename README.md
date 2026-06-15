@@ -597,10 +597,11 @@ Not Marmot's to fix.
 
 Marmot mirrors [Squirrel's](https://github.com/giacomocavalieri/squirrel)
 ergonomics but targets SQLite instead of Postgres. The surface conventions
-(SQL file layout, code generation, formatting, and `-- returns:` annotations)
-are deliberately similar so switching between the two feels seamless. The
-type-inference engine underneath had to be built from scratch because Postgres
-and SQLite expose type information in fundamentally incompatible ways.
+(SQL file layout, code generation, formatted output, and explicit generated
+return types) are deliberately similar so switching between the two feels
+familiar. The type-inference engine underneath had to be built from scratch
+because Postgres and SQLite expose type information in fundamentally
+incompatible ways.
 
 **Where Marmot diverges on the surface (might change over time):**
 
@@ -609,9 +610,11 @@ and SQLite expose type information in fundamentally incompatible ways.
   sibling of the `sql/` directory.
 - **Named parameters**: Marmot supports `@name`, `:name`, and `$name`
   placeholders natively. Squirrel uses Postgres `$1` positional parameters and
-  generates `arg_1`, `arg_2` names.
-- **Return type signatures**: Generated functions include explicit
-  `-> Result(List(RowType), sqlight.Error)` return types.
+  infers parameter names where it can, falling back to names like `arg_1` and
+  `arg_2`.
+- **Shared row annotations**: Marmot supports optional `-- returns: TypeName`
+  comments for reusing one row type across multiple queries. Squirrel does not
+  have an equivalent SQL comment annotation.
 
 **Where it diverges under the hood:**
 
