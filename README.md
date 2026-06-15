@@ -597,10 +597,10 @@ Not Marmot's to fix.
 
 Marmot mirrors [Squirrel's](https://github.com/giacomocavalieri/squirrel)
 ergonomics but targets SQLite instead of Postgres. The surface conventions
-(SQL file layout, code generation, formatting) are deliberately similar so
-switching between the two feels seamless. The type-inference engine underneath
-had to be built from scratch because Postgres and SQLite expose type
-information in fundamentally incompatible ways.
+(SQL file layout, code generation, formatting, and `-- returns:` annotations)
+are deliberately similar so switching between the two feels seamless. The
+type-inference engine underneath had to be built from scratch because Postgres
+and SQLite expose type information in fundamentally incompatible ways.
 
 **Where Marmot diverges on the surface (might change over time):**
 
@@ -612,11 +612,6 @@ information in fundamentally incompatible ways.
   generates `arg_1`, `arg_2` names.
 - **Return type signatures**: Generated functions include explicit
   `-> Result(List(RowType), sqlight.Error)` return types.
-- **Formatting**: Generated code is run through `gleam format` automatically,
-  so it never causes diffs when users run the formatter.
-- **Shared return types**: Queries in the same `sql/` directory can share a
-  single Row type and decoder via a `-- returns: EntityRow` annotation.
-  Eliminates adapter boilerplate when multiple queries return the same shape.
 
 **Where it diverges under the hood:**
 
