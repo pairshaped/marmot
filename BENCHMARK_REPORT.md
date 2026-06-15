@@ -49,6 +49,25 @@ per run.
 | Ruby ActiveRecord SQLite | `active_record/app_request/admin_item_edit` | 12,732,861us | 1,273 | ORM reference |
 | Ruby ActiveRecord SQLite | `active_record/app_request/admin_item_update` | 4,230,022us | 423 | ORM reference |
 
+## Probe Impact
+
+The probe rows measure the same request shape while separate BEAM workers
+exercise scheduler timing, `file:sendfile/2`, and `file:read_file/1`.
+
+| Runner | Case | Plain | Probed | Impact |
+| --- | --- | ---: | ---: | ---: |
+| Gleam SQLite | `app_request/admin_item_edit` | 1,135,184us | 1,823,617us | 1.61x slower |
+| Gleam SQLite | `app_request/admin_item_update` | 453,052us | 640,988us | 1.42x slower |
+| Gleam Postgres (`pog`) | `app_request/admin_item_edit` | 7,963,548us | 12,431,822us | 1.56x slower |
+| Gleam Postgres (`pog`) | `batched_request/admin_item_edit` | 4,657,410us | 5,898,673us | 1.27x slower |
+| Gleam Postgres (`pog`) | `app_request/admin_item_update` | 17,309,572us | 17,951,184us | 1.04x slower |
+| Gleam Postgres (`pog`) | `batched_request/admin_item_update` | 16,276,321us | 16,639,675us | 1.02x slower |
+
+The SQLite probe impact is real, but it is not catastrophic in this workload.
+The Postgres read-heavy shape shows similar sensitivity to the probes, while the
+Postgres update shape barely moves because the transaction path is already much
+slower than the probe pressure.
+
 ## Methodology
 
 Each benchmark row prints:
