@@ -69,46 +69,37 @@ pub fn parse_sqlite_type(raw: String) -> Result(ColumnType, Nil) {
   }
   let upper = string.uppercase(base_type)
 
-  // Marmot-specific overrides (exact match, checked before generic affinity
-  // rules so they are not swallowed by substring matching)
-  case upper {
-    "BOOLEAN" | "BOOL" -> Ok(BoolType)
-    "TIMESTAMP" | "DATETIME" -> Ok(TimestampType)
-    "DATE" -> Ok(DateType)
-    _ -> {
-      // SQLite affinity-style substring rules
-      // https://www.sqlite.org/datatype3.html
-      case string.contains(upper, "INT") {
-        True -> Ok(IntType)
-        False -> {
-          case
-            string.contains(upper, "CHAR")
-            || string.contains(upper, "CLOB")
-            || string.contains(upper, "TEXT")
-          {
-            True -> Ok(StringType)
-            False -> {
-              case string.contains(upper, "BLOB") {
-                True -> Ok(BitArrayType)
-                False -> {
-                  case
-                    string.contains(upper, "REAL")
-                    || string.contains(upper, "FLOA")
-                    || string.contains(upper, "DOUB")
-                    || string.contains(upper, "NUMERIC")
-                    || string.contains(upper, "DECIMAL")
-                  {
-                    True -> Ok(FloatType)
-                    False -> Error(Nil)
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
+  // Marmot-specific overrides are exact matches, checked before generic SQLite
+  // affinity rules so they are not swallowed by substring matching.
+  use <- bool.guard(upper == "BOOLEAN" || upper == "BOOL", Ok(BoolType))
+  use <- bool.guard(
+    upper == "TIMESTAMP" || upper == "DATETIME",
+    Ok(TimestampType),
+  )
+  use <- bool.guard(upper == "DATE", Ok(DateType))
+
+  // SQLite affinity-style substring rules.
+  // https://www.sqlite.org/datatype3.html
+  use <- bool.guard(string.contains(upper, "INT"), Ok(IntType))
+  use <- bool.guard(has_text_affinity(upper), Ok(StringType))
+  use <- bool.guard(string.contains(upper, "BLOB"), Ok(BitArrayType))
+  use <- bool.guard(has_float_affinity(upper), Ok(FloatType))
+
+  Error(Nil)
+}
+
+fn has_text_affinity(upper: String) -> Bool {
+  string.contains(upper, "CHAR")
+  || string.contains(upper, "CLOB")
+  || string.contains(upper, "TEXT")
+}
+
+fn has_float_affinity(upper: String) -> Bool {
+  string.contains(upper, "REAL")
+  || string.contains(upper, "FLOA")
+  || string.contains(upper, "DOUB")
+  || string.contains(upper, "NUMERIC")
+  || string.contains(upper, "DECIMAL")
 }
 
 pub fn function_name(filename: String) -> Result(String, Nil) {

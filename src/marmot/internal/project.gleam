@@ -765,6 +765,10 @@ pub fn output_path_from_source_root(
   }
 }
 
+pub fn transaction_output_path(configured_output: Option(String)) -> String {
+  output_dir(configured_output) <> "/transaction.gleam"
+}
+
 fn output_dir(configured_output: Option(String)) -> String {
   let output = case configured_output {
     option.Some(o) -> o

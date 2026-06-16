@@ -149,7 +149,8 @@ SQLite database file where your schema is defined. Marmot reads the database
 path with the following precedence:
 
 1. `--database` CLI flag
-2. `database` field in `[tools.marmot]` section of `gleam.toml`
+2. `DATABASE_URL` environment variable
+3. `database` field in `[tools.marmot]` section of `gleam.toml`
 
 Pass `--database` when you run Marmot:
 
@@ -163,6 +164,9 @@ Or configure `gleam.toml`:
 [tools.marmot]
 database = "dev.sqlite"
 ```
+
+Marmot also falls back to `DATABASE_URL` for single-database projects when no
+CLI database path is provided.
 
 Then run Marmot:
 
@@ -299,7 +303,7 @@ Run migrations with:
 gleam run -m marmot migrate --database dev.sqlite
 ```
 
-You can also select the database with `--database-name` or
+You can also select the database with `--database-name`, `DATABASE_URL`, or
 `[tools.marmot].database`, using the same precedence as code generation.
 To use another migration directory, set `migrations_dir` in `gleam.toml`:
 
@@ -410,6 +414,37 @@ sql_dir = "src/queries"
 With this config, Marmot recursively finds all directories under `src/queries/`
 that contain `.sql` files. This is useful when your SQL files live outside `sql/`
 directories or when you want to limit generation to a specific subtree.
+
+### Generated transaction helper
+
+Marmot writes a small transaction helper beside the generated query modules:
+
+```txt
+src/generated/sql/transaction.gleam
+```
+
+For a named database with `output = "src/generated/sql/app"`, the helper is
+written to that output directory.
+
+Import the generated module when a workflow spans multiple SQL statements:
+
+```gleam
+import generated/sql/transaction
+import generated/sql/users_sql
+import gleam/result
+
+pub fn rename_user(db, id, name) {
+  transaction.savepoint(db: db, name: "rename_user", run: fn() {
+    use _ <- result.try(users_sql.update_user_name(db: db, id: id, name: name))
+    use _ <- result.try(users_sql.insert_audit_log(db: db, user_id: id))
+    Ok(Nil)
+  })
+}
+```
+
+`savepoint` uses SQLite `SAVEPOINT`, `ROLLBACK TO`, and `RELEASE`, so it can
+nest inside another transaction. The helper is generated into your project:
+app runtime code imports generated code, not Marmot.
 
 ### Custom query wrapper (`query_function`)
 
@@ -568,6 +603,9 @@ Alias-aware column resolution applies to the current parsed statement scope.
 
 These work by choice. We could change them, but it would be a design shift.
 
+- **Runtime helpers are generated into the app.** Shared helpers such as
+  transactions live beside generated query modules, so application runtime code
+  imports generated code instead of depending on Marmot.
 - **`TIMESTAMP` and `DATETIME` columns are stored as Unix seconds (integer).**
   Sub-second precision (nanoseconds) is not preserved. We picked integer
   seconds for simplicity and interop with `strftime('%s', ...)`. Preserving

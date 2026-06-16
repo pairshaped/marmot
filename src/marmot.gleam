@@ -782,8 +782,20 @@ fn generate_all(db: sqlight.Connection, config: project.Config) -> Nil {
         False -> Nil
       }
 
+      let transaction_output = project.transaction_output_path(config.output)
+      let transaction_content =
+        codegen.generate_transaction_module()
+        |> format_gleam
+      case write_module_file(transaction_output, transaction_content) {
+        True -> Nil
+        False -> {
+          io.println_error("error: Transaction helper could not be written")
+          halt(1)
+        }
+      }
+
       io.println(
-        "Generated " <> int.to_string(list.length(dirs)) <> " module(s)",
+        "Generated " <> int.to_string(list.length(dirs) + 1) <> " module(s)",
       )
     }
   }

@@ -769,6 +769,15 @@ pub fn output_path_trailing_slash_on_output_test() {
     )
 }
 
+pub fn transaction_output_path_test() {
+  let assert "src/generated/sql/transaction.gleam" =
+    project.transaction_output_path(option.None)
+  let assert "src/server/generated/sql/transaction.gleam" =
+    project.transaction_output_path(option.Some("src/server/generated/sql"))
+  let assert "src/server/generated/sql/transaction.gleam" =
+    project.transaction_output_path(option.Some("src/server/generated/sql/"))
+}
+
 pub fn output_path_multi_dir_no_collision_test() {
   let path1 = project.output_path("src/users/sql", option.Some("src/generated"))
   let path2 = project.output_path("src/posts/sql", option.Some("src/generated"))

@@ -518,6 +518,16 @@ pub fn codegen_module_with_query_function_test() {
   |> birdie.snap(title: "codegen module with query_function")
 }
 
+pub fn transaction_module_is_generated_test() {
+  let output = codegen.generate_transaction_module()
+
+  let assert True = string.contains(output, "pub type Error(work_error)")
+  let assert True = string.contains(output, "pub fn savepoint(")
+  let assert True = string.contains(output, "SAVEPOINT ")
+  let assert True = string.contains(output, "ROLLBACK TO ")
+  let assert True = string.contains(output, "RELEASE ")
+}
+
 pub fn columns_equal_identical_test() {
   let a = [
     Column(name: "id", column_type: IntType, nullable: False),

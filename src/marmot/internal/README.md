@@ -98,6 +98,11 @@ supports it.
 - `src/app/users/sql` + default output -> `src/generated/sql/app/users_sql.gleam`
 - `src/server/accounts/sql` + output `src/server/generated/sql` -> `src/server/generated/sql/accounts_sql.gleam`
 
+`transaction_output_path()` computes where the generated transaction helper
+lands. It writes `transaction.gleam` directly into the configured output
+directory, for example `src/generated/sql/transaction.gleam` or
+`src/generated/sql/app/transaction.gleam`.
+
 ### 3. SQL processing (`process_sql_file` in `marmot.gleam`)
 
 For each `.sql` file:
@@ -203,6 +208,11 @@ The comment/whitespace helpers (`strip_comments`, `normalize_whitespace`) live i
 
 The module also handles name collision detection: generated function names and row type names are checked for duplicates within a module.
 
+`generate_transaction_module()` emits a generated helper with
+`savepoint(db:, name:, run:)`, `Error(work_error)`, and `error_to_string()`.
+The helper lives in the consuming project beside query modules so application
+runtime code does not import Marmot.
+
 ## Error handling (`error.gleam`)
 
 `MarmotError` is a union of all error variants. `to_string()` produces pretty-printed error messages with box-drawing characters and hints. Errors flow as `Result` types through the pipeline; the CLI layer converts them to stderr output and non-zero exit codes.
@@ -216,4 +226,5 @@ The module also handles name collision detection: generated function names and r
 - **Read vs write nullability for rowid aliases**: `INTEGER PRIMARY KEY` on a normal rowid table is non-null on read (SQLite always assigns a rowid) but nullable on write (binding NULL means "auto-assign"). `ColumnMetadata.is_rowid_alias` is the schema-level source of truth, computed once in the loader. Parameter inference for column-less `INSERT VALUES` uses `write_nullable = column.nullable || is_rowid_alias`. Don't reintroduce inline `pk > 0 && IntType -> nullable: False` shortcuts; they're wrong for `WITHOUT ROWID` and don't carry the read/write distinction.
 - **Tokenize once, analyze many**: the tokenizer runs once per query; its output feeds statement parsing, result extraction, and parameter extraction.
 - **Suffix-based nullability overrides**: `col_name!` in SQL aliases forces non-null, `col_name?` forces nullable. These are Marmot extensions stripped before EXPLAIN but preserved in tokenized form for type inference.
+- **Generated runtime helpers**: reusable app helpers such as transactions are generated into the app output directory. Marmot remains a code-generation and database-command dependency, not an app runtime dependency.
 - **Zero external tool dependencies**: everything runs through `sqlight` (Erlang NIF).

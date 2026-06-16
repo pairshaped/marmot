@@ -2,6 +2,11 @@
 
 Marmot is a Gleam build tool that reads `.sql` files, introspects a live SQLite database for type information, and generates type-safe Gleam functions targeting `sqlight`. Heavily inspired by [Squirrel](https://github.com/giacomocavalieri/squirrel) (which does the same for Postgres).
 
+For applications, Marmot should usually be a dev dependency. Generated query
+modules depend on `sqlight` and sometimes `gleam_time`; app runtime code should
+not import Marmot unless the app deliberately calls Marmot's migration, seed, or
+reset library functions.
+
 ## Quick start
 
 ```sh
@@ -14,8 +19,9 @@ Write SQL in `src/**/sql/*.sql`, one query per file. Filename becomes the functi
 
 ## Database commands
 
-Marmot also has opinionated SQLite database commands. They are generic runtime
-functionality, separate from code generation and web frameworks.
+Marmot also has opinionated SQLite database commands for CLIs, scripts, and
+simple projects. They are separate from query code generation and web
+frameworks.
 
 ```sh
 gleam run -m marmot migrate --database dev.sqlite
@@ -68,6 +74,9 @@ marmot.reset("dev.sqlite")
 marmot.reset_from("dev.sqlite", "db/migrations", "db/seeds")
 ```
 
+These public functions are available when a tool or app intentionally depends
+on Marmot at runtime. They are not required for generated query modules.
+
 Migration files live in `db/migrations/` by default and must be named
 `NNN_description.sql`, for example `001_create_users.sql`. `migrations_dir`
 can set a different directory. Marmot rejects invalid filenames.
@@ -91,16 +100,18 @@ branching workflows, checksums, or a larger migration system.
 
 ## How it works
 
-1. Reads config: `--database` CLI flag > `--database-name` CLI flag > `gleam.toml [tools.marmot]`
-2. Opens the SQLite file, runs `init_sql` when configured, scans `src/` for `sql/` directories
+1. Resolves generation target(s): `--database PATH` for simple mode, `--database-name NAME` for one named ref, all named refs when configured and no name is selected, or simple database path from `DATABASE_URL` / `[tools.marmot].database`
+2. Opens the SQLite file, runs `init_sql` when configured, scans `src/` or configured `sql_dir` for SQL directories
 3. For each `.sql` file: reads SQL, tokenizes it, parses the statement shape, loads schema metadata with `PRAGMA table_xinfo`/`PRAGMA table_list`, and runs `EXPLAIN`
 4. Generates a `sql.gleam` module per `sql/` directory with typed functions + decoders
+5. Generates one `transaction.gleam` helper per target output directory when SQL directories are found
 
 ## Config (`[tools.marmot]` in `gleam.toml`)
 
 | Key | Default | Purpose |
 |---|---|---|
 | `database` | none | Path to the SQLite file used for introspection (also `--database` CLI) |
+| `DATABASE_URL` env | none | Fallback simple database path when `--database`, `--database-name`, and `[tools.marmot].database` do not select a database. Ignored when named database refs are configured. |
 | `migrations_dir` | `db/migrations` | Directory for migration files in simple database mode. |
 | `seeds_dir` | `db/seeds` | Directory for seed files in simple database mode. |
 | `databases[].name` / `databases.NAME` | none | Named database ref. Array form uses `name = "app"`; table form uses `[tools.marmot.databases.app]`. |
@@ -141,11 +152,19 @@ src/
 - **No external tools**: no `sqlc`, no `sqlite3` CLI, just `sqlight` (Gleam NIF)
 - **Convention over configuration**: follows Squirrel's conventions (one query per file, `sql/` dirs, filename = function name). `output` and `query_function` are opt-in knobs for larger projects.
 - **Generated code calls sqlight directly** (or a user-supplied wrapper via `query_function`): no tuples, no intermediate types
+- **Runtime helpers are generated**: shared helpers such as transactions live beside generated query modules in the consuming project, so apps do not depend on Marmot at runtime.
 - **Optional database commands**: Marmot can apply migration files, run seed files, and reset SQLite databases. Simple projects use one configured database. Multi-db projects can use named refs. Projects can use another migration or seed tool.
 
 ## Generated code patterns
 
 Generated functions use labelled arguments: `pub fn find_user(db db: ..., username username: ...)`. Call sites read as `users_sql.find_user(db: db, username: "alice")`.
+
+**Generated transaction helper:** generation writes `transaction.gleam` beside
+the generated query modules for each target output directory. App code can
+import that generated module and call `savepoint(db:, name:, run:)` around
+multi-statement writes. The helper uses SQLite `SAVEPOINT`, `ROLLBACK TO`, and
+`RELEASE`, so it can nest inside another transaction. Do not add a Marmot
+runtime dependency just to get transaction helpers.
 
 **SELECT with decoder:**
 ```gleam

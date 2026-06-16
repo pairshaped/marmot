@@ -250,37 +250,52 @@ fn build_index_columns_v2(
   table_columns: Dict(String, List(ColumnMetadata)),
 ) -> Dict(Int, List(Column)) {
   list.fold(indexes, dict.new(), fn(acc, entry) {
-    let #(index_name, rootpage, tbl_name) = entry
-    case dict.get(table_columns, tbl_name) {
+    case load_index_columns(db:, table_columns:, entry:) {
+      Ok(#(rootpage, indexed_columns)) ->
+        dict.insert(acc, rootpage, indexed_columns)
       Error(_) -> acc
-      Ok(cols) -> {
-        let pragma_sql =
-          "PRAGMA index_xinfo(\"" <> parse.quote_identifier(index_name) <> "\")"
-        let xinfo_decoder = {
-          use seqno <- decode.field(0, decode.int)
-          use cid <- decode.field(1, decode.int)
-          use key <- decode.field(5, decode.int)
-          decode.success(#(seqno, cid, key))
-        }
-        case
-          sqlight.query(pragma_sql, on: db, with: [], expecting: xinfo_decoder)
-        {
-          Error(_) -> acc
-          Ok(rows) -> {
-            let key_cols =
-              rows
-              |> list.filter(fn(row) { row.2 == 1 })
-              |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
-            let indexed_columns =
-              list.filter_map(key_cols, fn(row) {
-                let #(_, cid, _) = row
-                util.list_at(cols, cid)
-                |> result.map(fn(cm) { cm.column })
-              })
-            dict.insert(acc, rootpage, indexed_columns)
-          }
-        }
-      }
     }
   })
+}
+
+type IndexColumnsError {
+  MissingTableColumns
+  IndexInfoFailed(sqlight.Error)
+}
+
+fn load_index_columns(
+  db db: Connection,
+  table_columns table_columns: Dict(String, List(ColumnMetadata)),
+  entry entry: #(String, Int, String),
+) -> Result(#(Int, List(Column)), IndexColumnsError) {
+  let #(index_name, rootpage, tbl_name) = entry
+  use cols <- result.try(case dict.get(table_columns, tbl_name) {
+    Ok(cols) -> Ok(cols)
+    Error(Nil) -> Error(MissingTableColumns)
+  })
+
+  let pragma_sql =
+    "PRAGMA index_xinfo(\"" <> parse.quote_identifier(index_name) <> "\")"
+  let xinfo_decoder = {
+    use seqno <- decode.field(0, decode.int)
+    use cid <- decode.field(1, decode.int)
+    use key <- decode.field(5, decode.int)
+    decode.success(#(seqno, cid, key))
+  }
+  use rows <- result.try(
+    sqlight.query(pragma_sql, on: db, with: [], expecting: xinfo_decoder)
+    |> result.map_error(IndexInfoFailed),
+  )
+
+  let indexed_columns =
+    rows
+    |> list.filter(fn(row) { row.2 == 1 })
+    |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
+    |> list.filter_map(fn(row) {
+      let #(_, cid, _) = row
+      util.list_at(cols, cid)
+      |> result.map(fn(cm) { cm.column })
+    })
+
+  Ok(#(rootpage, indexed_columns))
 }
