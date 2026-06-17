@@ -27,41 +27,55 @@ for the complete cross-runtime comparison.
 
 ## Results
 
-These are median rows from a five-run benchmark with 10,000 simulated requests
-per run.
+These are median results from five-run benchmarks. Each timing value is the
+average request time from a 10,000-request benchmark run.
 
-| Runner | Case | Median Time | Median us/item | Relative Notes |
-| --- | --- | ---: | ---: | --- |
-| Rust `rusqlite` | `rust_rusqlite/app_request/admin_item_edit` | 591,459us | 59 | low-level SQLite baseline |
-| Rust `rusqlite` | `rust_rusqlite/app_request/admin_item_update` | 284,919us | 28 | low-level SQLite baseline |
-| Gleam Marmot SQLite | `gleam_marmot/app_request/admin_item_edit` | 1,239,871us | 123 | generated `sqlight` calls |
-| Gleam Marmot SQLite | `gleam_marmot/app_request/admin_item_update` | 467,107us | 46 | generated `sqlight` calls |
-| Gleam SQLite, probed | `probed_app_request/admin_item_edit` | 1,823,617us | 182 | BEAM runtime interference probe |
-| Gleam SQLite, probed | `probed_app_request/admin_item_update` | 640,988us | 64 | BEAM runtime interference probe |
-| Gleam Postgres (`pog`) | `app_request/admin_item_edit` | 7,963,548us | 796 | same request shape through local Postgres |
-| Gleam Postgres (`pog`) | `batched_request/admin_item_edit` | 4,657,410us | 465 | fewer protocol round-trips |
-| Gleam Postgres (`pog`) | `app_request/admin_item_update` | 17,309,572us | 1,730 | same request shape through local Postgres |
-| Gleam Postgres (`pog`) | `batched_request/admin_item_update` | 16,276,321us | 1,627 | fewer protocol round-trips |
-| Gleam Postgres (`pog`), probed | `probed_app_request/admin_item_edit` | 12,431,822us | 1,243 | BEAM runtime interference probe |
-| Gleam Postgres (`pog`), probed | `probed_batched_request/admin_item_edit` | 5,898,673us | 589 | BEAM runtime interference probe |
-| Gleam Postgres (`pog`), probed | `probed_app_request/admin_item_update` | 17,951,184us | 1,795 | BEAM runtime interference probe |
-| Gleam Postgres (`pog`), probed | `probed_batched_request/admin_item_update` | 16,639,675us | 1,663 | BEAM runtime interference probe |
-| Ruby ActiveRecord SQLite | `active_record/app_request/admin_item_edit` | 12,732,861us | 1,273 | ORM reference |
-| Ruby ActiveRecord SQLite | `active_record/app_request/admin_item_update` | 4,230,022us | 423 | ORM reference |
+### `app_request/admin_item_edit`
+
+| Runner | Time (us/item) | vs `rusqlite` | req/sec |
+| --- | ---: | ---: | ---: |
+| `rusqlite` | 59 | 1.0x | 16,907 |
+| Gleam Marmot | 123 | 2.1x | 8,065 |
+| Gleam SQLite, probed | 182 | 3.1x | 5,484 |
+| Gleam Postgres (`pog`) | 796 | 13.5x | 1,256 |
+| Gleam Postgres (`pog`) batched | 465 | 7.9x | 2,147 |
+| Gleam Postgres (`pog`), probed | 1,243 | 21.0x | 804 |
+| Gleam Postgres (`pog`) batched, probed | 589 | 10.0x | 1,695 |
+| Ruby ActiveRecord SQLite | 1,273 | 21.5x | 785 |
+
+### `app_request/admin_item_update`
+
+| Runner | Time (us/item) | vs `rusqlite` | req/sec |
+| --- | ---: | ---: | ---: |
+| `rusqlite` | 28 | 1.0x | 35,098 |
+| Gleam Marmot | 46 | 1.6x | 21,408 |
+| Gleam SQLite, probed | 64 | 2.2x | 15,601 |
+| Gleam Postgres (`pog`) | 1,730 | 60.8x | 578 |
+| Gleam Postgres (`pog`) batched | 1,627 | 57.1x | 614 |
+| Gleam Postgres (`pog`), probed | 1,795 | 63.0x | 557 |
+| Gleam Postgres (`pog`) batched, probed | 1,663 | 58.4x | 601 |
+| Ruby ActiveRecord SQLite | 423 | 14.8x | 2,364 |
 
 ## Probe Impact
 
 The probe rows measure the same request shape while separate BEAM workers
 exercise scheduler timing, `file:sendfile/2`, and `file:read_file/1`.
 
-| Runner | Case | Plain | Probed | Impact |
+### `admin_item_edit`
+
+| Runner | Shape | Time (us/item) | Probed (us/item) | Slowdown |
 | --- | --- | ---: | ---: | ---: |
-| Gleam SQLite | `app_request/admin_item_edit` | 1,135,184us | 1,823,617us | 1.61x slower |
-| Gleam SQLite | `app_request/admin_item_update` | 453,052us | 640,988us | 1.42x slower |
-| Gleam Postgres (`pog`) | `app_request/admin_item_edit` | 7,963,548us | 12,431,822us | 1.56x slower |
-| Gleam Postgres (`pog`) | `batched_request/admin_item_edit` | 4,657,410us | 5,898,673us | 1.27x slower |
-| Gleam Postgres (`pog`) | `app_request/admin_item_update` | 17,309,572us | 17,951,184us | 1.04x slower |
-| Gleam Postgres (`pog`) | `batched_request/admin_item_update` | 16,276,321us | 16,639,675us | 1.02x slower |
+| Gleam SQLite | `app_request` | 113 | 182 | 1.6x |
+| Gleam Postgres (`pog`) | `app_request` | 796 | 1,243 | 1.6x |
+| Gleam Postgres (`pog`) | `batched_request` | 465 | 589 | 1.3x |
+
+### `admin_item_update`
+
+| Runner | Shape | Time (us/item) | Probed (us/item) | Slowdown |
+| --- | --- | ---: | ---: | ---: |
+| Gleam SQLite | `app_request` | 45 | 64 | 1.4x |
+| Gleam Postgres (`pog`) | `app_request` | 1,730 | 1,795 | 1.0x |
+| Gleam Postgres (`pog`) | `batched_request` | 1,627 | 1,663 | 1.0x |
 
 The SQLite probe impact is real, but it is not catastrophic in this workload.
 The Postgres read-heavy shape shows similar sensitivity to the probes, while the
