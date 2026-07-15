@@ -5,6 +5,8 @@
 [![Package Version](https://img.shields.io/hexpm/v/marmot)](https://hex.pm/packages/marmot)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/marmot/)
 
+**Disclaimer: This library was developed with help from code assistance agents. Code-assisted pull requests are welcome, so long as they aren't objectively dumb.**
+
 Marmot is a code generator for Gleam that turns plain `.sql` files into type-safe
 functions for SQLite. Write your queries in SQL, point Marmot at your database,
 and it generates the Gleam functions, row types, and decoders you need. No ORM,
