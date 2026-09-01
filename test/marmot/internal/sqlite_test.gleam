@@ -4,7 +4,9 @@ import gleam/list
 import gleam/option
 import gleam/string
 import marmot/internal/error
-import marmot/internal/query.{Column, IntType, Parameter, StringType}
+import marmot/internal/query.{
+  Column, IntType, Parameter, StringType, TimestampType,
+}
 import marmot/internal/sqlite
 import marmot/internal/sqlite/schema
 import sqlight
@@ -1615,6 +1617,111 @@ pub fn results_extract_columns_via_typed_statement_test() {
   let assert [
     Column(name: "id", column_type: IntType, nullable: False),
     Column(name: "label", column_type: StringType, nullable: False),
+  ] = query.columns
+}
+
+pub fn results_select_star_expands_schema_columns_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE todo_items (
+        id INTEGER PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL
+      );",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/find_todo_items.sql",
+      "SELECT * FROM todo_items;",
+    )
+  let assert [
+    Column(name: "id", column_type: IntType, nullable: False),
+    Column(name: "title", column_type: StringType, nullable: False),
+    Column(name: "description", column_type: StringType, nullable: True),
+    Column(name: "status", column_type: StringType, nullable: False),
+    Column(name: "created_at", column_type: TimestampType, nullable: False),
+    Column(name: "updated_at", column_type: TimestampType, nullable: False),
+  ] = query.columns
+}
+
+pub fn results_select_qualified_star_expands_schema_columns_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE todo_items (
+        id INTEGER PRIMARY KEY,
+        title TEXT NOT NULL
+      );",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/find_todo_items.sql",
+      "SELECT todo_items.* FROM todo_items;",
+    )
+  let assert [
+    Column(name: "id", column_type: IntType, nullable: False),
+    Column(name: "title", column_type: StringType, nullable: False),
+  ] = query.columns
+}
+
+pub fn results_select_star_with_expression_keeps_columns_aligned_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE todo_items (
+        id INTEGER PRIMARY KEY,
+        title TEXT NOT NULL
+      );",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/find_todo_items.sql",
+      "SELECT *, 1 AS extra FROM todo_items;",
+    )
+  let assert [
+    Column(name: "id", column_type: IntType, nullable: False),
+    Column(name: "title", column_type: StringType, nullable: False),
+    Column(name: "extra", column_type: IntType, nullable: False),
+  ] = query.columns
+}
+
+pub fn results_select_multiple_qualified_stars_keeps_columns_aligned_test() {
+  let assert Ok(conn) = sqlight.open(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE parents (
+        parent_id INTEGER PRIMARY KEY,
+        parent_name TEXT NOT NULL
+      );
+      CREATE TABLE children (
+        child_id INTEGER PRIMARY KEY,
+        parent_id INTEGER NOT NULL
+      );",
+      conn,
+    )
+  let assert Ok(query) =
+    sqlite.introspect_query(
+      conn,
+      "/tmp/find_families.sql",
+      "SELECT parents.*, children.*
+       FROM parents
+       JOIN children ON children.parent_id = parents.parent_id;",
+    )
+  let assert [
+    Column(name: "parent_id", column_type: IntType, nullable: False),
+    Column(name: "parent_name", column_type: StringType, nullable: False),
+    Column(name: "child_id", column_type: IntType, nullable: False),
+    Column(name: "parent_id", column_type: IntType, nullable: False),
   ] = query.columns
 }
 

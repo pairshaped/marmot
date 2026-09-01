@@ -476,6 +476,40 @@ pub fn introspect_and_codegen_select_test() {
   let assert True = string.contains(code, "sqlight.Connection")
 }
 
+pub fn introspect_and_codegen_select_star_test() {
+  use db <- sqlight.with_connection(":memory:")
+  let assert Ok(_) =
+    sqlight.exec(
+      "CREATE TABLE todo_items (
+        id INTEGER PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMP NOT NULL,
+        updated_at TIMESTAMP NOT NULL
+      )",
+      on: db,
+    )
+  let sql = "SELECT * FROM todo_items"
+  let assert Ok(result) = sqlite.introspect_query(db, "test", sql)
+
+  let q =
+    query.Query(
+      name: "find_todo_items",
+      sql: sql,
+      path: "src/app/sql/find_todo_items.sql",
+      parameters: result.parameters,
+      columns: result.columns,
+      custom_type_name: option.None,
+    )
+  let code = codegen.generate_function(q)
+
+  let assert True = string.contains(code, "id: Int")
+  let assert True = string.contains(code, "title: String")
+  let assert True = string.contains(code, "description: Option(String)")
+  let assert False = string.contains(code, "  : Float")
+}
+
 // --- INSERT VALUES with no column list, end-to-end ---
 
 pub fn integration_bare_insert_with_rowid_pk_test() {

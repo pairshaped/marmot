@@ -2,7 +2,7 @@
 
 import gleam/dict.{type Dict}
 import gleam/list
-import gleam/option
+import gleam/option.{type Option}
 import gleam/result
 import marmot/internal/query.{type Column, Column, StringType}
 import marmot/internal/sqlite/opcode.{type JoinNullability, type Opcode}
@@ -10,7 +10,7 @@ import marmot/internal/sqlite/parse/expression
 import marmot/internal/sqlite/parse/select
 import marmot/internal/sqlite/parse/statement_parser
 import marmot/internal/sqlite/parse/util
-import marmot/internal/sqlite/tokenize.{type Token, Star}
+import marmot/internal/sqlite/tokenize.{type Token, Dot, Star, Word}
 
 /// Extract result columns for regular (non-INSERT) queries.
 ///
@@ -43,7 +43,7 @@ pub fn extract_result_columns(
       let count = rr.p2
       let result_regs = util.make_range(base_reg, count)
       let #(select_list_tokens, from_tables) = parse_select_details(tokens)
-      let select_items = select.parse_select_item_list(select_list_tokens)
+      let result_items = align_select_items(select_list_tokens, count)
 
       list.index_map(result_regs, fn(reg, idx) {
         extract_result_register_column(
@@ -54,7 +54,7 @@ pub fn extract_result_columns(
           table_schemas,
           pk_columns,
           join_nullability,
-          select_items,
+          result_items,
           from_tables,
         )
       })
@@ -74,6 +74,47 @@ fn parse_select_details(tokens: List(Token)) -> #(List(Token), List(String)) {
   }
 }
 
+fn align_select_items(
+  select_list_tokens: List(Token),
+  result_count: Int,
+) -> List(Option(select.SelectItem)) {
+  // SQLite expands each wildcard into several ResultRow registers. Reserve one
+  // slot per expanded register so later explicit items keep the right index.
+  let token_groups = tokenize.split_on_commas(select_list_tokens)
+  let wildcard_count = list.count(token_groups, is_wildcard)
+
+  case wildcard_count {
+    0 ->
+      list.map(token_groups, fn(tokens) {
+        option.Some(select.parse_select_item(tokens))
+      })
+    1 -> {
+      let wildcard_width = result_count - list.length(token_groups) + 1
+      list.flat_map(token_groups, fn(tokens) {
+        case is_wildcard(tokens) {
+          True -> list.repeat(option.None, times: wildcard_width)
+          False -> [option.Some(select.parse_select_item(tokens))]
+        }
+      })
+    }
+    _ ->
+      case wildcard_count == list.length(token_groups) {
+        True -> list.repeat(option.None, times: result_count)
+        False ->
+          list.map(token_groups, fn(tokens) {
+            option.Some(select.parse_select_item(tokens))
+          })
+      }
+  }
+}
+
+fn is_wildcard(tokens: List(Token)) -> Bool {
+  case tokens {
+    [Star] | [Word(_), Dot, Star] -> True
+    _ -> False
+  }
+}
+
 fn extract_result_register_column(
   reg: Int,
   idx: Int,
@@ -82,7 +123,7 @@ fn extract_result_register_column(
   table_schemas: Dict(String, List(Column)),
   pk_columns: Dict(String, String),
   join_nullability: JoinNullability,
-  select_items: List(select.SelectItem),
+  result_items: List(Option(select.SelectItem)),
   from_tables: List(String),
 ) -> Column {
   let opcode_column =
@@ -94,18 +135,13 @@ fn extract_result_register_column(
       pk_columns,
     )
     |> opcode.apply_cursor_nullability(reg, opcodes, join_nullability)
-  let text_column =
-    resolve_select_item(
-      idx,
-      select_items,
-      from_tables,
-      table_schemas,
-      join_nullability,
-    )
-
-  case util.list_at(select_items, idx) {
-    Error(_) -> result.unwrap(opcode_column, default_column())
-    Ok(item) -> resolve_result_select_item(item, opcode_column, text_column)
+  case util.list_at(result_items, idx) {
+    Ok(option.Some(item)) -> {
+      let text_column =
+        resolve_select_item(item, from_tables, table_schemas, join_nullability)
+      resolve_result_select_item(item, opcode_column, text_column)
+    }
+    _ -> result.unwrap(opcode_column, default_column())
   }
 }
 
@@ -160,31 +196,25 @@ fn default_column() -> Column {
 
 /// Resolve a result column via SELECT-list text parsing.
 fn resolve_select_item(
-  idx: Int,
-  select_items: List(select.SelectItem),
+  item: select.SelectItem,
   from_tables: List(String),
   table_schemas: Dict(String, List(Column)),
   join_nullability: JoinNullability,
 ) -> Result(Column, Nil) {
-  case list.drop(select_items, idx) |> list.first {
-    Error(_) -> Error(Nil)
-    Ok(item) -> {
-      let resolved =
-        list.find_map(from_tables, fn(table) {
-          resolve_select_item_from_table(
-            item,
-            table,
-            table_schemas,
-            join_nullability,
-          )
-        })
-      let col = case resolved {
-        Ok(c) -> c
-        Error(_) -> expression.infer_expression_type(item)
-      }
-      Ok(expression.apply_override(col, item.override))
-    }
+  let resolved =
+    list.find_map(from_tables, fn(table) {
+      resolve_select_item_from_table(
+        item,
+        table,
+        table_schemas,
+        join_nullability,
+      )
+    })
+  let col = case resolved {
+    Ok(c) -> c
+    Error(_) -> expression.infer_expression_type(item)
   }
+  Ok(expression.apply_override(col, item.override))
 }
 
 fn resolve_select_item_from_table(
