@@ -16,6 +16,37 @@ for Postgres).
 
 > If you are an LLM, see [llms.txt](https://raw.githubusercontent.com/pairshaped/marmot/refs/heads/master/llms.txt) for a condensed context document.
 
+## Should you use SQLite from Gleam?
+
+For a production app where database access is on the hot path, we don't
+recommend it in the current state of the BEAM's SQLite driver. We moved our own
+SQLite-backed application from Gleam to Rust for these reasons. They come from
+`esqlite`, the driver underneath `sqlight`, not from Gleam or Marmot:
+
+- **Every query hops threads.** `esqlite` runs each SQLite call on one of the
+  BEAM's dirty I/O scheduler threads, so every query moves the calling process
+  to another OS thread and back. On a small VM, those handoffs make queries
+  slow and the timings inconsistent from run to run.
+- **Lock waits can stall the node.** SQLite's busy timeout sleeps on the dirty
+  I/O thread running the query. Once enough connections wait on a lock to
+  occupy every dirty I/O thread, the connection holding the lock can't commit,
+  and queries fail when their timeouts expire.
+- **Releases are tied to the build machine.** `esqlite` compiles SQLite as a C
+  NIF at build time, so a release has to be built for the target's operating
+  system, CPU architecture and C library. You can't build one release and copy
+  it to any server the way you can with a static binary.
+- **The bundled SQLite is built for size.** `esqlite` compiles its copy of
+  SQLite with `-Os` rather than optimizing for speed.
+
+The [SQLite request-shape benchmark](https://github.com/pairshaped/gleam_sqlite_benchmarks)
+measures the first two against C, Rust, Zig, Go and Bun on the same workload.
+
+If you use it anyway, cache statements (Marmot does this by default, see
+[Statement caching](#statement-caching)), send writes through one connection,
+size the dirty I/O schedulers as described in
+[Dirty I/O schedulers](#dirty-io-schedulers), and build releases on a machine
+that matches production.
+
 ## Why Marmot?
 
 If you need to talk to a SQLite database in Gleam, you'll have to write something
