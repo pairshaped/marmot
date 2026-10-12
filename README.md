@@ -536,9 +536,10 @@ covers this.
 
 ### Dirty I/O schedulers
 
-Set `+SDio` to the number of CPUs on machines with fewer than 10. This matters
-for every app that uses `sqlight`, with or without Marmot, and on a small VM it
-can matter more than statement caching.
+If your app sends all writes through one connection, set `+SDio` to the number
+of CPUs on machines with fewer than 10. Read the lock-wait warning below before
+you do. This matters for every app that uses `sqlight`, with or without Marmot,
+and on a small VM it can matter more than statement caching.
 
 `esqlite` runs SQLite calls, including every `step`, on the BEAM's dirty I/O
 schedulers. Each query moves the calling process to a dirty I/O thread and back.
@@ -558,12 +559,31 @@ Set it in `vm.args` for a release, or with `ERL_FLAGS` when running directly:
 ERL_FLAGS="+SDio 2" gleam run
 ```
 
+**Lock waits hold dirty I/O threads.** When a connection waits for a SQLite lock,
+the busy timeout sleeps inside `sqlite3_step`, on the dirty I/O thread running
+it. If as many connections are waiting as there are dirty I/O threads, every
+thread is asleep, and the connection holding the lock can't get a thread to
+run its `COMMIT`. Everything stalls until the busy timeouts expire, and those
+queries fail with `Busy`. The benchmark reproduced this with 4 writer
+connections and `+SDio 2`, and with 12 writers on the default 10 threads.
+
+So keep the number of connections that can wait on a lock below the number of
+dirty I/O threads:
+
+- Send writes through one connection, for example a single writer process that
+  owns it and queues requests. Readers in WAL mode don't wait on writers, so
+  only that one connection ever waits on the write lock, and capping `+SDio` at
+  the CPU count is safe.
+- If many connections write, don't lower `+SDio`, and keep the number of writer
+  connections below it. The default of 10 already stalls with more than 10
+  writers waiting at once.
+
 Don't go below the CPU count to chase single-request speed. `+SDio 1` measured
 the same as `+SDio 2` in a one-request-at-a-time benchmark, but it funnels every
 SQLite call and every file operation on the node through one thread, so
-concurrent requests queue behind each other. On machines with 10 or more CPUs
-the default already fits. As with any scheduler setting, confirm it under your
-own concurrent load.
+concurrent requests queue behind each other, and any lock wait stalls the whole
+node. On machines with 10 or more CPUs the default already fits. As with any
+scheduler setting, confirm it under your own concurrent load.
 
 ### Custom query wrapper (`query_function`)
 
