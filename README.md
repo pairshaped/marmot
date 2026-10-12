@@ -579,8 +579,9 @@ On a small VM, those extra threads fight over the cores, and waking one up for
 each handoff is slow, so every query pays for it.
 
 On a 2-vCPU VM, the default made reads several times slower and inconsistent
-from run to run with no other change, and capping the threads at the vCPU count
-made every run fast. The [SQLite request-shape benchmark](https://github.com/pairshaped/gleam_sqlite_benchmarks) has the
+from run to run with no other change. On one such VM, capping the threads at
+the vCPU count made every run fast; on another, with a newer CPU, it didn't
+help. Measure on your own hardware before relying on it. The [SQLite request-shape benchmark](https://github.com/pairshaped/gleam_sqlite_benchmarks) has the
 measurements: its README explains the setting and its per-machine reports have
 the numbers.
 
