@@ -479,10 +479,8 @@ process ends. In practice:
   the connection, a background job, a script, a CLI. Each query is compiled once.
 - A process-per-request web server (Mist, Wisp) starts every request with an
   empty cache. It only helps queries that run more than once inside one request.
-  A request that runs each query once gets no benefit. In a microbenchmark that
-  spawned a process per request, that case cost about the same as no cache, at
-  most a couple of microseconds more, and a query repeated inside the request
-  came out ahead.
+  A request that runs each query once gets no benefit; a query repeated inside
+  the request does.
 
 **Getting the benefit.** Keep the connection, and the queries that use it, in a
 long-lived process. Don't open a connection or run queries in each short-lived
@@ -493,15 +491,12 @@ database work through a single process that owns the connection, remember that
 requests then wait on that process. Measure with your own queries before you
 restructure an app for this.
 
-**Why it matters.** In one SQLite request-shape benchmark (Apple M4, 10,000
-requests in a single long-lived process), generated code went from 157 to 90 µs
-per read request (26 queries over 22 distinct statements) and from 41 to 25 µs
-per short update transaction. A hand-written `esqlite` runner with its own
-statement cache took 84 and 24 µs; the remaining gap is row decoding and the
-open-connection check. A microbenchmark on a trivial `select ... where id = ?`
-went from about 3.9 µs to 2.4 µs per call. Treat these as individual results,
-not a promise: the gain depends on how expensive your queries are to compile
-and on how often a process repeats them.
+**Why it matters.** Compiling a statement can cost more than running a small
+indexed query, so a request made of many small queries spends much of its time
+compiling when nothing is cached. With the cache, generated code performs close
+to a hand-written `esqlite` loop that keeps its own statements; the remaining
+gap is row decoding and the open-connection check. How much you gain depends on
+how expensive your queries are to compile and how often a process repeats them.
 
 **Connection lifetime.** SQLite keeps a connection's database file open while
 compiled statements for it are alive, even after `sqlight.close` returns `Ok`.
