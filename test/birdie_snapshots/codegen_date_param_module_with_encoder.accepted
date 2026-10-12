@@ -4,6 +4,7 @@ title: codegen date param module with encoder
 file: ./test/marmot/internal/codegen_test.gleam
 test_name: codegen_date_param_module_test
 ---
+import generated/sql/statement_cache
 import gleam/dynamic/decode
 import gleam/int
 import gleam/string
@@ -19,7 +20,7 @@ fn date_to_string(date: Date) -> String {
 
 /// Generated from src/app/sql/create_event.sql
 pub fn create_event(db db: sqlight.Connection, name name: String, event_date event_date: calendar.Date) -> Result(List(Nil), sqlight.Error) {
-  sqlight.query(
+  statement_cache.query(
     "INSERT INTO events (name, event_date) VALUES (?, ?)",
     on: db,
     with: [sqlight.text(name), sqlight.text(date_to_string(event_date))],

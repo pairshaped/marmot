@@ -25,6 +25,7 @@ import marmot/internal/project
 import marmot/internal/query
 import marmot/internal/sqlite
 import marmot/internal/sqlite/tokenize
+import marmot/internal/statement_cache
 import marmot/migrations
 import marmot/seeds
 import simplifile
@@ -719,7 +720,8 @@ fn reset_error_to_string(error: ResetError) -> String {
 
 fn generate_all(db: sqlight.Connection, config: project.Config) -> Nil {
   // Reject malformed query_function early rather than silently falling back
-  // to sqlight.query, which would generate code using the wrong call path.
+  // to the generated statement cache, which would generate code using the
+  // wrong call path.
   case config.query_function {
     option.Some(value) ->
       case codegen.parse_query_function(config.query_function) {
@@ -794,8 +796,29 @@ fn generate_all(db: sqlight.Connection, config: project.Config) -> Nil {
         }
       }
 
+      let cache_module = project.statement_cache_module_path(config.output)
+      let cache_files = [
+        #(
+          project.statement_cache_output_path(config.output),
+          statement_cache.gleam_source(cache_module) |> format_gleam,
+        ),
+        #(
+          project.statement_cache_ffi_output_path(config.output),
+          statement_cache.erlang_source(cache_module),
+        ),
+      ]
+      case
+        list.all(cache_files, fn(file) { write_module_file(file.0, file.1) })
+      {
+        True -> Nil
+        False -> {
+          io.println_error("error: Statement cache could not be written")
+          halt(1)
+        }
+      }
+
       io.println(
-        "Generated " <> int.to_string(list.length(dirs) + 1) <> " module(s)",
+        "Generated " <> int.to_string(list.length(dirs) + 2) <> " module(s)",
       )
     }
   }
@@ -826,7 +849,14 @@ fn generate_for_directory(
           config.output,
           config.sql_dir,
         )
-      case codegen.generate_module_with_config(queries, config.query_function) {
+      let cache_module = project.statement_cache_module_path(config.output)
+      case
+        codegen.generate_module_with_config(
+          queries,
+          config.query_function,
+          cache_module,
+        )
+      {
         Error(err) -> {
           io.println_error(error.to_string(err))
           False

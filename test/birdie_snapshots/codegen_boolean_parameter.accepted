@@ -13,7 +13,7 @@ pub type FindActiveRow {
 
 /// Generated from src/app/sql/find_active.sql
 pub fn find_active(db db: sqlight.Connection, is_active is_active: Bool) -> Result(List(FindActiveRow), sqlight.Error) {
-  sqlight.query(
+  statement_cache.query(
     "SELECT id FROM users WHERE is_active = ?",
     on: db,
     with: [sqlight.bool(is_active)],

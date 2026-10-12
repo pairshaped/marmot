@@ -6,7 +6,7 @@ test_name: codegen_exec_no_return_test
 ---
 /// Generated from src/app/sql/delete_user.sql
 pub fn delete_user(db db: sqlight.Connection, id id: Int) -> Result(List(Nil), sqlight.Error) {
-  sqlight.query(
+  statement_cache.query(
     "DELETE FROM users WHERE id = ?",
     on: db,
     with: [sqlight.int(id)],

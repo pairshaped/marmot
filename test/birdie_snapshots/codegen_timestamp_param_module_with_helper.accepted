@@ -4,6 +4,7 @@ title: codegen timestamp param module with helper
 file: ./test/marmot/internal/codegen_test.gleam
 test_name: codegen_timestamp_param_module_test
 ---
+import generated/sql/statement_cache
 import gleam/dynamic/decode
 import gleam/time/timestamp.{type Timestamp}
 import sqlight
@@ -17,7 +18,7 @@ fn timestamp_to_int(ts: Timestamp) -> Int {
 
 /// Generated from src/app/sql/update_last_seen.sql
 pub fn update_last_seen(db db: sqlight.Connection, last_seen last_seen: timestamp.Timestamp, id id: Int) -> Result(List(Nil), sqlight.Error) {
-  sqlight.query(
+  statement_cache.query(
     "UPDATE users SET last_seen = ? WHERE id = ?",
     on: db,
     with: [sqlight.int(timestamp_to_int(last_seen)), sqlight.int(id)],

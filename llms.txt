@@ -104,7 +104,7 @@ branching workflows, checksums, or a larger migration system.
 2. Opens the SQLite file, runs `init_sql` when configured, scans `src/` or configured `sql_dir` for SQL directories
 3. For each `.sql` file: reads SQL, tokenizes it, parses the statement shape, loads schema metadata with `PRAGMA table_xinfo`/`PRAGMA table_list`, and runs `EXPLAIN`
 4. Generates a `sql.gleam` module per `sql/` directory with typed functions + decoders
-5. Generates one `transaction.gleam` helper per target output directory when SQL directories are found
+5. Generates one `transaction.gleam` helper, one `statement_cache.gleam` module and its Erlang FFI file (`<module path with / as @>_ffi.erl`) per target output directory when SQL directories are found
 
 ## Config (`[tools.marmot]` in `gleam.toml`)
 
@@ -124,7 +124,7 @@ branching workflows, checksums, or a larger migration system.
 | `output` | `src/generated/sql` | Output directory for generated modules (must be under `src/`). Marmot infers the directory structure by finding the longest common path prefix between `output` and each `sql/` directory, then uses the remainder as the namespace (e.g. `src/app/users/sql/` with default output produces `src/generated/sql/app/users_sql.gleam`). |
 | `sql_dir` | none | Custom directory for SQL file discovery. When set, Marmot recursively finds all directories under this path that contain `.sql` files, instead of the default `src/**/sql/` convention. |
 | `init_sql` | none | SQL file run on Marmot's generation connection before schema/query analysis. This SQL is not sandboxed or rolled back. It can change schema or data, and it does not enable native SQLite extension loading unless the driver supports it. |
-| `query_function` | `sqlight.query` | Fully-qualified function (`module/path.name`) that generated code calls instead of `sqlight.query`. Wrapper must match `sqlight.query`'s labelled signature (`sql: String, on connection, with parameters, expecting decoder`). Useful for logging, timing, instrumentation. |
+| `query_function` | generated `statement_cache.query` | Fully-qualified function (`module/path.name`) that generated code calls instead of `statement_cache.query`. Wrapper must match `sqlight.query`'s labelled signature (`sql: String, on connection, with parameters, expecting decoder`). It replaces the statement cache, so statements are reused only if the wrapper delegates to `statement_cache.query`. Useful for logging, timing, instrumentation. |
 
 ## Project structure
 
@@ -151,8 +151,8 @@ src/
 - **Read/write parameter nullability split**: read parameters are required, even when the referenced column is nullable. Write parameters follow the target column's write nullability.
 - **No external tools**: no `sqlc`, no `sqlite3` CLI, just `sqlight` (Gleam NIF)
 - **Convention over configuration**: follows Squirrel's conventions (one query per file, `sql/` dirs, filename = function name). `output` and `query_function` are opt-in knobs for larger projects.
-- **Generated code calls sqlight directly** (or a user-supplied wrapper via `query_function`): no tuples, no intermediate types
-- **Runtime helpers are generated**: shared helpers such as transactions live beside generated query modules in the consuming project, so apps do not depend on Marmot at runtime.
+- **Generated code calls a generated `statement_cache.query`** (same signature as `sqlight.query`, or a user-supplied wrapper via `query_function`): no tuples, no intermediate types
+- **Runtime helpers are generated**: shared helpers such as transactions and the statement cache live beside generated query modules in the consuming project, so apps do not depend on Marmot at runtime.
 - **Optional database commands**: Marmot can apply migration files, run seed files, and reset SQLite databases. Simple projects use one configured database. Multi-db projects can use named refs. Projects can use another migration or seed tool.
 
 ## Generated code patterns
@@ -166,22 +166,32 @@ multi-statement writes. The helper uses SQLite `SAVEPOINT`, `ROLLBACK TO`, and
 `RELEASE`, so it can nest inside another transaction. Do not add a Marmot
 runtime dependency just to get transaction helpers.
 
+**Generated statement cache:** generation also writes `statement_cache.gleam`
+and a small Erlang file beside the query modules. `statement_cache.query` has
+`sqlight.query`'s signature and reuses compiled SQLite statements, kept in the
+calling process's dictionary per connection and SQL text. It never evicts (the
+SQL strings are fixed at generation time) and never shares a statement between
+processes. It stays warm in long-lived processes and starts cold in a
+process-per-request server. `statement_cache.close(db:)` drops the process's
+statements and closes the connection; `statement_cache.forget(db:)` drops them
+only. On the JavaScript target it falls back to `sqlight.query`.
+
 **SELECT with decoder:**
 ```gleam
 pub type FindUserRow { FindUserRow(id: Int, name: String) }
 pub fn find_user(db db: sqlight.Connection, username username: String) {
-  sqlight.query("...", on: db, with: [sqlight.text(username)], expecting: { ... })
+  statement_cache.query("...", on: db, with: [sqlight.text(username)], expecting: { ... })
 }
 ```
 
 **INSERT/UPDATE/DELETE without RETURNING:**
 ```gleam
 pub fn delete_user(db db: sqlight.Connection, id id: Int) {
-  sqlight.query("...", on: db, with: [sqlight.int(id)], expecting: decode.success(Nil))
+  statement_cache.query("...", on: db, with: [sqlight.int(id)], expecting: decode.success(Nil))
 }
 ```
 
-**With `query_function = "app/db.query"`:** the `sqlight.query(...)` call becomes `db.query(...)` with `import app/db` added. Everything else is identical.
+**With `query_function = "app/db.query"`:** the `statement_cache.query(...)` call becomes `db.query(...)` with `import app/db` added instead of the statement cache import. Everything else is identical.
 
 **Module:** imports are conditional (only include `decode`, `option`, `timestamp`, `calendar` when needed). Date modules get `date_decoder`/`date_to_string` private helpers. Timestamp modules get a `timestamp_to_int` helper.
 
@@ -214,7 +224,7 @@ pub type OrgRow { OrgRow(id: Int, name: String, subdomain: String) }
 fn org_row_decoder() -> decode.Decoder(OrgRow) { ... }
 
 pub fn get_org(db db: ..., id id: Int) -> Result(List(OrgRow), sqlight.Error) {
-  sqlight.query("...", on: db, with: [...], expecting: org_row_decoder())
+  statement_cache.query("...", on: db, with: [...], expecting: org_row_decoder())
 }
 ```
 

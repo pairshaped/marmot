@@ -14,7 +14,7 @@ pub type ListUsersRow {
 
 /// Generated from src/app/sql/list_users.sql
 pub fn list_users(db db: sqlight.Connection) -> Result(List(ListUsersRow), sqlight.Error) {
-  sqlight.query(
+  statement_cache.query(
     "SELECT id, username FROM users",
     on: db,
     with: [],

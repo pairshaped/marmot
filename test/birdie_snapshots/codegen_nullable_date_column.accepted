@@ -14,7 +14,7 @@ pub type FindEventRow {
 
 /// Generated from src/app/sql/find_event.sql
 pub fn find_event(db db: sqlight.Connection, id id: Int) -> Result(List(FindEventRow), sqlight.Error) {
-  sqlight.query(
+  statement_cache.query(
     "SELECT id, event_date FROM events WHERE id = ?",
     on: db,
     with: [sqlight.int(id)],

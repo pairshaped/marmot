@@ -10,6 +10,7 @@ import marmot/internal/codegen
 import marmot/internal/project
 import marmot/internal/query
 import marmot/internal/sqlite
+import marmot/internal/statement_cache
 import simplifile
 import sqlight
 
@@ -149,6 +150,7 @@ sqlight = \">= 1.0.0 and < 2.0.0\"
 
   let out_file = project_dir <> "/src/sql.gleam"
   let assert Ok(_) = simplifile.write(out_file, generated)
+  write_statement_cache(project_dir)
 
   let exit_code =
     marmot.run_executable_in_timeout("gleam", ["check"], project_dir, 120_000)
@@ -158,6 +160,25 @@ sqlight = \">= 1.0.0 and < 2.0.0\"
     other -> report_compile_failure(other, out_file)
   }
   let assert 0 = exit_code
+  Nil
+}
+
+/// Generated query modules import the statement cache that Marmot writes beside
+/// them, so the check project needs it too.
+fn write_statement_cache(project_dir: String) -> Nil {
+  let dir = project_dir <> "/src/generated/sql"
+  let module = statement_cache.default_module_path
+  let assert Ok(_) = simplifile.create_directory_all(dir)
+  let assert Ok(_) =
+    simplifile.write(
+      dir <> "/statement_cache.gleam",
+      statement_cache.gleam_source(module),
+    )
+  let assert Ok(_) =
+    simplifile.write(
+      dir <> "/" <> statement_cache.ffi_module_name(module) <> ".erl",
+      statement_cache.erlang_source(module),
+    )
   Nil
 }
 
@@ -247,6 +268,7 @@ sqlight = \">= 1.0.0 and < 2.0.0\"
 
   let out_file = project_dir <> "/src/sql.gleam"
   let assert Ok(_) = simplifile.write(out_file, generated)
+  write_statement_cache(project_dir)
 
   let exit_code =
     marmot.run_executable_in_timeout("gleam", ["check"], project_dir, 120_000)
@@ -450,6 +472,12 @@ pub fn e2e_cli_successful_generation_test() {
 
       let assert Ok(True) =
         simplifile.is_file(base <> "/src/generated/sql/sql.gleam")
+      let assert Ok(True) =
+        simplifile.is_file(base <> "/src/generated/sql/statement_cache.gleam")
+      let assert Ok(True) =
+        simplifile.is_file(
+          base <> "/src/generated/sql/generated@sql@statement_cache_ffi.erl",
+        )
       let assert 0 = exit_code
       Nil
     })

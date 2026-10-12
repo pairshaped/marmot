@@ -10,6 +10,7 @@ import marmot
 import marmot/internal/codegen
 import marmot/internal/query
 import marmot/internal/sqlite
+import marmot/internal/statement_cache
 import simplifile
 import sqlight
 
@@ -197,7 +198,11 @@ pub fn end_to_end_shared_row_types_test() {
   ]
 
   let assert Ok(output) =
-    codegen.generate_module_with_config(queries, option.None)
+    codegen.generate_module_with_config(
+      queries,
+      option.None,
+      statement_cache.default_module_path,
+    )
 
   // Shared type emitted exactly once.
   let assert 1 = count_substring(output, "pub type OrgRow {")
@@ -257,7 +262,11 @@ pub fn snapshot_shared_row_types_output_test() {
   ]
 
   let assert Ok(output) =
-    codegen.generate_module_with_config(queries, option.None)
+    codegen.generate_module_with_config(
+      queries,
+      option.None,
+      statement_cache.default_module_path,
+    )
   output
   |> birdie.snap(title: "shared_row_types_two_queries")
 }

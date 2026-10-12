@@ -14,7 +14,7 @@ pub type FindByTypeRow {
 
 /// Generated from src/app/sql/find_by_type.sql
 pub fn find_by_type(db db: sqlight.Connection, type_ type_: String) -> Result(List(FindByTypeRow), sqlight.Error) {
-  sqlight.query(
+  statement_cache.query(
     "SELECT id, type FROM items WHERE type = ?",
     on: db,
     with: [sqlight.text(type_)],

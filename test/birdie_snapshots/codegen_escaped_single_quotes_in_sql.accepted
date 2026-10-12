@@ -6,7 +6,7 @@ test_name: codegen_escaped_single_quotes_in_sql_test
 ---
 /// Generated from src/app/sql/update_title.sql
 pub fn update_title(db db: sqlight.Connection, id id: Int) -> Result(List(Nil), sqlight.Error) {
-  sqlight.query(
+  statement_cache.query(
     "UPDATE notes SET title = 'it''s fine' WHERE id = ?",
     on: db,
     with: [sqlight.int(id)],

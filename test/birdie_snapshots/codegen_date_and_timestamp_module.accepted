@@ -4,6 +4,7 @@ title: codegen date and timestamp module
 file: ./test/marmot/internal/codegen_test.gleam
 test_name: codegen_date_and_timestamp_module_test
 ---
+import generated/sql/statement_cache
 import gleam/dynamic/decode
 import gleam/int
 import gleam/string
@@ -50,7 +51,7 @@ pub type FindEventRow {
 
 /// Generated from src/app/sql/find_event.sql
 pub fn find_event(db db: sqlight.Connection, id id: Int) -> Result(List(FindEventRow), sqlight.Error) {
-  sqlight.query(
+  statement_cache.query(
     "SELECT id, event_date FROM events WHERE id = ?",
     on: db,
     with: [sqlight.int(id)],
@@ -67,7 +68,7 @@ pub fn find_event(db db: sqlight.Connection, id id: Int) -> Result(List(FindEven
 
 /// Generated from src/app/sql/update_last_seen.sql
 pub fn update_last_seen(db db: sqlight.Connection, last_seen last_seen: timestamp.Timestamp, id id: Int) -> Result(List(Nil), sqlight.Error) {
-  sqlight.query(
+  statement_cache.query(
     "UPDATE events SET last_seen = ? WHERE id = ?",
     on: db,
     with: [sqlight.int(timestamp_to_int(last_seen)), sqlight.int(id)],

@@ -72,7 +72,7 @@ Without one of those commands, `run_generate()`:
 | `database` | CLI / env / toml | Path to SQLite file for introspection |
 | `database_name` | CLI / toml | Selected named database reference |
 | `output` | CLI / toml | Output directory for generated modules |
-| `query_function` | toml only | Custom wrapper replacing `sqlight.query` |
+| `query_function` | toml only | Custom wrapper replacing the generated `statement_cache.query` |
 | `sql_dir` | toml only | Override sql/ directory discovery |
 | `init_sql` | named database / toml | SQL file run before generation introspection |
 | `migrations_dir` | named database / toml | Directory for migration files |
@@ -101,7 +101,10 @@ supports it.
 `transaction_output_path()` computes where the generated transaction helper
 lands. It writes `transaction.gleam` directly into the configured output
 directory, for example `src/generated/sql/transaction.gleam` or
-`src/generated/sql/app/transaction.gleam`.
+`src/generated/sql/app/transaction.gleam`. The `statement_cache_*` functions
+do the same for `statement_cache.gleam`, its Erlang FFI file
+(`<module path with / as @>_ffi.erl`, unique per output directory), and the
+Gleam import path that generated query modules use.
 
 ### 3. SQL processing (`process_sql_file` in `marmot.gleam`)
 
@@ -188,7 +191,7 @@ The comment/whitespace helpers (`strip_comments`, `normalize_whitespace`) live i
 
 `generate_module_with_config()` assembles a complete Gleam module from a list of `Query` values. Build phases:
 
-1. **Import selection**: scans all queries and parameters to determine which imports are needed (`sqlight`, `decode`, `option`, `timestamp`, `calendar`). Also adds the custom query function's import if configured.
+1. **Import selection**: scans all queries and parameters to determine which imports are needed (`sqlight`, `decode`, `option`, `timestamp`, `calendar`). Also imports the module of the query function: the configured `query_function` wrapper, or the generated `statement_cache` module by default.
 
 2. **Helper emission**: conditionally adds private helper functions:
    - `timestamp_to_int()` when any parameter is `TimestampType`
@@ -213,6 +216,14 @@ The module also handles name collision detection: generated function names and r
 The helper lives in the consuming project beside query modules so application
 runtime code does not import Marmot.
 
+`statement_cache.gleam_source()` and `statement_cache.erlang_source()` (in
+`marmot/internal/statement_cache.gleam`) emit the prepared-statement cache the
+same way: a Gleam module whose `query` has `sqlight.query`'s signature, and a
+small Erlang FFI module beside it. `test/statement_cache_fixture/` holds a
+checked-in copy of that output so tests run the real generated code. A test
+fails when the copy goes stale; run `MARMOT_UPDATE_FIXTURES=1 gleam test` once to
+refresh it (that run still reports the stale-copy failure), then rerun.
+
 ## Error handling (`error.gleam`)
 
 `MarmotError` is a union of all error variants. `to_string()` produces pretty-printed error messages with box-drawing characters and hints. Errors flow as `Result` types through the pipeline; the CLI layer converts them to stderr output and non-zero exit codes.
@@ -227,4 +238,10 @@ runtime code does not import Marmot.
 - **Tokenize once, analyze many**: the tokenizer runs once per query; its output feeds statement parsing, result extraction, and parameter extraction.
 - **Suffix-based nullability overrides**: `col_name!` in SQL aliases forces non-null, `col_name?` forces nullable. These are Marmot extensions stripped before EXPLAIN but preserved in tokenized form for type inference.
 - **Generated runtime helpers**: reusable app helpers such as transactions are generated into the app output directory. Marmot remains a code-generation and database-command dependency, not an app runtime dependency.
+- **Per-process statement cache, generated into the app**: `sqlight.query` compiles SQL on every call and `sqlight` has no prepared-statement API, so generated code calls a generated `statement_cache.query` that keeps compiled `esqlite` statements in the calling process's dictionary, keyed by connection and SQL text.
+  - Size: one statement per distinct generated SQL string and connection. The set is fixed at generation time, so nothing is evicted and nothing thrashes.
+  - Safety: a process only uses its own statements, so no statement is stepped twice at once. A statement is reset after every call, including after bind and step errors, and dropped after an exception.
+  - Close: `esqlite` closes with `sqlite3_close_v2`, which succeeds with live statements and leaves a zombie connection that holds the file open (and still answers queries on cached statements). Queries check the connection is open before using a cached statement, the first use of a connection in a process drops that process's statements for closed connections, and `statement_cache.close`/`forget` release them on demand.
+  - Why per process: a cache shared through ETS (take the statement as a checkout, put it back) works with `esqlite` and measured 0.5 to 1.1 microseconds more per call than the process dictionary. It needs an unsupervised owner process, and since a cached statement keeps its connection alive, connections dropped without `close` would never be freed, and per-request connections would pile up closed zombies until a sweep. The per-process cache shares the first problem in a milder form: a long-lived process that drops a connection without closing it keeps it open until the process ends, because its statements hold the connection. Only a process that ends releases an unclosed connection. That is a design change for the owner to make, not a default.
+  - Why generated, not a runtime module: the cache needs a few `esqlite` calls, so it ships as generated source (a Gleam module and an Erlang file) instead of a Marmot runtime dependency, like the transaction helper. `query_function` replaces it, and a wrapper can delegate to it.
 - **Zero external tool dependencies**: everything runs through `sqlight` (Erlang NIF).

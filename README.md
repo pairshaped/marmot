@@ -448,9 +448,138 @@ pub fn rename_user(db, id, name) {
 nest inside another transaction. The helper is generated into your project:
 app runtime code imports generated code, not Marmot.
 
+### Statement caching
+
+Generated query functions reuse compiled SQLite statements. `sqlight.query`
+compiles the SQL again on every call. Marmot instead writes a `statement_cache`
+module beside `transaction.gleam`, plus a small Erlang file next to it, and the
+generated functions call `statement_cache.query`. It has the same signature as
+`sqlight.query` and returns the same rows and decode errors. One difference:
+when the database is busy, `sqlight.query` crashes inside `esqlite`, while
+`statement_cache.query` returns an `Error` with the `Busy` code. Function
+signatures, row types and decoders do not change. Nothing in your app depends on Marmot at
+runtime, only on `sqlight` (the Erlang file calls `esqlite`, which `sqlight`
+already pulls in). On the JavaScript target `statement_cache.query` falls back
+to `sqlight.query`.
+
+**What is cached.** One compiled statement for each connection and SQL text.
+The SQL strings are fixed in the generated code, so the cache never holds more
+than one statement per generated query per connection, and it never evicts.
+That is deliberate. A small fixed-size cache (rusqlite keeps 16 statements by
+default, Bun keeps 20) thrashes when a request cycles through more statements
+than it holds, and ends up slower than no cache at all. This cache is sized by
+your queries, so it can't thrash.
+
+**Where it lives.** In the process dictionary of the process that runs the
+query. A process only ever uses its own statements, so a statement is never
+stepped by two callers at once, and the statements are released when the
+process ends. In practice:
+
+- A long-lived process keeps the cache warm: an actor or pool worker that owns
+  the connection, a background job, a script, a CLI. Each query is compiled once.
+- A process-per-request web server (Mist, Wisp) starts every request with an
+  empty cache. It only helps queries that run more than once inside one request.
+  A request that runs each query once gets no benefit. In a microbenchmark that
+  spawned a process per request, that case cost about the same as no cache, at
+  most a couple of microseconds more, and a query repeated inside the request
+  came out ahead.
+
+**Getting the benefit.** Keep the connection, and the queries that use it, in a
+long-lived process. Don't open a connection or run queries in each short-lived
+request process. Opening a connection per request (for example
+`sqlight.with_connection` in every handler) throws the cache away with the
+connection, because compiled statements belong to one connection. If you route
+database work through a single process that owns the connection, remember that
+requests then wait on that process. Measure with your own queries before you
+restructure an app for this.
+
+**Why it matters.** In one SQLite request-shape benchmark (Apple M4, 10,000
+requests in a single long-lived process), generated code went from 157 to 90 µs
+per read request (26 queries over 22 distinct statements) and from 41 to 25 µs
+per short update transaction. A hand-written `esqlite` runner with its own
+statement cache took 84 and 24 µs; the remaining gap is row decoding and the
+open-connection check. A microbenchmark on a trivial `select ... where id = ?`
+went from about 3.9 µs to 2.4 µs per call. Treat these as individual results,
+not a promise: the gain depends on how expensive your queries are to compile
+and on how often a process repeats them.
+
+**Connection lifetime.** SQLite keeps a connection's database file open while
+compiled statements for it are alive, even after `sqlight.close` returns `Ok`.
+A WAL database is not checkpointed or cleaned up until the statements go away.
+Marmot guards against this:
+
+- A query on a closed connection never runs a cached statement. It drops that
+  process's statements for the connection and then fails the same way
+  `sqlight.query` fails on a closed connection.
+- The first query on a new connection drops that process's cached statements
+  for any connection that has been closed since.
+- `statement_cache.close(db: db)` drops the process's statements and then closes
+  the connection. Use it instead of `sqlight.close` in a long-lived process.
+  `statement_cache.forget(db: db)` drops them without closing.
+- When a process ends, all of its statements go with it. A short-lived process
+  that uses `sqlight.with_connection` needs nothing extra.
+
+These calls only clear the calling process's cache. If several processes used
+the same connection, each one releases its own statements when it calls
+`forget`, queries the closed connection, opens another connection, or ends.
+
+Always close connections explicitly in a long-lived process. A cached statement
+keeps its connection alive, so a connection you drop without closing is not
+garbage collected as it would be with `sqlight.query`. It stays open until the
+process ends. Cleanup also can't see a close that happens elsewhere at the same
+instant: if another process closes a shared connection between a query's
+open-check and its statement, that one call can still run on the closing
+connection (a window of microseconds).
+
+**Schema changes.** SQLite recompiles a cached statement by itself after a schema
+change, with one gap: `esqlite` fixes a statement's result column count when it
+first compiles it. After `ALTER TABLE ... ADD COLUMN`, a cached `SELECT *` or
+`RETURNING *` keeps returning the old columns until the process calls `forget`
+or restarts. Generated decoders read columns by position and your generated
+code changes with the schema anyway, so restarting the app after a migration
+covers this.
+
+### Dirty I/O schedulers
+
+Set `+SDio` to the number of CPUs on machines with fewer than 10. This matters
+for every app that uses `sqlight`, with or without Marmot, and on a small VM it
+can matter more than statement caching.
+
+`esqlite` runs SQLite calls, including every `step`, on the BEAM's dirty I/O
+schedulers. Each query moves the calling process to a dirty I/O thread and back.
+The BEAM starts 10 dirty I/O threads no matter how many CPUs the machine has.
+On a small VM, those extra threads fight over the cores, and waking one up for
+each handoff is slow, so every query pays for it.
+
+In the same benchmark on a 2-vCPU DigitalOcean CPU-Optimized Droplet, the
+read request with cached statements measured:
+
+| Setting | Read request |
+| --- | ---: |
+| Default (10 dirty I/O threads) | 423 to 1,286 µs, varying run to run |
+| `+SDio 2` (one per vCPU) | 423 to 435 µs, every run |
+| `+SDio 4` | 416 to 1,289 µs, varying run to run |
+| Busy-waiting off (`+sbwt none +sbwtdcpu none +sbwtdio none`) | about 1,400 µs, every run |
+
+The default was up to 3x slower, and it switched between fast and slow runs
+with no other change. Capping the threads at the vCPU count made every run fast.
+
+Set it in `vm.args` for a release, or with `ERL_FLAGS` when running directly:
+
+```sh
+ERL_FLAGS="+SDio 2" gleam run
+```
+
+Don't go below the CPU count to chase single-request speed. `+SDio 1` measured
+the same as `+SDio 2` in a one-request-at-a-time benchmark, but it funnels every
+SQLite call and every file operation on the node through one thread, so
+concurrent requests queue behind each other. On machines with 10 or more CPUs
+the default already fits. As with any scheduler setting, confirm it under your
+own concurrent load.
+
 ### Custom query wrapper (`query_function`)
 
-By default the generated code calls `sqlight.query` directly. If you want to
+By default the generated code calls `statement_cache.query`. If you want to
 add logging, timing, or other instrumentation without forking Marmot, you can
 point `query_function` at your own wrapper:
 
@@ -461,14 +590,15 @@ query_function = "app/db.query"
 ```
 
 With that config, the generated code imports your module and calls your
-function instead of `sqlight.query`:
+function instead:
 
 ```gleam
 // Without query_function (default):
+import generated/sql/statement_cache
 import sqlight
 
 pub fn find_user(db db: sqlight.Connection, username username: String) {
-  sqlight.query(
+  statement_cache.query(
     "select name, email from users where username = ?",
     on: db,
     with: [sqlight.text(username)],
@@ -490,9 +620,21 @@ pub fn find_user(db db: sqlight.Connection, username username: String) {
 }
 ```
 
+A `query_function` replaces the statement cache. Generated code no longer calls
+`statement_cache`, so your wrapper decides whether statements are reused. A
+wrapper that delegates to `sqlight.query` compiles the SQL on every call, as
+before. Marmot still writes the `statement_cache` module when `query_function`
+is set, so a wrapper can keep the default caching and add its own behavior by
+delegating to `statement_cache.query`; pass it only fixed SQL strings like the
+generated code does, because it never evicts, so dynamic SQL would be cached
+forever. A wrapper can also run its own cache, for
+example in a process that owns the connection. It only has to run the SQL and
+return decoded rows.
+
 Your wrapper must match `sqlight.query`'s labelled signature exactly:
 
 ```gleam
+import generated/sql/statement_cache
 import gleam/dynamic/decode
 import sqlight
 
@@ -502,8 +644,10 @@ pub fn query(
   with parameters: List(sqlight.Value),
   expecting decoder: decode.Decoder(a),
 ) -> Result(List(a), sqlight.Error) {
-  // Your logging / timing / instrumentation here, then delegate:
-  sqlight.query(sql, on: connection, with: parameters, expecting: decoder)
+  // Your logging / timing / instrumentation here, then delegate. Use
+  // sqlight.query instead of statement_cache.query to skip statement reuse.
+  // Only pass fixed SQL to statement_cache.query: it never evicts.
+  statement_cache.query(sql, on: connection, with: parameters, expecting: decoder)
 }
 ```
 
@@ -606,8 +750,14 @@ Alias-aware column resolution applies to the current parsed statement scope.
 These work by choice. We could change them, but it would be a design shift.
 
 - **Runtime helpers are generated into the app.** Shared helpers such as
-  transactions live beside generated query modules, so application runtime code
-  imports generated code instead of depending on Marmot.
+  transactions and the statement cache live beside generated query modules, so
+  application runtime code imports generated code instead of depending on
+  Marmot.
+- **The statement cache is per process.** It is simple and can't hand one
+  statement to two callers, but it only stays warm in long-lived processes. See
+  [Statement caching](#statement-caching). A cache shared across processes
+  would need a long-lived owner process and bookkeeping to release statements
+  when a connection closes, so Marmot doesn't do that for you.
 - **`TIMESTAMP` and `DATETIME` columns are stored as Unix seconds (integer).**
   Sub-second precision (nanoseconds) is not preserved. We picked integer
   seconds for simplicity and interop with `strftime('%s', ...)`. Preserving

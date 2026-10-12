@@ -4,6 +4,7 @@ title: shared_row_types_two_queries
 file: ./test/marmot_test.gleam
 test_name: snapshot_shared_row_types_output_test
 ---
+import generated/sql/statement_cache
 import gleam/dynamic/decode
 import gleam/option.{type Option}
 import sqlight
@@ -32,7 +33,7 @@ fn org_row_decoder() -> decode.Decoder(OrgRow) {
 
 /// Generated from a.sql
 pub fn get_org(db db: sqlight.Connection, id id: Int) -> Result(List(OrgRow), sqlight.Error) {
-  sqlight.query(
+  statement_cache.query(
     "SELECT id, name, bio FROM orgs WHERE id = @id",
     on: db,
     with: [sqlight.int(id)],
@@ -42,7 +43,7 @@ pub fn get_org(db db: sqlight.Connection, id id: Int) -> Result(List(OrgRow), sq
 
 /// Generated from b.sql
 pub fn list_orgs(db db: sqlight.Connection) -> Result(List(OrgRow), sqlight.Error) {
-  sqlight.query(
+  statement_cache.query(
     "SELECT id, name, bio FROM orgs",
     on: db,
     with: [],

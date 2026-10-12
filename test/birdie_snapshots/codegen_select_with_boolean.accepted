@@ -14,7 +14,7 @@ pub type FindActiveUsersRow {
 
 /// Generated from src/app/sql/find_active_users.sql
 pub fn find_active_users(db db: sqlight.Connection) -> Result(List(FindActiveUsersRow), sqlight.Error) {
-  sqlight.query(
+  statement_cache.query(
     "SELECT id, is_active FROM users",
     on: db,
     with: [],

@@ -14,7 +14,7 @@ pub type FindUsersByAgeRow {
 
 /// Generated from src/app/sql/find_users_by_age.sql
 pub fn find_users_by_age(db db: sqlight.Connection, age_min age_min: Int, age_max age_max: Int) -> Result(List(FindUsersByAgeRow), sqlight.Error) {
-  sqlight.query(
+  statement_cache.query(
     "SELECT id, name FROM users WHERE age > ? AND age < ?",
     on: db,
     with: [sqlight.int(age_min), sqlight.int(age_max)],

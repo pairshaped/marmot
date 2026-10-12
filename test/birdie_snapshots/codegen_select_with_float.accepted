@@ -14,7 +14,7 @@ pub type FindProductRow {
 
 /// Generated from src/app/sql/find_product.sql
 pub fn find_product(db db: sqlight.Connection, id id: Int) -> Result(List(FindProductRow), sqlight.Error) {
-  sqlight.query(
+  statement_cache.query(
     "SELECT id, price FROM products WHERE id = ?",
     on: db,
     with: [sqlight.int(id)],

@@ -8,6 +8,7 @@ import marmot/internal/query.{
   type Column, type Query, BitArrayType, BoolType, Column, DateType, FloatType,
   IntType, Parameter, Query, StringType, TimestampType,
 }
+import marmot/internal/statement_cache
 
 pub fn codegen_select_single_param_test() {
   let q =
@@ -480,7 +481,11 @@ pub fn codegen_module_without_query_function_test() {
     ),
   ]
   let assert Ok(output) =
-    codegen.generate_module_with_config(queries, option.None)
+    codegen.generate_module_with_config(
+      queries,
+      option.None,
+      statement_cache.default_module_path,
+    )
   output
   |> birdie.snap(title: "codegen module without query_function")
 }
@@ -513,7 +518,11 @@ pub fn codegen_module_with_query_function_test() {
     ),
   ]
   let assert Ok(output) =
-    codegen.generate_module_with_config(queries, option.Some("server/db.query"))
+    codegen.generate_module_with_config(
+      queries,
+      option.Some("server/db.query"),
+      statement_cache.default_module_path,
+    )
   output
   |> birdie.snap(title: "codegen module with query_function")
 }
@@ -676,7 +685,11 @@ pub fn generate_emits_shared_row_type_once_test() {
   let q1 = make_query("get_org_by_id", "a.sql", cols, option.Some("OrgRow"))
   let q2 = make_query("list_orgs", "b.sql", cols, option.Some("OrgRow"))
   let assert Ok(output) =
-    codegen.generate_module_with_config([q1, q2], option.None)
+    codegen.generate_module_with_config(
+      [q1, q2],
+      option.None,
+      statement_cache.default_module_path,
+    )
   let assert 1 = count_substring(output, "pub type OrgRow {")
   let assert 0 = count_substring(output, "pub type GetOrgByIdRow {")
   let assert 0 = count_substring(output, "pub type ListOrgsRow {")
@@ -685,7 +698,12 @@ pub fn generate_emits_shared_row_type_once_test() {
 pub fn generate_emits_per_query_type_for_unannotated_test() {
   let cols = [Column(name: "id", column_type: IntType, nullable: False)]
   let q = make_query("get_foo", "a.sql", cols, option.None)
-  let assert Ok(output) = codegen.generate_module_with_config([q], option.None)
+  let assert Ok(output) =
+    codegen.generate_module_with_config(
+      [q],
+      option.None,
+      statement_cache.default_module_path,
+    )
   let assert 1 = count_substring(output, "pub type GetFooRow {")
   let assert 0 = count_substring(output, "pub type OrgRow {")
 }
@@ -696,7 +714,11 @@ pub fn generate_mixed_annotated_and_plain_test() {
   let q1 = make_query("get_org", "a.sql", cols_a, option.Some("OrgRow"))
   let q2 = make_query("other_query", "b.sql", cols_b, option.None)
   let assert Ok(output) =
-    codegen.generate_module_with_config([q1, q2], option.None)
+    codegen.generate_module_with_config(
+      [q1, q2],
+      option.None,
+      statement_cache.default_module_path,
+    )
   let assert 1 = count_substring(output, "pub type OrgRow {")
   let assert 1 = count_substring(output, "pub type OtherQueryRow {")
 }
@@ -706,14 +728,23 @@ pub fn generate_emits_shared_decoder_once_test() {
   let q1 = make_query("get_org", "a.sql", cols, option.Some("OrgRow"))
   let q2 = make_query("list_orgs", "b.sql", cols, option.Some("OrgRow"))
   let assert Ok(output) =
-    codegen.generate_module_with_config([q1, q2], option.None)
+    codegen.generate_module_with_config(
+      [q1, q2],
+      option.None,
+      statement_cache.default_module_path,
+    )
   let assert 1 = count_substring(output, "fn org_row_decoder()")
 }
 
 pub fn generate_query_function_references_shared_decoder_test() {
   let cols = [Column(name: "id", column_type: IntType, nullable: False)]
   let q = make_query("get_org", "a.sql", cols, option.Some("OrgRow"))
-  let assert Ok(output) = codegen.generate_module_with_config([q], option.None)
+  let assert Ok(output) =
+    codegen.generate_module_with_config(
+      [q],
+      option.None,
+      statement_cache.default_module_path,
+    )
   let assert True = string.contains(output, "org_row_decoder()")
   let q_plain =
     make_query(
@@ -723,7 +754,11 @@ pub fn generate_query_function_references_shared_decoder_test() {
       option.None,
     )
   let assert Ok(output2) =
-    codegen.generate_module_with_config([q_plain], option.None)
+    codegen.generate_module_with_config(
+      [q_plain],
+      option.None,
+      statement_cache.default_module_path,
+    )
   let assert False = string.contains(output2, "other_row_decoder()")
 }
 
@@ -807,7 +842,11 @@ pub fn generate_module_returns_error_on_shared_type_mismatch_test() {
       option.Some("OrgRow"),
     )
   let assert Error(_) =
-    codegen.generate_module_with_config([q1, q2], option.None)
+    codegen.generate_module_with_config(
+      [q1, q2],
+      option.None,
+      statement_cache.default_module_path,
+    )
 }
 
 pub fn generate_module_rejects_duplicate_query_names_test() {

@@ -16,6 +16,7 @@ import gleam/list
 import gleam/option.{type Option}
 import gleam/result
 import gleam/string
+import marmot/internal/statement_cache
 import simplifile
 import tom
 
@@ -33,7 +34,8 @@ pub type Config {
     database_name: Option(String),
     /// Output directory for generated modules (must be under `src/`).
     output: Option(String),
-    /// Fully-qualified wrapper function replacing `sqlight.query`.
+    /// Fully-qualified wrapper function replacing the generated
+    /// `statement_cache.query`.
     query_function: Option(String),
     /// Custom directory for SQL file discovery instead of `src/**/sql/`.
     sql_dir: Option(String),
@@ -767,6 +769,39 @@ pub fn output_path_from_source_root(
 
 pub fn transaction_output_path(configured_output: Option(String)) -> String {
   output_dir(configured_output) <> "/transaction.gleam"
+}
+
+/// Path of the generated Gleam statement cache module.
+pub fn statement_cache_output_path(
+  configured_output: Option(String),
+) -> String {
+  output_dir(configured_output) <> "/statement_cache.gleam"
+}
+
+/// Path of the Erlang FFI file that belongs to the generated statement cache.
+/// Its name is derived from the Gleam module path so that two output
+/// directories never write the same Erlang module.
+pub fn statement_cache_ffi_output_path(
+  configured_output: Option(String),
+) -> String {
+  let ffi_module =
+    statement_cache.ffi_module_name(statement_cache_module_path(
+      configured_output,
+    ))
+  output_dir(configured_output) <> "/" <> ffi_module <> ".erl"
+}
+
+/// Gleam import path of the generated statement cache module, for example
+/// "generated/sql/statement_cache" for the default output directory.
+pub fn statement_cache_module_path(
+  configured_output: Option(String),
+) -> String {
+  let dir = resolve_path(output_dir(configured_output))
+  let module_dir = case string.starts_with(dir, "src/") {
+    True -> string.drop_start(dir, 4)
+    False -> dir
+  }
+  module_dir <> "/statement_cache"
 }
 
 fn output_dir(configured_output: Option(String)) -> String {

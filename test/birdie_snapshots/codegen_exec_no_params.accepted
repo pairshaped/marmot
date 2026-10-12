@@ -6,7 +6,7 @@ test_name: codegen_exec_no_params_test
 ---
 /// Generated from src/app/sql/delete_all_users.sql
 pub fn delete_all_users(db db: sqlight.Connection) -> Result(List(Nil), sqlight.Error) {
-  sqlight.query(
+  statement_cache.query(
     "DELETE FROM users",
     on: db,
     with: [],

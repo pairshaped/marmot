@@ -24,7 +24,7 @@ wait_for_port(Port) ->
         {Port, {exit_status, Status}} -> Status;
         {Port, {data, _}} -> wait_for_port(Port);
         {port_timeout, Port} ->
-            catch erlang:port_close(Port),
+            try erlang:port_close(Port) catch _:_ -> ok end,
             -2
     end.
 

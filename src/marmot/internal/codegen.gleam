@@ -26,6 +26,7 @@ import marmot/internal/query.{
   type Column, type ColumnType, type Parameter, type Query, BitArrayType,
   BoolType, DateType, FloatType, IntType, StringType, TimestampType,
 }
+import marmot/internal/statement_cache
 
 /// Parsed `query_function` config, split into parts needed for codegen.
 ///
@@ -123,18 +124,44 @@ fn sanitize_name(name: String) -> String {
 }
 
 /// Generate the complete Gleam source for a single query function,
-/// including its Row type if it has return columns. Uses `sqlight.query`
-/// directly.
+/// including its Row type if it has return columns. Calls the generated
+/// statement cache module at its default path.
 pub fn generate_function(q: Query) -> String {
-  generate_function_with_config(q, option.None)
+  generate_function_with_config(
+    q,
+    option.None,
+    statement_cache.default_module_path,
+  )
 }
 
-/// Generate a complete module from a list of queries. Uses `sqlight.query`
-/// directly.
+/// Generate a complete module from a list of queries. Calls the generated
+/// statement cache module at its default path.
 pub fn generate_module(
   queries: List(Query),
 ) -> Result(String, error.MarmotError) {
-  generate_module_with_config(queries, option.None)
+  generate_module_with_config(
+    queries,
+    option.None,
+    statement_cache.default_module_path,
+  )
+}
+
+/// Resolve which function generated code calls to run a query: the configured
+/// `query_function` wrapper, or `query` in the generated statement cache module.
+/// Both have the same shape, so the rest of codegen treats them alike.
+fn resolve_query_function(
+  query_function: Option(String),
+  statement_cache_module: String,
+) -> QueryFunctionConfig {
+  case parse_query_function(query_function) {
+    option.Some(config) -> config
+    option.None ->
+      QueryFunctionConfig(
+        module_path: statement_cache_module,
+        module_alias: statement_cache.module_alias(statement_cache_module),
+        function: "query",
+      )
+  }
 }
 
 pub fn generate_transaction_module() -> String {
@@ -289,12 +316,13 @@ fn sqlight_error(error: sqlight.Error) -> String {
 /// Generate the complete Gleam source for a single query function.
 /// When `query_function` is set (e.g., `Some("server/db.query")`) the
 /// generated code calls through the configured wrapper function instead of
-/// `sqlight.query`.
+/// the statement cache module.
 fn generate_function_with_config(
   q: Query,
   query_function: Option(String),
+  statement_cache_module: String,
 ) -> String {
-  let config = parse_query_function(query_function)
+  let config = resolve_query_function(query_function, statement_cache_module)
   case query.has_return_columns(q) {
     True -> generate_row_type(q) <> "\n\n" <> generate_query_function(q, config)
     False -> generate_exec_function(q, config)
@@ -304,9 +332,13 @@ fn generate_function_with_config(
 /// Generate a complete module from a list of queries.
 ///
 /// Build phases (in order):
-/// 1. Parse `query_function` config if present.
+/// 1. Resolve the query function: the `query_function` wrapper if configured,
+///    otherwise `query` in the generated statement cache module at
+///    `statement_cache_module` (a Gleam import path such as
+///    "generated/sql/statement_cache").
 /// 2. Import selection: scan all queries/parameters for needed modules
-///    (`sqlight`, `decode`, `option`, `timestamp`, `calendar`, custom wrapper).
+///    (`sqlight`, `decode`, `option`, `timestamp`, `calendar`, and the query
+///    function's module).
 /// 3. Helper emission: conditionally add `timestamp_to_int`, `date_decoder`,
 ///    and `date_to_string` private helpers.
 /// 4. Shared row groups: group queries by `-- returns:` annotation, validate
@@ -319,13 +351,14 @@ fn generate_function_with_config(
 /// 8. String concatenation: join all parts into the final module source.
 ///
 /// When `query_function` is set (e.g., `Some("server/db.query")`) the
-/// generated code calls through the configured wrapper function and adds the
-/// wrapper's `import` line.
+/// generated code calls through the configured wrapper function and imports
+/// the wrapper's module instead of the statement cache module.
 pub fn generate_module_with_config(
   queries: List(Query),
   query_function: Option(String),
+  statement_cache_module: String,
 ) -> Result(String, error.MarmotError) {
-  let config = parse_query_function(query_function)
+  let config = resolve_query_function(query_function, statement_cache_module)
   let imports = generate_imports(queries, config)
 
   let needs_date_decoder =
@@ -495,7 +528,7 @@ fn check_generated_row_type_names(
 
 fn generate_imports(
   queries: List(Query),
-  query_function: Option(QueryFunctionConfig),
+  query_function: QueryFunctionConfig,
 ) -> String {
   let needs_option =
     list.any(queries, fn(q) {
@@ -513,29 +546,21 @@ fn generate_imports(
       || list.any(q.parameters, fn(p) { p.column_type == DateType })
     })
 
-  let wrapper_import = case query_function {
-    option.Some(cfg) -> [
-      #(True, "import " <> cfg.module_path),
-    ]
-    option.None -> []
-  }
-
-  let imports =
-    [
-      #(True, "import sqlight"),
-      #(True, "import gleam/dynamic/decode"),
-      // gleam/int and gleam/string are only used by date/timestamp decoders.
-      // If a future type mapping needs them, add a separate condition here.
-      #(needs_date, "import gleam/int"),
-      #(needs_option, "import gleam/option.{type Option}"),
-      #(needs_date, "import gleam/string"),
-      #(needs_timestamp, "import gleam/time/timestamp.{type Timestamp}"),
-      #(
-        needs_date,
-        "import gleam/time/calendar.{type Date, Date, January, is_valid_date, month_from_int, month_to_int}",
-      ),
-    ]
-    |> list.append(wrapper_import)
+  let imports = [
+    #(True, "import " <> query_function.module_path),
+    #(True, "import sqlight"),
+    #(True, "import gleam/dynamic/decode"),
+    // gleam/int and gleam/string are only used by date/timestamp decoders.
+    // If a future type mapping needs them, add a separate condition here.
+    #(needs_date, "import gleam/int"),
+    #(needs_option, "import gleam/option.{type Option}"),
+    #(needs_date, "import gleam/string"),
+    #(needs_timestamp, "import gleam/time/timestamp.{type Timestamp}"),
+    #(
+      needs_date,
+      "import gleam/time/calendar.{type Date, Date, January, is_valid_date, month_from_int, month_to_int}",
+    ),
+  ]
 
   imports
   |> list.filter(fn(i) { i.0 })
@@ -664,7 +689,7 @@ fn decoder_body(
 fn generate_shared_query_function(
   q: Query,
   type_name: String,
-  query_function: Option(QueryFunctionConfig),
+  query_function: QueryFunctionConfig,
 ) -> String {
   let params = generate_param_list(q.parameters)
   let with_args = generate_with_args(q.parameters)
@@ -696,16 +721,13 @@ fn generate_shared_query_function(
   <> "}"
 }
 
-fn query_call(query_function: Option(QueryFunctionConfig)) -> String {
-  case query_function {
-    option.Some(cfg) -> cfg.module_alias <> "." <> cfg.function
-    option.None -> "sqlight.query"
-  }
+fn query_call(query_function: QueryFunctionConfig) -> String {
+  query_function.module_alias <> "." <> query_function.function
 }
 
 fn generate_query_function(
   q: Query,
-  query_function: Option(QueryFunctionConfig),
+  query_function: QueryFunctionConfig,
 ) -> String {
   let params = generate_param_list(q.parameters)
   let with_args = generate_with_args(q.parameters)
@@ -740,7 +762,7 @@ fn generate_query_function(
 
 fn generate_exec_function(
   q: Query,
-  query_function: Option(QueryFunctionConfig),
+  query_function: QueryFunctionConfig,
 ) -> String {
   let params = generate_param_list(q.parameters)
   let with_args = generate_with_args(q.parameters)
