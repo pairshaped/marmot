@@ -493,10 +493,10 @@ restructure an app for this.
 
 **Why it matters.** Compiling a statement can cost more than running a small
 indexed query, so a request made of many small queries spends much of its time
-compiling when nothing is cached. With the cache, generated code performs close
-to a hand-written `esqlite` loop that keeps its own statements; the remaining
-gap is row decoding and the open-connection check. How much you gain depends on
-how expensive your queries are to compile and how often a process repeats them.
+compiling when nothing is cached. How much you gain depends on how expensive
+your queries are to compile and how often a process repeats them. The
+[SQLite request-shape benchmark](https://github.com/pairshaped/gleam_sqlite_benchmarks) measures statement caching across
+languages, including why a cache too small for the request is worse than none.
 
 **Connection lifetime.** SQLite keeps a connection's database file open while
 compiled statements for it are alive, even after `sqlight.close` returns `Ok`.
@@ -546,18 +546,11 @@ The BEAM starts 10 dirty I/O threads no matter how many CPUs the machine has.
 On a small VM, those extra threads fight over the cores, and waking one up for
 each handoff is slow, so every query pays for it.
 
-In the same benchmark on a 2-vCPU DigitalOcean CPU-Optimized Droplet, the
-read request with cached statements measured:
-
-| Setting | Read request |
-| --- | ---: |
-| Default (10 dirty I/O threads) | 423 to 1,286 µs, varying run to run |
-| `+SDio 2` (one per vCPU) | 423 to 435 µs, every run |
-| `+SDio 4` | 416 to 1,289 µs, varying run to run |
-| Busy-waiting off (`+sbwt none +sbwtdcpu none +sbwtdio none`) | about 1,400 µs, every run |
-
-The default was up to 3x slower, and it switched between fast and slow runs
-with no other change. Capping the threads at the vCPU count made every run fast.
+On a 2-vCPU VM, the default made reads several times slower and inconsistent
+from run to run with no other change, and capping the threads at the vCPU count
+made every run fast. The [SQLite request-shape benchmark](https://github.com/pairshaped/gleam_sqlite_benchmarks) has the
+measurements: its README explains the setting and its per-machine reports have
+the numbers.
 
 Set it in `vm.args` for a release, or with `ERL_FLAGS` when running directly:
 
